@@ -150,6 +150,9 @@ function M.trim_edge_newlines(text)
 	return ((text or ""):gsub("^\n+", ""):gsub("\n+$", ""))
 end
 
+---A path as widgets show it: relative to the working directory, else to the
+---home directory. The working directory itself, or a wildcard over all of it,
+---keeps the directory it names ("~/project/*", never a bare "*").
 ---@param path string|nil
 ---@return string
 function M.normalize_path(path)
@@ -164,7 +167,11 @@ function M.normalize_path(path)
 			normalized = filepath
 		end
 	end
-	return vim.fn.fnamemodify(normalized, ":~:.")
+	local display = vim.fn.fnamemodify(normalized, ":~:.")
+	if display == "" or (display:match("^[*?]") and not normalized:match("^[*?]")) then
+		display = vim.fn.fnamemodify(normalized, ":~")
+	end
+	return display
 end
 
 ---@param ... any

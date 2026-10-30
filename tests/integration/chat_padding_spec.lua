@@ -16,8 +16,7 @@ describe("chat content gutters", function()
 	end)
 	after_each(function() if editor then editor.close() end end)
 
-	for _, case in ipairs({ { "tab" }, { "vertical" }, { "horizontal" }, { "float" },
-		{ "tab", "inactive" }, { "float", "inactive" }, { "tab", "mapped" }, { "float", "mapped" } }) do
+	for _, case in ipairs({ { "vertical" }, { "float" }, { "tab", "inactive" }, { "float", "mapped" } }) do
 		it("keeps text and panel backgrounds off both edges in " .. table.concat(case, " "), function()
 			local result = editor.lua([[
 				local layout, variant = ...

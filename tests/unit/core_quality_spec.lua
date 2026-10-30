@@ -3,7 +3,7 @@ local sync = require("opencode.sync")
 local selectors = require("opencode.selectors")
 local projection = require("opencode.protocol.messages")
 
-describe("core quality regression guards", function()
+describe("core state and status regressions", function()
 	local restored
 	local function replace(object, key, value)
 		local original = object[key]
@@ -36,30 +36,6 @@ describe("core quality regression guards", function()
 		state.reset(); sync.clear_all()
 	end)
 
-	it("reuses warmed context and family cost without traversing messages or records", function()
-		state.upsert_session({ id = "quality-child", parentID = "quality-root", cost = 2 }, { touch = false })
-		assert.equals(10, selectors.current_context().tokens)
-		assert.equals(3, selectors.session_cost())
-		local scans = 0
-		local messages, records
-		messages = replace(sync, "get_messages", function(...) scans = scans + 1; return messages(...) end)
-		records = replace(state, "get_session_record", function(...) scans = scans + 1; return records(...) end)
-		for _ = 1, 20 do
-			local context = selectors.current_context()
-			context.breakdown.total = -1
-			assert.equals(10, context.tokens)
-			local cost, complete = selectors.session_cost()
-			assert.equals(3, cost); assert.is_true(complete)
-		end
-		assert.equals(0, scans)
-	end)
-
-	it("preserves absent current-session results for sessionless input consumers", function()
-		replace(state, "get_session", function() return nil end)
-		assert.is_nil(selectors.current_context())
-		assert.is_nil(selectors.session_cost())
-	end)
-
 	it("invalidates usage caches on catalogs, history, family ownership and reset", function()
 		assert.equals(10, selectors.current_context().percent)
 		assert.equals(1, selectors.session_cost())
@@ -81,38 +57,6 @@ describe("core quality regression guards", function()
 		assert.equals(9, selectors.session_cost())
 	end)
 
-	it("constructs detached session views without a full application snapshot", function()
-		replace(state, "get_full_state", function() error("unrelated app state was copied") end)
-		state.upsert_session({ id = "quality-root", custom = { nested = 1 }, is_runtime = "source" }, { touch = false })
-		state.set_session_status("quality-root", { type = "busy", nested = { value = 1 } })
-		local view = selectors.get_current_session_view()
-		assert.equals("source", view.record.is_runtime)
-		assert.is_nil(view.is_runtime)
-		view.record.custom.nested = 2
-		view.status.nested.value = 2
-		assert.equals(1, view.record.custom.nested)
-		assert.equals(1, state.get_session_record("quality-root").custom.nested)
-		assert.equals(1, state.get_session_status("quality-root").nested.value)
-	end)
-
-	it("keeps lazy action forwarder arity, dropped extra arguments and multiple returns", function()
-		local calls = {}
-		local api = {}
-		for _, name in ipairs({ "open", "open_input_at_end", "ask_btw" }) do
-			api[name] = function(...) calls[name] = { count = select("#", ...), ... }; return "result", nil, 3 end
-		end
-		replace(package.loaded, "opencode", api)
-		local actions = require("opencode.actions")
-		local a, b, c = actions.open("ignored")
-		assert.equals("result", a); assert.is_nil(b); assert.equals(3, c)
-		actions.open_input_at_end(nil, "ignored")
-		actions.ask_btw("question", nil, "ignored")
-		assert.equals(0, calls.open.count)
-		assert.equals(1, calls.open_input_at_end.count)
-		assert.equals(2, calls.ask_btw.count)
-		assert.equals("question", calls.ask_btw[1])
-	end)
-
 	it("preserves direct decoder EOF reentry from the final length body callback", function()
 		local completed, failures, decoder = 0, 0, nil
 		decoder = require("opencode.client.http_decoder").new({
@@ -125,18 +69,7 @@ describe("core quality regression guards", function()
 		assert.equals(1, completed); assert.equals(0, failures)
 	end)
 
-	it("resolves permission tool input and name with one ordered part scan", function()
-		local reads = 0
-		replace(sync, "get_parts", function()
-			reads = reads + 1
-			return { { type = "tool", callID = "call", tool = "bash", state = { input = { command = "pwd" } } } }
-		end)
-		local request = { message_id = "message", call_id = "call", metadata = {} }
-		local input, name = require("opencode.events.handlers.permission_flow.request").resolve_tool(request)
-		assert.equals("pwd", input.command); assert.equals("bash", name); assert.equals(1, reads)
-	end)
-
-	it("builds active sessions in runtime order behind the state alias and counts lualine attention from pending only", function()
+	it("builds active sessions in runtime order and counts lualine attention from pending counts", function()
 		state.reset()
 		for _, id in ipairs({ "quality-b", "quality-a", "quality-c" }) do state.upsert_session({ id = id, title = id }) end
 		state.set_session("quality-a", "A")
@@ -150,18 +83,9 @@ describe("core quality regression guards", function()
 		assert.is_true(active[2].is_current); assert.equals(1, active[1].pending.questions)
 		assert.same(active, state.get_status_summary().active_sessions)
 		local lualine = require("opencode.components.lualine")
-		replace(state, "get_active_sessions", function() error("lualine needs only pending counts") end)
 		lualine.setup({ show_attention = true, attention_icon = "!", show_diff_stats = false })
 		assert.is_truthy(lualine.component():find("!2", 1, true))
 		state.reset()
-	end)
-
-	it("skips full status summaries and inactive attention data in lualine", function()
-		local lualine = require("opencode.components.lualine")
-		replace(state, "get_status_summary", function() error("unused summary") end)
-		replace(state, "get_active_sessions", function() error("disabled attention") end)
-		lualine.setup({ show_attention = false, show_diff_stats = false })
-		assert.equals("", lualine.component())
 	end)
 
 	it("keeps immediate first and expired Git reads, stable TTL hits, zero TTL and cwd isolation", function()

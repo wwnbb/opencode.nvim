@@ -26,6 +26,12 @@ local function merge_headers(additional)
 	}, additional)
 end
 
+-- transport.request always calls back from a scheduled callback, so response
+-- handling delivers directly instead of adding a second event-loop hop.
+local function deliver(callback, ...)
+	if type(callback) == "function" then callback(...) end
+end
+
 local function handle_response(response, callback, password)
 	local meta = { status = response.status, headers = response.headers }
 	if response.status < 200 or response.status >= 300 then
@@ -46,7 +52,7 @@ local function handle_response(response, callback, password)
 		if type(password) == "string" and password ~= "" then
 			message = message:gsub(password:gsub("([^%w])", "%%%1"), "[redacted]")
 		end
-		schedule_callback(callback, {
+		deliver(callback, {
 			status = response.status, code = code, message = message, error = message,
 			rpc_type = code == "RpcError" and type(detail.type) == "string" and detail.type or nil,
 			force_required = force_required,
@@ -57,27 +63,27 @@ local function handle_response(response, callback, password)
 
 	-- Handle empty body (e.g., 204 No Content)
 	if response.body == "" then
-		schedule_callback(callback, nil, true, meta)
+		deliver(callback, nil, true, meta)
 		return
 	end
 	local content_type = meta.headers["content-type"]
 	local media_type = content_type and vim.trim(content_type:match("^[^;]*")):lower()
 	if media_type and media_type ~= "application/json" and not media_type:match("^application/[^%s/]+%+json$") then
-		schedule_callback(callback, { status = response.status, code = "invalid_content_type",
+		deliver(callback, { status = response.status, code = "invalid_content_type",
 			message = "Expected a JSON response", retryable = false }, nil, meta)
 		return
 	end
 
 	local ok, body = pcall(vim.json.decode, response.body)
 	if not ok then
-		schedule_callback(callback, {
+		deliver(callback, {
 			status = response.status, code = "invalid_json", retryable = false,
 			error = "Failed to parse JSON response", message = "Failed to parse JSON response",
 		}, nil, meta)
 		return
 	end
 
-	schedule_callback(callback, nil, body, meta)
+	deliver(callback, nil, body, meta)
 end
 
 ---@param opts table Configuration options
@@ -149,7 +155,7 @@ local function request(method, path, callback, opts, body)
 		body = body,
 	}, function(err, response)
 		if err then
-			schedule_callback(callback, err, nil)
+			deliver(callback, err, nil)
 			return
 		end
 		handle_response(response, callback, password)

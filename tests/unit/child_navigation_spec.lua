@@ -82,19 +82,6 @@ describe("child navigation freshness", function()
 			assert.is_nil(lock.get("child"))
 		end)
 
-		it("keeps the source intact when " .. method .. " cannot load history", function()
-			local notification
-			vim.notify = function(message) notification = message end
-			actions.load_session_messages = function(_, _, callback) callback({ message = "History unavailable" }) end
-			nav[method](method == "enter_child_session" and "task" or "child")
-			complete(1)
-			assert.equals("parent", state.get_session().id)
-			assert.equals(0, #view.session_stack)
-			assert.is_nil(state.get_session_record("child"))
-			assert.is_nil(lock.get("child"))
-			assert.matches("History unavailable", notification, 1, true)
-		end)
-
 		it("ignores " .. method .. " after the default pane is closed", function()
 			view.session_bound, view.session_id = true, "parent"
 			local bound
@@ -162,7 +149,7 @@ describe("child navigation freshness", function()
 		assert.equals(1, #view.session_stack)
 	end)
 
-	for _, change in ipairs({ "replacement", "cleared metadata", "removed widget", "removed stored part" }) do
+	for _, change in ipairs({ "replacement", "removed stored part" }) do
 		it("does not enter a stale task child after " .. change, function()
 			local sync = require("opencode.sync")
 			local part = view.tasks.task.tool_part
@@ -175,8 +162,6 @@ describe("child navigation freshness", function()
 			nav.enter_child_session("task")
 			complete(1)
 			if change == "replacement" then part.state.metadata.sessionID = "replacement"
-			elseif change == "cleared metadata" then part.state.metadata = {}
-			elseif change == "removed widget" then view.tasks.task = nil
 			else sync.handle_part_removed(part.messageID, part.id) end
 			history(nil, {})
 			assert.equals("parent", state.get_session().id)

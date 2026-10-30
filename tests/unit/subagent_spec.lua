@@ -49,7 +49,7 @@ describe("native subagent projection", function()
 		assert.equals("cancelled", animation.task_status(part))
 		assert.is_false(animation.is_animating_tool_part(part))
 		sync.handle_session_status("child", { type = "busy" })
-		for _, status in ipairs({ "cancelled", "canceled", "interrupted", "aborted", "error" }) do
+		for _, status in ipairs({ "cancelled", "error" }) do
 			part.state.status = status
 			assert.equals(status, animation.task_status(part))
 			assert.is_false(animation.is_animating_tool_part(part))

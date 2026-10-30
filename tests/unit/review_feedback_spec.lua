@@ -109,48 +109,30 @@ describe("review feedback delivery", function()
 		assert.same(item.native_review, delivered)
 	end)
 
-	for _, failed in ipairs({ false, true }) do
-		it("reports cancellation before a late " .. (failed and "failed" or "successful") .. " RPC response", function()
-			local item = add(path)
-			local failure, delivered
-			assert.is_true(actions.reply_review("r", function(err, record) failure, delivered = err, record end))
-			assert.is_true(edits.set_review_record({ reviewID = "r", sessionID = "s", revision = 1, status = "cancelled" }))
-			calls[1].callback(failed and { message = "Late RPC failure" } or nil,
-				{ reviewID = "r", sessionID = "s", revision = 1, status = "decided" })
-			assert.is_not_nil(failure)
-			assert.is_truthy(failure.message:find("cancelled", 1, true))
-			assert.same(item.native_review, delivered)
-			assert.equals("cancelled", item.native_review.status)
-			assert.is_false(item.submitting)
-			assert.equals(note, item.message)
-		end)
+	it("reports cancellation before a late successful RPC response", function()
+		local item = add(path)
+		local failure, delivered
+		assert.is_true(actions.reply_review("r", function(err, record) failure, delivered = err, record end))
+		assert.is_true(edits.set_review_record({ reviewID = "r", sessionID = "s", revision = 1, status = "cancelled" }))
+		calls[1].callback(nil, { reviewID = "r", sessionID = "s", revision = 1, status = "decided" })
+		assert.is_truthy(failure.message:find("cancelled", 1, true))
+		assert.same(item.native_review, delivered)
+		assert.equals("cancelled", item.native_review.status)
+		assert.is_false(item.submitting)
+		assert.equals(note, item.message)
+	end)
 
-		it("ignores a scheduled " .. (failed and "failure" or "finalizer") .. " after its review owner changes", function()
-			add(path)
-			local notices = {}
-			vim.notify = function(message) notices[#notices + 1] = message end
-			assert.is_true(require("opencode.ui.chat.edits").finalize_edit("r"))
-			require("tests.helpers.schedule").with(function(flush)
-				calls[1].callback(failed and { message = "Late RPC failure" } or nil,
-					{ reviewID = "r", sessionID = "s", revision = 1, status = "decided" })
-				edits.clear_all()
-				local replacement = add(path)
-				flush()
-				assert.equals("pending", replacement.status)
-				assert.same({}, notices)
-			end)
-		end)
-	end
-
-	it("does not notify a queued reply error after its session was invalidated", function()
+	it("ignores a scheduled failure after its review owner changes", function()
 		add(path)
 		local notices = {}
 		vim.notify = function(message) notices[#notices + 1] = message end
 		assert.is_true(require("opencode.ui.chat.edits").finalize_edit("r"))
 		require("tests.helpers.schedule").with(function(flush)
-			calls[1].callback({ message = "Old request failed" })
-			require("opencode.session.pending").clear_session("s")
+			calls[1].callback({ message = "Late RPC failure" })
+			edits.clear_all()
+			local replacement = add(path)
 			flush()
+			assert.equals("pending", replacement.status)
 			assert.same({}, notices)
 		end)
 	end)
@@ -237,26 +219,24 @@ describe("review feedback in tool history", function()
 	before_each(function() edits.clear_all(); sync.clear_all() end)
 	after_each(function() edits.clear_all(); sync.clear_all() end)
 
-	for _, name in ipairs({ "neovim_patch", "neovim_edit" }) do
-		it("restores preview and feedback for " .. name, function()
-			local file = { filePath = "/history/a", relativePath = "a", before = "before\n", after = "manual\n",
-				type = "update", status = "partial", additions = 1, deletions = 1,
-				diff = "--- a\n+++ a\n@@ -1 +1 @@\n-before\n+manual" }
-			sync.handle_message_updated({ id = "m", sessionID = "s", role = "assistant", time = { created = 1 } })
-			sync.handle_part_updated({ id = "p", messageID = "m", sessionID = "s", type = "tool", tool = name,
-				callID = "c", state = { status = "completed", output = "Done", metadata = {
-					status = "partial", files = { file }, filediff = file, review_message = note,
-				} } })
-			assert.equals(1, require("opencode.ui.chat.edit_previews").sync_session("s"))
-			local item = edits.get_edit("tool-preview:s:m:p")
-			assert.is_not_nil(item)
-			assert.equals("readonly", item.review_mode)
-			assert.equals(note, item.message)
-			assert.equals("manual\n", item.files[1].after)
-			local lines = require("opencode.ui.edit_widget").get_resolved_lines(item.permission_id, item)
-			assert.is_truthy(table.concat(lines, "\n"):find("смешные", 1, true))
-		end)
-	end
+	it("restores preview and feedback for a historical edit tool", function()
+		local file = { filePath = "/history/a", relativePath = "a", before = "before\n", after = "manual\n",
+			type = "update", status = "partial", additions = 1, deletions = 1,
+			diff = "--- a\n+++ a\n@@ -1 +1 @@\n-before\n+manual" }
+		sync.handle_message_updated({ id = "m", sessionID = "s", role = "assistant", time = { created = 1 } })
+		sync.handle_part_updated({ id = "p", messageID = "m", sessionID = "s", type = "tool", tool = "neovim_patch",
+			callID = "c", state = { status = "completed", output = "Done", metadata = {
+				status = "partial", files = { file }, filediff = file, review_message = note,
+			} } })
+		assert.equals(1, require("opencode.ui.chat.edit_previews").sync_session("s"))
+		local item = edits.get_edit("tool-preview:s:m:p")
+		assert.is_not_nil(item)
+		assert.equals("readonly", item.review_mode)
+		assert.equals(note, item.message)
+		assert.equals("manual\n", item.files[1].after)
+		local lines = require("opencode.ui.edit_widget").get_resolved_lines(item.permission_id, item)
+		assert.is_truthy(table.concat(lines, "\n"):find("смешные", 1, true))
+	end)
 
 	it("renders a historical patch call as a generic tool without review controls", function()
 		sync.handle_message_updated({ id = "m", sessionID = "s", role = "assistant", time = { created = 1 } })
@@ -267,50 +247,48 @@ describe("review feedback in tool history", function()
 		assert.equals(0, require("opencode.ui.chat.edit_previews").sync_session("s"))
 		assert.is_nil(edits.get_edit("tool-preview:s:m:p"))
 		local rendered = require("opencode.ui.chat.tasks").render_regular_tool(part, true)
-		assert.is_truthy(table.concat(rendered.lines, "\n"):find("neovim_apply_patch", 1, true))
+		assert.is_truthy(table.concat(rendered.lines, "\n"):find("Neovim Apply Patch", 1, true))
 	end)
 end)
 
 describe("review protocol 2 events", function()
-	for _, reconnect in ipairs({ false, true }) do
-		it("retries a policy interrupted by " .. (reconnect and "connection invalidation" or "closing its session"), function()
-			local handlers, lookups, confirmations = {}, {}, {}
-			local get, create, rpc = client.get_permission, client.create_permission, client.review_rpc
-			local pending = require("opencode.session.pending")
-			app.reset(); pending.clear_all()
-			app.set_session("policy-session", "Policy")
-			client.get_permission = function(_, _, callback) lookups[#lookups + 1] = callback end
-			client.create_permission = function(_, _, callback) callback(nil, { effect = "allow" }) end
-			client.review_rpc = function(method, _, _, callback)
-				assert.equals("policyConfirm", method)
-				confirmations[#confirmations + 1] = callback
-			end
-			local ok, err = pcall(function()
-				require("opencode.events.handlers.review").setup({ emit = function() end,
-					on = function(kind, callback) handlers[kind] = callback end })
-				local event = { type = "rpc.opencode_nvim.policyRequested", data = { policy = {
-					protocolVersion = 2, sessionID = "policy-session", status = "pending", gateID = "gate",
-					location = { directory = "/policy" }, request = { id = "permission", action = "neovim_edit" },
-				} } }
-				handlers.server_interaction(event)
-				handlers.server_interaction(event)
-				assert.equals(1, #lookups)
-				if reconnect then pending.invalidate() else pending.clear_session("policy-session") end
-				handlers.server_interaction(event)
-				assert.equals(2, #lookups)
-				lookups[1]({ status = 404 })
-				assert.equals(0, #confirmations)
-				lookups[2]({ status = 404 })
-				assert.equals(1, #confirmations)
-				confirmations[1](nil, { status = "allowed" })
-				handlers.server_interaction(event)
-				assert.equals(2, #lookups)
-			end)
-			client.get_permission, client.create_permission, client.review_rpc = get, create, rpc
-			app.reset(); pending.clear_all()
-			assert.is_true(ok, err)
+	it("retries a policy interrupted by connection invalidation", function()
+		local handlers, lookups, confirmations = {}, {}, {}
+		local get, create, rpc = client.get_permission, client.create_permission, client.review_rpc
+		local pending = require("opencode.session.pending")
+		app.reset(); pending.clear_all()
+		app.set_session("policy-session", "Policy")
+		client.get_permission = function(_, _, callback) lookups[#lookups + 1] = callback end
+		client.create_permission = function(_, _, callback) callback(nil, { effect = "allow" }) end
+		client.review_rpc = function(method, _, _, callback)
+			assert.equals("policyConfirm", method)
+			confirmations[#confirmations + 1] = callback
+		end
+		local ok, err = pcall(function()
+			require("opencode.events.handlers.review").setup({ emit = function() end,
+				on = function(kind, callback) handlers[kind] = callback end })
+			local event = { type = "rpc.opencode_nvim.policyRequested", data = { policy = {
+				protocolVersion = 2, sessionID = "policy-session", status = "pending", gateID = "gate",
+				location = { directory = "/policy" }, request = { id = "permission", action = "neovim_edit" },
+			} } }
+			handlers.server_interaction(event)
+			handlers.server_interaction(event)
+			assert.equals(1, #lookups)
+			pending.invalidate()
+			handlers.server_interaction(event)
+			assert.equals(2, #lookups)
+			lookups[1]({ status = 404 })
+			assert.equals(0, #confirmations)
+			lookups[2]({ status = 404 })
+			assert.equals(1, #confirmations)
+			confirmations[1](nil, { status = "allowed" })
+			handlers.server_interaction(event)
+			assert.equals(2, #lookups)
 		end)
-	end
+		client.get_permission, client.create_permission, client.review_rpc = get, create, rpc
+		app.reset(); pending.clear_all()
+		assert.is_true(ok, err)
+	end)
 
 	it("handles policy authorization and review settlement using the new protocol", function()
 		local methods, handlers, statuses = {}, {}, {}

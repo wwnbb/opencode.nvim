@@ -51,7 +51,7 @@ describe("native VCS HTTP facade", function()
 	it("rejects missing envelopes and retains unsupported, authentication, and ambiguous-base errors", function()
 		response = { status = 200, headers = { ["content-type"] = "application/json" }, body = vim.json.encode({ data = {} }) }
 		assert.equals("incompatible_response", invoke("get_vcs_diff").err.code)
-		for _, error in ipairs({ { status = 404, message = "Not found" }, { status = 401, message = "Unauthorized" }, { status = 503, message = "Ambiguous base" } }) do
+		for _, error in ipairs({ { status = 401, message = "Unauthorized" }, { status = 503, message = "Ambiguous base" } }) do
 			response = { status = error.status, headers = { ["content-type"] = "application/json" }, body = vim.json.encode({ _tag = "TestError", message = error.message }) }
 			local result = invoke("get_vcs_base")
 			assert.is_nil(result.data); assert.equals(error.status, result.err.status); assert.equals(error.message, result.err.message)

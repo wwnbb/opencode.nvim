@@ -19,9 +19,13 @@ describe("completion editor context", function()
 	end
 	local function decoded(prompt) return vim.json.decode(prompt:match("Context %(JSON%):\n(.*)$")) end
 	before_each(function() buffers = {}; original_buf = vim.api.nvim_get_current_buf() end)
+	local diagnostic_ns = vim.api.nvim_create_namespace("opencode_completion_context_test")
 	after_each(function()
 		vim.api.nvim_set_current_buf(original_buf)
-		for _, buf in ipairs(buffers) do vim.api.nvim_buf_delete(buf, { force = true }) end
+		for _, buf in ipairs(buffers) do
+			vim.diagnostic.reset(diagnostic_ns, buf)
+			vim.api.nvim_buf_delete(buf, { force = true })
+		end
 	end)
 	it("builds relative paths below the filesystem root", function()
 		assert.equals("tmp/main.lua", context.relative("/tmp/main.lua", "/"))
@@ -124,5 +128,31 @@ describe("completion editor context", function()
 			{ keymaps = { trigger = "<Tab>" } }, { keymaps = { trigger = "<C-i>", accept = "<Tab>" } } }) do
 			assert.is_false(pcall(defaults.merge, { completion = invalid }))
 		end
+	end)
+	it("includes cursor-line diagnostics and mentions them only when present", function()
+		local buf = buffer("/tmp/opencode-completion-context/lint.lua", { "local a = 1", "print(missing)", "return a" })
+		local snap = snapshot(buf, 1, #"print(")
+		local opts = defaults.merge().completion
+		local clean = assert(context.build(snap, opts))
+		assert.is_nil(decoded(clean).diagnostics)
+		assert.is_nil(clean:find("diagnostics are", 1, true))
+		vim.diagnostic.set(diagnostic_ns, buf, {
+			{ lnum = 0, col = 0, severity = 1, message = "Above cursor" },
+			{ lnum = 1, col = 6, end_lnum = 1, end_col = 13, severity = 2, source = "lua_ls", code = "undefined-global",
+				message = "Undefined global `missing`." },
+			{ lnum = 1, col = 0, severity = 1, message = "Error first" },
+			{ lnum = 2, col = 0, severity = 1, message = "Below cursor" },
+		}, { virtual_text = false, signs = false, underline = false })
+		local prompt = assert(context.build(snap, opts))
+		assert.is_truthy(prompt:find("diagnostics are the editor's linter/LSP messages", 1, true))
+		assert.same({
+			{ line = 2, column = 1, end_line = 2, end_column = 1, severity = "ERROR", message = "Error first" },
+			{ line = 2, column = 7, end_line = 2, end_column = 14, severity = "WARN", source = "lua_ls",
+				code = "undefined-global", message = "Undefined global `missing`." },
+		}, decoded(prompt).diagnostics)
+		assert.equals(snap.prefix, decoded(prompt).prefix)
+		opts.context.max_bytes = #clean
+		local fitted = assert(context.build(snap, opts))
+		assert.equals(clean, fitted)
 	end)
 end)

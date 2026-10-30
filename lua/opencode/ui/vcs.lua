@@ -10,7 +10,25 @@ local sources = {
 	{ value = "committed", label = "Committed", description = "Branch commits only" },
 	{ value = "working", label = "Uncommitted", description = "Working copy vs HEAD" },
 	{ value = "turn", label = "Last turn", description = "Latest session turn" },
+	{ value = "session", label = "Session", description = "Every turn of this session" },
 }
+local session_sources = { turn = true, session = true }
+
+-- First and last confirmed prompts before a staged revert; the server diffs the
+-- turns they open, from the first start snapshot to the last end snapshot.
+local function session_range(session_id, messages)
+	local record = app.get_session_record(session_id) or {}
+	local boundary = type(record.revert) == "table" and record.revert.messageID
+	local from, to
+	for _, message in ipairs(messages or {}) do
+		local info = message.info or message
+		if boundary and info.id == boundary then break end
+		if (info.type or info.role) == "user" and not info.provisional then
+			from, to = from or info.id, info.id
+		end
+	end
+	return from, to
+end
 
 require("opencode.ui.highlights").register("opencode.ui.vcs", function()
 	for name, link in pairs({ Added = "DiffAdd", Deleted = "DiffDelete", Header = "Title", Current = "PmenuSel", Reviewed = "Comment" }) do
@@ -252,7 +270,7 @@ load = function(view)
 		if not err then files, invalid = patch.files(files) end
 		view.error = err and require("opencode.events.util").format_session_error(err) or invalid
 		if err and (err.status == 404 or err.status == 405 or err.status == 501 or err.status == 503) then
-			view.error = (view.mode == "turn" and "Session diff is unavailable" or "This server does not provide the requested diff endpoint")
+			view.error = (session_sources[view.mode] and "Session diff is unavailable" or "This server does not provide the requested diff endpoint")
 				.. (err.message and (": " .. err.message) or "")
 		end
 		view.files = not err and files or {}
@@ -263,6 +281,18 @@ load = function(view)
 	if view.mode == "turn" then
 		if not view.session_id then done({ message = "Select a session to inspect its last turn" }); return end
 		actions.get_diff(view.session_id, { context = 12 }, done)
+		return
+	end
+	if view.mode == "session" then
+		if not view.session_id then done({ message = "Select a session to inspect its changes" }); return end
+		-- The loaded window may start mid-history, so the range needs every prompt.
+		actions.load_session_messages(view.session_id, { all = true }, function(err, messages)
+			if not current(view) or request ~= view.request then return end
+			if err then done(err); return end
+			local from, to = session_range(view.session_id, messages)
+			if not from then done(nil, {}); return end
+			actions.get_diff(view.session_id, { from = from, to = to, context = 12 }, done)
+		end)
 		return
 	end
 	local function diff(base)
@@ -283,7 +313,7 @@ end
 choose_source = function(view)
 	if not current(view) then return end
 	local items = {}
-	for _, source in ipairs(sources) do if source.value ~= "turn" or view.session_id then items[#items + 1] = vim.deepcopy(source) end end
+	for _, source in ipairs(sources) do if not session_sources[source.value] or view.session_id then items[#items + 1] = vim.deepcopy(source) end end
 	require("opencode.ui.menu").open({ items = items, title = " Diff Source ", sort = false, refocus_chat = false,
 		on_select = function(item)
 			if not current(view) then return end
@@ -361,7 +391,7 @@ function M.open(opts)
 end
 
 function M.register(palette)
-	palette.register({ id = "diff.open", title = "Open Diff Viewer", description = "Browse VCS and last-turn diffs",
+	palette.register({ id = "diff.open", title = "Open Diff Viewer", description = "Browse VCS, last-turn and session diffs",
 		category = "actions", slash = { name = "diff" }, on_select = function(context) return context.run() end,
 		run = function() M.open() end })
 end

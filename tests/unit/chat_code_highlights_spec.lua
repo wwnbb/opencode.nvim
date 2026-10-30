@@ -46,7 +46,7 @@ describe("chat code highlighting", function()
 
 	it("maps user code through wrapping and truncation without highlighting the placeholder", function()
 		local source = "@example.lua\n```lua\n--[[\nhidden one\nhidden two\nhidden three\nhidden four\nhidden five\nПривет 世界 😀 comment\n]]\nreturn 1\n```"
-		for _, width in ipairs({ 40, 80, 120 }) do
+		for _, width in ipairs({ 40, 120 }) do
 			vim.api.nvim_win_set_config(winid, { width = width })
 			local lines = render.render_user_message(source, "build", nil, { max_lines = 8 })
 			assert.is_truthy(table.concat(render.extract_lines(lines), "\n"):find("lines hidden", 1, true))

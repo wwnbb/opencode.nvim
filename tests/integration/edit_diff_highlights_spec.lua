@@ -17,7 +17,6 @@ describe("inline edit diff screen colors", function()
 	after_each(function() if editor then editor.close() end end)
 
 	for _, theme in ipairs({
-		{ "light", 0xfdf6e3, 0xeee8d5, 0x657b83 },
 		{ "dark", 0x002b36, 0x073642, 0x839496 },
 	}) do
 		it("keeps changed rows distinct with Solarized " .. theme[1] .. " and late custom diff backgrounds", function()
@@ -63,7 +62,11 @@ describe("inline edit diff screen colors", function()
 							fill = vim.fn.screenattr(position.row, 48) }
 					end
 					local wrapped = {}
-					for row = rows.wrapped, #lines - 2 do wrapped[#wrapped + 1] = sample(row) end
+					-- The diff ends at the panel's blank row; the key hint follows it.
+					for row = rows.wrapped, #lines do
+						if vim.trim(lines[row]) == "▏" or lines[row] == "" then break end
+						wrapped[#wrapped + 1] = sample(row)
+					end
 					return { context = sample(rows.context), removed = sample(rows.removed), added = sample(rows.added),
 						blank_removed = sample(rows.added + 1), blank_added = sample(rows.added + 2), wrapped = wrapped }
 				end

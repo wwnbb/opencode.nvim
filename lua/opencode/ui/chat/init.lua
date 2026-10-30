@@ -71,8 +71,6 @@ local function reset_chat_surface(opts)
 	state.transcript_dirty = true
 end
 local stream_block_key = render_state.stream_block_key
-local render_highlight_signature = render_state.render_highlight_signature
-local highlight_clear_start = render_state.highlight_clear_start
 local clear_chat_highlights = render_state.clear_chat_highlights
 local subscriptions = {}
 local chat_event_handlers_setup = false
@@ -86,6 +84,7 @@ local render_retry_used = false
 local render_retry_token = 0
 local pending_render_data
 local render_schedule_token = 0
+local subscription_epoch = 0
 local winbar_refresh_scheduled = false
 local opening = false
 local configure_buffer_keymaps
@@ -93,6 +92,7 @@ local configure_buffer_keymaps
 local function unsubscribe()
 	-- Invalidate before off(): a failed unsubscribe may already have removed its callback.
 	chat_event_handlers_setup = false
+	subscription_epoch = subscription_epoch + 1
 	for _, item in ipairs(subscriptions) do item.bus.off(item.event, item.callback) end
 	subscriptions = {}
 end
@@ -107,9 +107,11 @@ local function chat_surface_is_visible()
 	return false
 end
 
+-- Config and colorscheme changes are global, so they also drop shared memo pools.
 local function invalidate_cached_render_state()
 	render_state.clear_render_cache()
 	render_state.clear_code_cache()
+	require("opencode.util.memo").clear_all()
 	render_state.invalidate_render_highlights(0)
 	state.force_full_render = true
 	state.transcript_dirty = true
@@ -418,10 +420,12 @@ function M.create()
 		or chat_event_handlers_events ~= events
 		or chat_event_handlers_generation ~= listener_generation
 	then
+	-- The extra hop lets same-tick session_change handlers reset the surface first.
 	subscribe("chat_render", function(data)
 		if not cs.valid(view) then return end
+		local epoch = subscription_epoch
 		vim.schedule(function()
-			M.schedule_render(data)
+			if epoch == subscription_epoch then M.schedule_render(data) end
 		end)
 	end)
 
@@ -542,8 +546,9 @@ end
 
 local function request_focus_for_pending_widgets()
 	local qstate = get_relevant_question()
-	if qstate then
-		return widget_support.request_focus("question", qstate.request_id, qstate.status)
+	-- A question that cannot take focus (one being confirmed) leaves it to the widgets below.
+	if qstate and widget_support.request_focus("question", qstate.request_id, qstate.status) then
+		return true
 	end
 	local current_session = cs.session(view)
 	local in_child_session_view = #state.session_stack > 0
@@ -588,7 +593,8 @@ local function handle_chat_window_closed(closed_winid)
 	state.tabpage = nil
 	state.layout = nil
 	state.float_dims = nil
-	reset_chat_surface()
+	-- Cache keys carry width, revisions and syntax generation; a reopen reuses them.
+	reset_chat_surface({ preserve_render_cache = true })
 	stop_spinner_animation_timer()
 	chat_tasks.stop_task_animation_timer()
 	require("opencode.ui.chat").retire_view(view, { dispose = view ~= cs.state })
@@ -600,6 +606,10 @@ local function handle_chat_window_closed(closed_winid)
 end
 
 function M.dispose()
+	-- Retire a pending throttled render; it would otherwise observe a disposed view.
+	render_schedule_token = render_schedule_token + 1
+	pending_render_data = nil
+	state.render_scheduled = false
 	local ok, err = xpcall(function()
 		stop_spinner_animation_timer()
 		chat_tasks.stop_task_animation_timer()
@@ -641,7 +651,7 @@ function M.open()
 	end
 	opening = true
 	local opened, open_error = xpcall(function()
-	reset_chat_surface()
+	reset_chat_surface({ preserve_render_cache = true })
 
 	window.show(state.config, {
 		on_closed = handle_chat_window_closed,
@@ -695,6 +705,17 @@ function M.session_changed(session, opts)
 	M.schedule_render({ session_id = session.id, force = true })
 end
 
+-- A user may have replaced the transcript with an ordinary file. Leave the file
+-- in its window and close the view there (a surviving mirror takes it over).
+---@return boolean detached
+function M.detach_replaced_window()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid)
+		or vim.api.nvim_win_get_buf(state.winid) == state.bufnr then return false end
+	vim.wo[state.winid].winbar = ""
+	handle_chat_window_closed(state.winid)
+	return true
+end
+
 function M.close()
 	local current = vim.api.nvim_get_current_win()
 	if view.session_bound and state.config.layout == "tab"
@@ -703,7 +724,7 @@ function M.close()
 	end
 	if not state.visible then
 		chat_session_tabs.close_float_window()
-		reset_chat_surface()
+		reset_chat_surface({ preserve_render_cache = true })
 		return
 	end
 
@@ -713,13 +734,7 @@ function M.close()
 	input.close_for_view(view)
 	local details = package.loaded["opencode.ui.chat.execute_details"]
 	if details then cs.module(view, details).close(false) end
-	if state.winid and vim.api.nvim_win_is_valid(state.winid)
-		and vim.api.nvim_win_get_buf(state.winid) ~= state.bufnr then
-		-- A user may have replaced the transcript with an ordinary file.
-		vim.wo[state.winid].winbar = ""
-		handle_chat_window_closed(state.winid)
-		return
-	end
+	if M.detach_replaced_window() then return end
 
 	local closed_winid = state.winid
 	local delegated, result = window.close_native()
@@ -995,6 +1010,7 @@ function M.update_stream_part_block(session_id, message_id, part_id)
 	local content = part.text or ""
 	local content_lines = render.render_content(content, {
 		highlight_code = render_state.code_highlighter(render_state.render_cache_key(effective_session_id, message_id, part_id)),
+		streaming = true,
 	})
 	-- An authoritative replacement can remove the entire Markdown part.
 	-- Rebuild its surrounding margins/ranges rather than leaving a phantom row.
@@ -1110,12 +1126,43 @@ function M.update_spinner_only()
 		return
 	end
 
+	-- Same-width glyph swap: the applied highlight frame still describes the buffer.
+	local applied = state.last_render_highlight_signature
+	local tick = vim.api.nvim_buf_get_changedtick(state.bufnr)
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_text(state.bufnr, footer_line, 0, footer_line, current_frame_bytes, { next_frame })
 	vim.bo[state.bufnr].modifiable = false
+	if applied and applied.tick == tick and #next_frame == current_frame_bytes then
+		applied.tick = vim.api.nvim_buf_get_changedtick(state.bufnr)
+	end
 end
 
 local RENDER_THROTTLE_MS = 16
+local RENDER_THROTTLE_MAX_MS = 200
+local RENDER_COST_SAMPLES = 3
+
+-- Median of the recent render costs: one slow frame (a cold full render) does
+-- not throttle the next ones, two in a row do. With two samples the lower wins.
+local function render_cost()
+	local samples = vim.list_slice(state.render_durations or {})
+	if #samples == 0 then return 0 end
+	table.sort(samples)
+	return samples[math.ceil(#samples / 2)]
+end
+
+local function record_render_cost(duration)
+	state.last_render_duration = duration
+	local samples = state.render_durations or {}
+	samples[#samples + 1] = duration
+	if #samples > RENDER_COST_SAMPLES then table.remove(samples, 1) end
+	state.render_durations = samples
+end
+
+-- Measured from the end of the previous render, so a slow frame cannot be
+-- followed immediately by another one.
+local function render_interval()
+	return math.min(RENDER_THROTTLE_MAX_MS, math.max(RENDER_THROTTLE_MS, 2 * render_cost()))
+end
 
 local function apply_scheduled_render()
 	local data = pending_render_data
@@ -1131,7 +1178,6 @@ local function apply_scheduled_render()
 		return
 	end
 	if (data and data.force) or state.transcript_dirty then state.force_full_render = true end
-	state.last_render_time = vim.uv.now()
 	M.do_render()
 end
 
@@ -1139,25 +1185,31 @@ end
 function M.schedule_render(opts)
 	if not cs.valid(view) then return end
 	pending_render_data = render_coordinator.merge_requests(pending_render_data, opts)
+	-- A user's own action shows its result now; a throttled frame folds into it.
+	if pending_render_data.immediate then
+		render_schedule_token = render_schedule_token + 1
+		state.render_scheduled = false
+		apply_scheduled_render()
+		return
+	end
 	if state.render_scheduled then
 		return
 	end
 
-	local now = vim.uv.now()
-	local elapsed = now - state.last_render_time
+	local elapsed = vim.uv.now() - (state.last_render_time or 0)
+	local interval = render_interval()
 
-	if elapsed >= RENDER_THROTTLE_MS then
+	if elapsed >= interval then
 		apply_scheduled_render()
 	else
 		state.render_scheduled = true
 		render_schedule_token = render_schedule_token + 1
 		local token = render_schedule_token
-		local delay = RENDER_THROTTLE_MS - elapsed
 		vim.defer_fn(function()
-			if token ~= render_schedule_token then return end
+			if token ~= render_schedule_token or not cs.valid(view) then return end
 			state.render_scheduled = false
 			apply_scheduled_render()
-		end, delay)
+		end, interval - elapsed)
 	end
 end
 
@@ -1180,6 +1232,7 @@ function M.do_render()
 	render_schedule_token = render_schedule_token + 1
 	pending_render_data = nil
 	state.render_scheduled = false
+	local render_started = vim.uv.hrtime()
 	local render_generation = (state.render_generation or 0) + 1
 	state.render_generation = render_generation
 	state.render_in_progress = true
@@ -1204,12 +1257,27 @@ function M.do_render()
 
 		local new_lines, nui_lines, content_highlights = M.render()
 		resume_render_animation_timers()
-		local highlight_signature = nil
-		local function current_highlight_signature()
-			if highlight_signature == nil then
-				highlight_signature = render_highlight_signature(content_highlights)
+		local frame = render_state.highlight_frame(content_highlights, nui_lines)
+
+		-- Half-open [range_start, range_end); callers clear the range first.
+		local function apply_range_highlights(range_start, range_end)
+			local range = { min_line = range_start, max_line = range_end }
+			chat_highlights.apply_nui_line_highlights(nui_lines, state.bufnr, chat_hl_ns, 0, range)
+			for _, line_map in ipairs(frame.maps) do
+				for _, pos in pairs(line_map) do
+					if pos.highlights then
+						chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, pos.highlights, pos.start_line, range)
+					end
+				end
 			end
-			return highlight_signature
+			chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, range)
+		end
+
+		local function record_applied_highlights(previous)
+			frame.bufnr = previous and previous.bufnr or state.bufnr
+			frame.tick = previous and previous.tick or vim.api.nvim_buf_get_changedtick(state.bufnr)
+			state.last_render_highlight_signature = frame
+			state.render_highlights_dirty_start = nil
 		end
 
 		local function apply_render_highlights(changed_start)
@@ -1223,37 +1291,10 @@ function M.do_render()
 				requested_start = math.min(requested_start, dirty_start)
 			end
 
-			local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
-			local clear_start = highlight_clear_start(requested_start, content_highlights)
+			local clear_start = render_state.extend_highlight_range(frame, requested_start)
 			clear_chat_highlights(state.bufnr, clear_start, -1)
-
-			chat_highlights.apply_nui_line_highlights(nui_lines, state.bufnr, chat_hl_ns, 0, {
-				min_line = clear_start,
-				max_line = buf_line_count,
-			})
-
-			local function apply_widget_extmarks(line_map)
-				for _, pos in pairs(line_map) do
-					if pos.highlights then
-						chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, pos.highlights, pos.start_line, {
-							min_line = clear_start,
-							max_line = buf_line_count,
-						})
-					end
-				end
-			end
-
-			apply_widget_extmarks(state.questions)
-			apply_widget_extmarks(state.permissions)
-			apply_widget_extmarks(state.edits)
-			apply_widget_extmarks(state.tasks)
-			apply_widget_extmarks(state.tools)
-			chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, {
-				min_line = clear_start,
-				max_line = buf_line_count,
-			})
-			state.last_render_highlight_signature = current_highlight_signature()
-			state.render_highlights_dirty_start = nil
+			apply_range_highlights(clear_start, vim.api.nvim_buf_line_count(state.bufnr))
+			record_applied_highlights()
 		end
 
 		if #new_lines == 0 or #nui_lines == 0 then
@@ -1271,8 +1312,6 @@ function M.do_render()
 		end
 
 		local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-		local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
-
 
 		local function finish_changed_render()
 			finish_frame(widget_cursor, should_scroll)
@@ -1288,43 +1327,58 @@ function M.do_render()
 			return
 		end
 
-		local first_diff = nil
-		local min_len = math.min(#old_lines, #new_lines)
-		for i = 1, min_len do
-			if old_lines[i] ~= new_lines[i] then
-				first_diff = i - 1
-				break
+		local start, old_end, new_end = render_state.diff_lines(old_lines, new_lines)
+		local previous = state.last_render_highlight_signature
+
+		if start == old_end and start == new_end then
+			if previous and render_state.same_frame_highlights(previous, frame, 0, 0) then
+				record_applied_highlights(previous)
+			else
+				apply_render_highlights(state.render_highlights_dirty_start or 0)
 			end
-		end
-
-		if first_diff == nil then
-			if #old_lines == #new_lines then
-				if state.last_render_highlight_signature ~= current_highlight_signature() then
-					apply_render_highlights(state.render_highlights_dirty_start or 0)
-				end
-				if apply_widget_focus_cursor() then
-					redraw()
-				end
-				mark_render_applied()
-				return
+			if apply_widget_focus_cursor() then
+				redraw()
 			end
-			first_diff = min_len
+			mark_render_applied()
+			return
 		end
 
-		first_diff = math.min(first_diff, buf_line_count - 1)
-		if first_diff < 0 then
-			first_diff = 0
-		end
-
-		local replacement = {}
-		for i = first_diff + 1, #new_lines do
-			table.insert(replacement, new_lines[i])
+		-- The unchanged tail keeps its extmarks when the previous frame still
+		-- describes the buffer and its tail highlights are identical.
+		local delta = new_end - old_end
+		local range_start, range_end
+		if previous and previous.bufnr == state.bufnr
+			and previous.tick == vim.api.nvim_buf_get_changedtick(state.bufnr)
+			and #previous.nui_lines == #old_lines and state.render_highlights_dirty_start == nil then
+			range_start, range_end = start, new_end
+			local settled = false
+			while not settled do
+				local first, last = range_start, range_end
+				range_start, range_end = render_state.extend_highlight_range(frame, range_start, range_end)
+				local old_last
+				range_start, old_last = render_state.extend_highlight_range(previous, range_start, range_end - delta)
+				range_end = old_last + delta
+				settled = first == range_start and last == range_end
+			end
+			if not render_state.same_frame_highlights(previous, frame, range_end - delta, range_end, true) then
+				range_start = nil
+			end
 		end
 
 		vim.bo[state.bufnr].modifiable = true
-		vim.api.nvim_buf_set_lines(state.bufnr, first_diff, -1, false, replacement)
-
-		apply_render_highlights(first_diff)
+		-- Clear replaced marks first: set_lines would collapse them into the tail.
+		local clear_end = range_start and range_end - delta or old_end
+		local clear_from = range_start or start
+		if clear_end > clear_from then
+			vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, clear_from, clear_end)
+		end
+		vim.api.nvim_buf_set_lines(state.bufnr, start, old_end, false, vim.list_slice(new_lines, start + 1, new_end))
+		if range_start then
+			apply_range_highlights(range_start, range_end)
+			record_applied_highlights()
+		else
+			apply_render_highlights(start)
+		end
 		vim.bo[state.bufnr].modifiable = false
 
 		finish_changed_render()
@@ -1334,6 +1388,7 @@ function M.do_render()
 
 	if not ok then
 		reset_chat_surface()
+		require("opencode.util.memo").clear_all()
 		state.force_full_render = true
 		logger.error("Chat render failed", { error = render_error })
 		if not render_retry_used then
@@ -1351,6 +1406,10 @@ function M.do_render()
 		vim.bo[state.bufnr].modifiable = false
 	end
 	state.render_in_progress = false
+	-- uv.now() is cached for the loop iteration (and drives spinner frames), so
+	-- do not refresh it here; add the measured cost to approximate the end time.
+	record_render_cost((vim.uv.hrtime() - render_started) / 1e6)
+	state.last_render_time = vim.uv.now() + state.last_render_duration
 end
 
 -- ─── Cross-domain key routers ─────────────────────────────────────────────────

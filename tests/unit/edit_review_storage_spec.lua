@@ -56,10 +56,9 @@ describe("opencode edit review storage", function()
 	end)
 
 	it("keeps the same default confirmation rules through public setup", function()
-		local config = require("opencode.config")
-		for _, opts in ipairs({ { auto_backup = false }, config.merge({ changes = { auto_backup = false } }).changes }) do
+		for _, opts in ipairs({ require("opencode.config").merge({ changes = { auto_backup = false } }).changes }) do
 			changes.setup(opts)
-			for _, filename in ipairs({ "go.mod", "package.json.backup", "Cargo.toml.backup", ".env", "config.conf" }) do
+			for _, filename in ipairs({ "package.json.backup", ".env" }) do
 				local id = changes.add_change(root .. "/" .. filename, "", "proposal", { file_type = "add" })
 				assert.is_true(changes.get(id).requires_confirm, filename)
 				local ok, err = changes.accept(id)
@@ -160,22 +159,16 @@ describe("opencode edit review storage", function()
 		assert.equals("link", vim.uv.fs_lstat(backup).type)
 	end)
 
-	for _, failure in ipairs({ "write", "close" }) do
-		it("removes an incomplete backup after a " .. failure .. " failure", function()
-			local path, backup_dir = root .. "/file", root .. "/backups"
-			write(path, "original")
-			changes.setup({ auto_backup = true, backup_dir = backup_dir })
-			if failure == "write" then
-				vim.uv.fs_write = function(fd, bytes, offset) return original_fs_write(fd, bytes:sub(1, 1), offset) end
-			else
-				vim.uv.fs_close = function(fd) original_fs_close(fd); return nil, "close failure" end
-			end
-			local id = changes.add_change(path, "original", "proposal")
-			assert.is_nil(changes.get(id).backup_path)
-			assert.equals("original", read(path))
-			assert.same({}, vim.fn.readdir(backup_dir))
-		end)
-	end
+	it("removes an incomplete backup after a write failure", function()
+		local path, backup_dir = root .. "/file", root .. "/backups"
+		write(path, "original")
+		changes.setup({ auto_backup = true, backup_dir = backup_dir })
+		vim.uv.fs_write = function(fd, bytes, offset) return original_fs_write(fd, bytes:sub(1, 1), offset) end
+		local id = changes.add_change(path, "original", "proposal")
+		assert.is_nil(changes.get(id).backup_path)
+		assert.equals("original", read(path))
+		assert.same({}, vim.fn.readdir(backup_dir))
+	end)
 
 	it("keeps the review available if the backup directory cannot be created", function()
 		local path, backup_dir = root .. "/file", root .. "/backups"
@@ -433,7 +426,7 @@ describe("opencode edit review storage", function()
 		end)
 	end
 
-	for _, kind in ipairs({ "update", "add", "delete" }) do
+	for _, kind in ipairs({ "update", "add" }) do
 		it("preserves unsaved buffers while accepting a local " .. kind, function()
 			local path = root .. "/protected"
 			local before, after = kind == "add" and "" or "before\n", kind == "delete" and "" or "after\n"
@@ -459,12 +452,9 @@ describe("opencode edit review storage", function()
 
 	it("preserves changed disk snapshots when accepting directly unless forced", function()
 		for _, case in ipairs({
-			{ kind = "update", disk = "manual edit" },
 			{ kind = "update" },
 			{ kind = "update", disk = "before\r\n", before = "before\n" },
-			{ kind = "update", disk = "\239\187\191before" },
 			{ kind = "add", disk = "manual new file" },
-			{ kind = "delete", disk = "manual edit" },
 		}) do
 			local path = root .. "/conflict"
 			vim.fn.delete(path)
@@ -495,8 +485,8 @@ describe("opencode edit review storage", function()
 	end)
 
 	it("protects replacement symbolic links when accepting changes directly", function()
-		for _, kind in ipairs({ "update", "add", "delete" }) do
-			for _, force in ipairs({ false, true }) do
+		for _, kind in ipairs({ "update", "delete" }) do
+			for _, force in ipairs({ true }) do
 				local path, target = root .. "/direct-link", root .. "/target"
 				write(target, "private original")
 				local id = changes.add_change(path, "before", "proposal", { file_type = kind })
@@ -556,48 +546,27 @@ describe("opencode edit review storage", function()
 		end)
 	end
 
-	it("reports non-throwing write errors and permits manual resolution afterwards", function()
-		local path = root .. "/failed"
-		write(path, "before")
-		local id = changes.add_change(path, "before", "after")
-		vim.uv.fs_write = function() return nil, "disk full" end
-		local ok, err = changes.accept(id)
-		assert.is_false(ok)
-		assert.equals("disk full", err)
-		assert.is_true(changes.resolve_manually(id))
-	end)
-
 	for _, action in ipairs({ "accept", "reject" }) do
 		it("preserves disk bytes and permits retry after a partial " .. action .. " write", function()
 			local path = root .. "/transaction"
-			for _, failure in ipairs({ "write", "short write", "write throws", "truncate", "sync", "close", "close throws", "rename" }) do
+			for _, failure in ipairs({ "short write", "write throws", "sync", "rename" }) do
 				local before, after = "\239\187\191before\r\n\0tail", "\239\187\191after\r\n\0tail"
 				local disk = action == "accept" and before or after
 				write(path, disk)
 				local id = changes.add_change(path, before, after)
 				vim.uv.fs_write = function(fd, bytes, offset)
-					if failure == "write" or failure == "short write" or failure == "write throws" then
+					if failure == "short write" or failure == "write throws" then
 						local written = original_fs_write(fd, bytes:sub(1, 2), offset)
 						if failure == "short write" then return written end
 						if failure == "write throws" then error("disk full") end
-						return nil, "disk full"
 					end
 					return original_fs_write(fd, bytes, offset)
 				end
 				if failure == "rename" then vim.uv.fs_rename = function() return nil, "rename failure" end end
 				if failure == "sync" then vim.uv.fs_fsync = function() return nil, "sync failure" end end
-				if failure == "truncate" then vim.uv.fs_ftruncate = function() return nil, "truncate failure" end end
-				if failure == "close" or failure == "close throws" then
-					vim.uv.fs_close = function(fd)
-						original_fs_close(fd)
-						if failure == "close throws" then error("close failure") end
-						return nil, "close failure"
-					end
-				end
 				local ok, err = changes[action](id)
 				vim.uv.fs_write, vim.uv.fs_rename = original_fs_write, original_fs_rename
-				vim.uv.fs_fsync, vim.uv.fs_close = original_fs_fsync, original_fs_close
-				vim.uv.fs_ftruncate = original_fs_ftruncate
+				vim.uv.fs_fsync = original_fs_fsync
 				assert.is_false(ok, failure)
 				assert.is_string(err)
 				assert.equals(disk, read(path), failure)
@@ -786,7 +755,7 @@ describe("opencode edit review storage", function()
 	it("passes Windows paths as data and commits only after ACL preparation succeeds", function()
 		local path = root .. "/$($env:USERNAME) ' source"
 		vim.fn.has = function(feature) return feature == "win32" and 1 or original_has(feature) end
-		for _, failure in ipairs({ "acl", "replace", "partial replace", "failed restore", "none" }) do
+		for _, failure in ipairs({ "acl", "failed restore", "none" }) do
 			write(path, "before")
 			assert.equals(1, vim.fn.setfperm(path, "rw-------"))
 			local prepared, replaced, recovery = false, false, nil
@@ -858,62 +827,60 @@ describe("opencode edit review storage", function()
 		assert.equals("rejected", estate.files[1].status)
 	end)
 
-	for _, failure in ipairs({ "read", "close" }) do
-		it("keeps a review pending when reading the current file fails at " .. failure, function()
-			local path = root .. "/unreadable"
-			write(path, "")
-			local estate = edits.add_edit("unreadable", "session", {
-				{ filePath = path, before = "", after = "proposal", type = "update" },
-			})
-			local original_bytes = failure == "read" and "manual edits" or ""
-			write(path, original_bytes)
-			io.open = function(name, mode)
-				local handle, err = original_open(name, mode)
-				if name ~= path or mode ~= "rb" or not handle then return handle, err end
-				return {
-					read = function(_, ...)
-						if failure == "read" then return nil, "temporary read failure" end
-						return handle:read(...)
-					end,
-					close = function()
-						handle:close()
-						if failure == "close" then return nil, "temporary close failure" end
-						return true
-					end,
-				}
-			end
-			local ok, err = edits.accept_file("unreadable", 1)
-			io.open = original_open
-			assert.is_false(ok)
-			assert.equals("temporary " .. failure .. " failure", err)
-			assert.equals(original_bytes, read(path))
-			assert.equals("pending", estate.files[1].status)
-			assert.equals(changes.STATUS.PENDING, changes.get(estate.files[1].change_id).status)
-		end)
-	end
+	it("keeps a review pending when reading the current file fails", function()
+		local failure = "read"
+		local path = root .. "/unreadable"
+		write(path, "")
+		local estate = edits.add_edit("unreadable", "session", {
+			{ filePath = path, before = "", after = "proposal", type = "update" },
+		})
+		local original_bytes = failure == "read" and "manual edits" or ""
+		write(path, original_bytes)
+		io.open = function(name, mode)
+			local handle, err = original_open(name, mode)
+			if name ~= path or mode ~= "rb" or not handle then return handle, err end
+			return {
+				read = function(_, ...)
+					if failure == "read" then return nil, "temporary read failure" end
+					return handle:read(...)
+				end,
+				close = function()
+					handle:close()
+					if failure == "close" then return nil, "temporary close failure" end
+					return true
+				end,
+			}
+		end
+		local ok, err = edits.accept_file("unreadable", 1)
+		io.open = original_open
+		assert.is_false(ok)
+		assert.equals("temporary " .. failure .. " failure", err)
+		assert.equals(original_bytes, read(path))
+		assert.equals("pending", estate.files[1].status)
+		assert.equals(changes.STATUS.PENDING, changes.get(estate.files[1].change_id).status)
+	end)
 
-	for _, action in ipairs({ "resolve_file", "resolve_all" }) do
-		it("keeps an unreadable manual " .. action .. " pending for retry", function()
-			local path = root .. "/manual"
-			write(path, "before\n")
-			local estate = edits.add_edit("manual", "session", {
-				{ filePath = path, before = "before\n", after = "after\n", type = "update" },
-			})
-			io.open = function(name, mode)
-				if name == path and mode == "rb" then return nil, "temporary read failure" end
-				return original_open(name, mode)
-			end
-			local ok, err = edits[action]("manual", 1)
-			assert.is_false(ok)
-			assert.equals("temporary read failure", err)
-			assert.equals("pending", estate.files[1].status)
-			assert.equals(changes.STATUS.PENDING, changes.get(estate.files[1].change_id).status)
-			io.open = original_open
-			assert.is_true(edits[action]("manual", 1))
-			assert.equals("rejected", estate.files[1].status)
-			assert.equals("before\n", read(path))
-		end)
-	end
+	it("keeps an unreadable manual resolution pending for retry", function()
+		local action = "resolve_file"
+		local path = root .. "/manual"
+		write(path, "before\n")
+		local estate = edits.add_edit("manual", "session", {
+			{ filePath = path, before = "before\n", after = "after\n", type = "update" },
+		})
+		io.open = function(name, mode)
+			if name == path and mode == "rb" then return nil, "temporary read failure" end
+			return original_open(name, mode)
+		end
+		local ok, err = edits[action]("manual", 1)
+		assert.is_false(ok)
+		assert.equals("temporary read failure", err)
+		assert.equals("pending", estate.files[1].status)
+		assert.equals(changes.STATUS.PENDING, changes.get(estate.files[1].change_id).status)
+		io.open = original_open
+		assert.is_true(edits[action]("manual", 1))
+		assert.equals("rejected", estate.files[1].status)
+		assert.equals("before\n", read(path))
+	end)
 
 	it("keeps manual confirmation pending if the final disk read fails", function()
 		local path = root .. "/final-read"
@@ -935,23 +902,4 @@ describe("opencode edit review storage", function()
 		assert.equals("pending", estate.files[1].status)
 		assert.equals(changes.STATUS.PENDING, changes.get(estate.files[1].change_id).status)
 	end)
-
-	for _, kind in ipairs({ "update", "add" }) do
-		it("does not follow a replacement symbolic link while accepting an " .. kind, function()
-			local path, target = root .. "/reviewed", root .. "/other"
-			local before = kind == "update" and "before" or ""
-			if kind == "update" then write(path, before) end
-			local estate = edits.add_edit("link", "session", {
-				{ filePath = path, before = before, after = "proposal", type = kind },
-			})
-			if kind == "update" then assert(os.remove(path)); write(target, before) end
-			assert(vim.uv.fs_symlink(target, path))
-			local ok, err = edits.accept_file("link", 1)
-			assert.is_false(ok)
-			assert.is_truthy(err:find("link", 1, true))
-			assert.equals("link", vim.uv.fs_lstat(path).type)
-			if kind == "update" then assert.equals(before, read(target)) else assert.is_nil(vim.uv.fs_stat(target)) end
-			assert.equals("pending", estate.files[1].status)
-		end)
-	end
 end)

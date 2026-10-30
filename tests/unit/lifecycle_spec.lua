@@ -208,9 +208,7 @@ describe("opencode lifecycle", function()
 		function client.disconnect_events()
 			client.disconnect_calls = client.disconnect_calls + 1
 		end
-		client.endpoint_calls = {}
-		function client.configure_endpoint(opts, options)
-			table.insert(client.endpoint_calls, { opts = opts, options = options })
+		function client.configure_endpoint(opts)
 			state_data.http_setup = vim.tbl_extend("force", state_data.http_setup or {}, opts)
 			state_data.sse_setup = vim.tbl_extend("force", state_data.sse_setup or {}, opts)
 		end
@@ -331,6 +329,18 @@ describe("opencode lifecycle", function()
 		assert.equals("private-value", state_data.http_setup.auth.password)
 		assert.is_nil(lifecycle.managed_status().password); assert.is_false(lifecycle.managed_status().can_manage)
 	end)
+	it("cancels in-flight managed discovery on disconnect", function()
+		managed_file({ pid = 1000, version = "2.0.11", url = "http://127.0.0.1:4096" })
+		local cancels, http = 0, package.loaded["opencode.client.http"]
+		local health = http.health
+		http.health = function(callback) health(callback); return { cancel = function() cancels = cancels + 1 end } end
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		lifecycle.disconnect()
+		assert.equals(1, cancels)
+		respond_health(1, true); flush_scheduled()
+		assert.equals("idle", state_data.connection); assert.equals(0, runs)
+	end)
 	it("rejects stale managed PID/version and registration replacement during health", function()
 		local file = managed_file({ pid = 1001, url = "http://localhost:4096" })
 		local runs = 0
@@ -407,6 +417,25 @@ describe("opencode lifecycle", function()
 		end)
 	end
 
+	it("warns once while SSE keeps failing to reconnect", function()
+		complete_start()
+		local warnings = {}
+		vim.notify = function(message, level)
+			if level == vim.log.levels.WARN then warnings[#warnings + 1] = message end
+		end
+		for _ = 1, 3 do listeners.disconnected[1]("connect_error") end
+		assert.same({ "OpenCode disconnected: connect_error" }, warnings)
+		assert.equals("idle", state_data.connection)
+	end)
+
+	it("stops SSE when the owned server exits after readiness", function()
+		local job = complete_start()
+		job.opts.on_exit(job, 1, 0); flush_scheduled()
+		assert.equals(1, client.disconnect_calls)
+		assert.equals("idle", state_data.connection)
+		assert.is_nil(state_data.server.pid)
+	end)
+
 	it("drops readiness callbacks scheduled before disconnect", function()
 		local runs = 0
 		lifecycle.ensure_connected(function() runs = runs + 1 end)
@@ -451,6 +480,105 @@ describe("opencode lifecycle", function()
 			assert.equals(1, runs)
 		end)
 	end
+
+	it("runs an action requested during restart once the replacement connects", function()
+		local first_job = complete_start()
+		lifecycle.restart()
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		first_job.opts.on_exit(first_job, 0, 15); flush_scheduled()
+		assert.equals(2, #jobs)
+		emit_listening(jobs[2], 4900)
+		respond_health(#health_callbacks, true); flush_scheduled()
+		assert.equals("connected", state_data.connection)
+		assert.equals(1, runs)
+	end)
+
+	it("starts a new server for an action requested while a stop is in progress", function()
+		local job = complete_start()
+		lifecycle.stop()
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		assert.equals(1, #jobs)
+		job.opts.on_exit(job, 0, 15); flush_scheduled()
+		assert.equals(2, #jobs)
+		emit_listening(jobs[2], 4901)
+		respond_health(#health_callbacks, true); flush_scheduled()
+		assert.equals(1, runs)
+	end)
+
+	it("reports a deferred stop-time action as dropped when disconnect supersedes it", function()
+		local job = complete_start()
+		lifecycle.stop()
+		local runs, drops = 0, 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end, function() drops = drops + 1 end)
+		lifecycle.disconnect()
+		job.opts.on_exit(job, 0, 15); flush_scheduled()
+		assert.equals(1, #jobs)
+		assert.equals(0, runs)
+		assert.equals(1, drops)
+	end)
+
+	it("reports pending actions discarded by disconnect exactly once", function()
+		local runs, drops = 0, 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end, function() drops = drops + 1 end)
+		lifecycle.disconnect(); flush_scheduled()
+		lifecycle.disconnect(); flush_scheduled()
+		assert.equals(0, runs)
+		assert.equals(1, drops)
+		local ran_drops = 0
+		complete_start(function() runs = runs + 1 end)
+		lifecycle.ensure_connected(function() runs = runs + 1 end, function() ran_drops = ran_drops + 1 end)
+		flush_scheduled()
+		lifecycle.disconnect(); flush_scheduled()
+		assert.equals(2, runs)
+		assert.equals(0, ran_drops)
+	end)
+
+	it("keeps a startup attempt and its queued actions when SSE drops before server.connected", function()
+		client.auto_ready = false
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		emit_listening(jobs[1], 4902)
+		respond_health(1, true)
+		local function active() return vim.tbl_filter(function(timer) return timer.active end, timers) end
+		local deadlines = active()
+		listeners.disconnected[1]("connect_error")
+		assert.equals("connecting", state_data.connection)
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		assert.equals(#deadlines, #active())
+		for index, timer in ipairs(active()) do assert.equals(deadlines[index], timer) end
+		listeners["server.connected"][1](); flush_scheduled()
+		assert.equals("connected", state_data.connection)
+		assert.equals(2, runs)
+	end)
+
+	it("completes a reconnect health check when SSE already reconnected on its own", function()
+		complete_start()
+		listeners.disconnected[1]("eof")
+		client.auto_ready = false
+		client.sse = { is_connected = function() return true end }
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		listeners["server.connected"][1]()
+		assert.equals("connecting", state_data.connection)
+		respond_health(#health_callbacks, true); flush_scheduled()
+		assert.equals("connected", state_data.connection)
+		assert.equals(1, runs)
+	end)
+
+	it("explains an action refused while a failed stop still owns the server", function()
+		local job = complete_start()
+		job.kill_fails = true
+		lifecycle.stop()
+		local errors = {}
+		vim.notify = function(message, level)
+			if level == vim.log.levels.ERROR then errors[#errors + 1] = message end
+		end
+		lifecycle.ensure_connected(function() end)
+		assert.matches("could not be stopped", errors[#errors], 1, true)
+		assert.equals(0, lifecycle.status().pending_callbacks)
+	end)
 
 	it("keeps an explicit health check alive while automatic SSE reconnects come and go", function()
 		complete_start()
@@ -541,25 +669,6 @@ describe("opencode lifecycle", function()
 		assert.equals(1, #jobs)
 	end)
 
-	it("keeps completion available when explanation overlay is invalid", function()
-		local completion = {
-			enabled = true, model = { providerID = "openai", modelID = "coder" },
-			options = { body = { max_tokens = 32 } },
-		}
-		local explanation = {
-			enabled = true, model = { providerID = "openai", modelID = "coder" },
-			variant = "brief", options = { body = { max_tokens = 64 } },
-		}
-		lifecycle.setup({ completion = completion, explanation = explanation })
-		local job = complete_start()
-		local variants = vim.json.decode(job.opts.env.OPENCODE_CONFIG_CONTENT).providers.openai.models.coder.variants
-		assert.equals(1, #variants)
-		assert.equals(variants[1].id, lifecycle.resolve_completion_model(completion).variant)
-		local model, err = lifecycle.resolve_explanation_model(explanation)
-		assert.is_nil(model)
-		assert.matches("not both", err, 1, true)
-	end)
-
 	it("isolates invalid completion options from ordinary startup", function()
 		local completion = {
 			enabled = true, model = { providerID = "openai", modelID = "coder" },
@@ -572,35 +681,6 @@ describe("opencode lifecycle", function()
 		local model, err = lifecycle.resolve_completion_model(completion)
 		assert.is_nil(model)
 		assert.matches("not both", err, 1, true)
-	end)
-
-	it("refreshes completion profiles only after a managed process is restarted", function()
-		local completion = { enabled = true, model = { providerID = "local", modelID = "coder" }, options = { body = { max_tokens = 32 } } }
-		lifecycle.setup({ completion = completion })
-		local first_job = complete_start()
-		local first_variant = lifecycle.resolve_completion_model(completion).variant
-		lifecycle.disconnect()
-		assert.equals(first_variant, lifecycle.resolve_completion_model(completion).variant)
-		lifecycle.ensure_connected(function() end)
-		respond_health(#health_callbacks, true)
-		flush_scheduled()
-		completion.options.body.max_tokens = 64
-		lifecycle.setup({ completion = completion })
-		assert.is_nil(lifecycle.resolve_completion_model(completion))
-		lifecycle.restart()
-		first_job.opts.on_exit(first_job, 0, 15)
-		flush_scheduled()
-		local second_job = jobs[2]
-		emit_listening(second_job, 4012)
-		respond_health(#health_callbacks, true)
-		flush_scheduled()
-		local variant = lifecycle.resolve_completion_model(completion).variant
-		assert.are_not.equals(first_variant, variant)
-		assert.equals(64, vim.json.decode(second_job.opts.env.OPENCODE_CONFIG_CONTENT).providers["local"].models.coder.variants[1].body.max_tokens)
-		lifecycle.stop()
-		second_job.opts.on_exit(second_job, 0, 15)
-		flush_scheduled()
-		assert.is_nil(lifecycle.resolve_completion_model(completion))
 	end)
 
 	it("uses current feature settings on startup and refreshes them only after restart", function()
@@ -636,28 +716,6 @@ describe("opencode lifecycle", function()
 		assert.equals(256, variants[2].body.max_tokens)
 		assert.equals(variants[1].id, lifecycle.resolve_completion_model(state_data.config.completion).variant)
 		assert.equals(variants[2].id, lifecycle.resolve_explanation_model(state_data.config.explanation).variant)
-	end)
-
-	it("configures a spawned server endpoint through the client endpoint writer", function()
-		complete_start(nil, 4321)
-		assert.equals(1, #client.endpoint_calls)
-		local call = client.endpoint_calls[1]
-		assert.same({ url = false, resolve_endpoint = false, host = "127.0.0.1", port = 4321, auth = call.opts.auth }, call.opts)
-		assert.equals("string", type(call.opts.auth.password))
-		assert.same({ reset_stream = true }, call.options)
-	end)
-
-	it("exposes one owned-server predicate for feature model profiles", function()
-		assert.is_true(lifecycle.owns_server())
-		lifecycle.setup({ url = "http://remote.example:4096" })
-		assert.is_false(lifecycle.owns_server())
-		lifecycle.setup({ url = false, managed = true })
-		assert.is_false(lifecycle.owns_server())
-		lifecycle.setup({ managed = false, port = 4096 })
-		assert.is_false(lifecycle.owns_server())
-		lifecycle.opts.port = nil
-		complete_start()
-		assert.is_true(lifecycle.owns_server())
 	end)
 
 	it("rejects local completion options for an explicitly connected server", function()

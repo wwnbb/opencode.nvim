@@ -37,7 +37,8 @@ describe("permission widget", function()
 	it("shows a shell request's command once, as a bash command block", function()
 		local rendered = text((widget.render(shell(), { width = 80 })))
 		assert.equals(1, count(rendered, "mkdir -p"))
-		assert.is_truthy(rendered:find("\n▏  shell\n▏\n▏  $ ssh qant_test 'set -e\n▏    mkdir -p", 1, true))
+		-- The header names the tool; a bash shell request needs no title line of its own.
+		assert.is_truthy(rendered:find("▏  # Permission required for Shell\n▏\n▏  $ ssh qant_test 'set -e\n▏    mkdir -p", 1, true))
 		assert.is_truthy(rendered:find("▏  Description: Install Neovim", 1, true))
 		assert.is_nil(rendered:find("Path:", 1, true))
 		assert.is_nil(rendered:find("Resource:", 1, true))
@@ -146,10 +147,23 @@ describe("permission widget", function()
 		}, compact))), "\n"))
 	end)
 
+	it("titles a permission by name only when it is not the asking tool's own", function()
+		local function edit(tool_name)
+			return text((widget.render({
+				permission_id = "edit", permission_type = "neovim_edit", status = "pending", selected_option = 1,
+				tool_name = tool_name, patterns = { "/srv/notes.txt" }, always = { "*" }, tool_input = { filePath = "/srv/notes.txt" },
+			}, { width = 80 })))
+		end
+		assert.is_truthy(edit("neovim_edit"):find("▏  # Permission required for Neovim Edit\n▏\n▏  Path: /srv/notes.txt\n▏\n▏  ❯ 1.", 1, true))
+		local other = edit("task")
+		assert.is_truthy(other:find("▏  # Permission required for Task\n▏\n▏  Neovim Edit\n▏  Path: /srv/notes.txt", 1, true))
+		assert.is_nil(other:find("neovim_edit", 1, true))
+	end)
+
 	it("keeps the full panel for a decided request without a tool row", function()
 		local lines, _, meta = widget.render(shell({ status = "approved", reply = "once" }), { width = 80 })
 		local rendered = text(lines)
-		assert.is_truthy(rendered:find("# Permission allowed for Bash (once)", 1, true))
+		assert.is_truthy(rendered:find("# Permission allowed for Shell (once)", 1, true))
 		assert.equals(1, count(rendered, "mkdir -p"))
 		assert.is_nil(meta.attached)
 	end)

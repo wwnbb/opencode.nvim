@@ -6,6 +6,8 @@ local M = {}
 local widget_base = require("opencode.ui.widget_base")
 local panel = require("opencode.ui.panel")
 local syntax = require("opencode.ui.syntax")
+local text_util = require("opencode.util.text")
+local tool_names = require("opencode.util.tool_names")
 
 local PANEL_PREFIX = "▏  "
 local PANEL_EMPTY = "▏"
@@ -22,6 +24,7 @@ local icons = {
 	resolved = "◆",
 	expanded = "▾",
 	collapsed = "▸",
+	selected = "❯",
 	unselected = " ",
 }
 
@@ -88,20 +91,14 @@ local function ensure_highlights()
 	set_panel_hl("OpenCodeEditDiffAdd", "String", "DiffAdd")
 	set_panel_hl("OpenCodeEditDiffDelete", "DiagnosticError", "DiffDelete")
 	set_panel_hl("OpenCodeEditDiffContext", "Normal", nil)
-	set_panel_hl("OpenCodeEditDiffMeta", "Comment", "Normal")
-	set_panel_hl("OpenCodeEditDiffHeader", "Special", "Title", { bold = true })
 	set_panel_hl("OpenCodeEditDiffSeparator", "LineNr", "Comment")
-
-	vim.api.nvim_set_hl(0, "OpenCodeEditPath", {
-		fg = pick_fg({ "Normal" }, nil),
-		bold = true,
-	})
-	vim.api.nvim_set_hl(0, "OpenCodeEditStatAdd", {
-		fg = pick_fg({ "String", "Added", "DiagnosticOk", "DiffAdd" }, 0x00aa00),
-	})
-	vim.api.nvim_set_hl(0, "OpenCodeEditStatDelete", {
-		fg = pick_fg({ "DiagnosticError", "Removed", "ErrorMsg", "DiffDelete" }, 0xdd0000),
-	})
+	-- Paths read the same in every interactive widget: String, bold.
+	set_panel_hl("OpenCodeEditPath", "String", "Normal", { bold = true })
+	set_panel_hl("OpenCodeEditStatAdd", "String", nil,
+		{ fg = pick_fg({ "String", "Added", "DiagnosticOk", "DiffAdd" }, 0x00aa00) })
+	set_panel_hl("OpenCodeEditStatDelete", "DiagnosticError", nil,
+		{ fg = pick_fg({ "DiagnosticError", "Removed", "ErrorMsg", "DiffDelete" }, 0xdd0000) })
+	vim.api.nvim_set_hl(0, "OpenCodeEditSelectedMarker", widget_base.selected_marker_hl(get_hl))
 	vim.api.nvim_set_hl(0, "OpenCodeEditDiffLineNr", {
 		fg = get_hl("LineNr").fg or get_hl("Comment").fg,
 		bg = get_hl("CursorLine").bg,
@@ -114,10 +111,25 @@ require("opencode.ui.highlights").register("opencode.ui.edit_widget", ensure_hig
 ---@param text string|nil
 ---@return string
 local function normalize_path(text)
-	if not text or text == "" then
-		return "unknown"
+	local path = text_util.normalize_path(text)
+	return path ~= "" and path or "unknown"
+end
+
+---Display name of the tool that proposed the edit, or "Edit".
+---@param edit_state table
+---@return string
+local function tool_label(edit_state)
+	local message_id, call_id = edit_state.message_id, edit_state.call_id
+	if type(message_id) == "string" and message_id ~= "" and type(call_id) == "string" and call_id ~= "" then
+		local ok, sync = pcall(require, "opencode.sync")
+		for _, part in ipairs(ok and type(sync.get_parts) == "function" and sync.get_parts(message_id) or {}) do
+			if part.callID == call_id then
+				local name = tool_names.display_name(part.tool)
+				if name ~= "" then return name end
+			end
+		end
 	end
-	return vim.fn.fnamemodify(text, ":~:.")
+	return "Edit"
 end
 
 ---@param result table
@@ -283,10 +295,12 @@ local function build_header(edit_state, status_label)
 	local added, removed = total_stats(edit_state)
 	local stats = added and string.format("+%d -%d", added, removed) or ""
 	local target = count == 1 and file_path(files[1]) or string.format("%d %s", count, file_count_label(count))
-	local header = "# Edit " .. target .. (stats ~= "" and " " .. stats or "")
+	local header = "# " .. tool_label(edit_state) .. " " .. target .. (stats ~= "" and " · " .. stats or "")
 
 	if status_label and status_label ~= "" then
 		header = header .. " (" .. status_label .. ")"
+	elseif edit_state.submitting then
+		header = header .. " (submitting)"
 	elseif edit_state.review_mode == "readonly" then
 		header = header .. " (review)"
 	end
@@ -294,16 +308,7 @@ local function build_header(edit_state, status_label)
 	return header, target, stats
 end
 
----@param message string|nil
----@return number
-local function message_line_count(message)
-	local text = vim.trim(message or "")
-	if text == "" then
-		return 0
-	end
-	return #vim.split(text, "\n", { plain = true })
-end
-
+---"Message: value", with continuation and wrapped rows aligned under the value.
 ---@param result table
 ---@param message string|nil
 local function append_message_lines(result, message)
@@ -312,9 +317,16 @@ local function append_message_lines(result, message)
 		return
 	end
 
+	local head = "Message: "
+	local indent = string.rep(" ", #head)
 	for i, part in ipairs(vim.split(text, "\n", { plain = true })) do
-		local prefix = i == 1 and "Message: " or "         "
-		add_panel_line(result, prefix .. part, "OpenCodeEditMuted")
+		local _, _, rows = panel_helpers.add_raw_line(result, part, "OpenCodeEditOutput", {
+			body_prefix = i == 1 and head or indent,
+			continuation_prefix = indent,
+		})
+		if i == 1 then
+			panel_helpers.highlight_text(result, rows, head, "OpenCodeEditMuted")
+		end
 	end
 end
 
@@ -422,20 +434,27 @@ local function add_wrapped_syntax_highlights(result, rows, text, lang)
 	vim.list_extend(result.highlights, syntax.project_highlights(captures, { text }, { rows }))
 end
 
+---"<marker> <n>. <icon> <type> <path> · <stats>"; digits select files like options.
 ---@param result table
 ---@param file table
+---@param index integer
 ---@param is_selected boolean
+---@param show_marker boolean
 ---@param is_expanded boolean
 ---@param readonly boolean
 ---@return number start_line
 ---@return number end_line
-local function append_file_line(result, file, is_selected, is_expanded, readonly)
+local function append_file_line(result, file, index, is_selected, show_marker, is_expanded, readonly)
 	local path = file_path(file)
 	local stats = file_stats(file, readonly)
 	local icon = file_icon(file, is_expanded)
 	local type_label = file_type_label(file)
-	local line_text = string.format("%s %s %s  %s", icon, type_label, path, stats)
+	local marker = show_marker and is_selected and icons.selected or icons.unselected
+	local line_text = string.format("%s %d. %s %s %s · %s", marker, index, icon, type_label, path, stats)
 	local line_index, _, rows = add_panel_line(result, line_text, file_hl_group(file, is_selected))
+	if marker ~= icons.unselected then
+		panel_helpers.highlight_text(result, rows, marker, "OpenCodeEditSelectedMarker")
+	end
 	local path_hl = file.status == "accepted" and "OpenCodeEditAccepted"
 		or file.status == "rejected" and "OpenCodeEditRejected"
 		or file.status == "resolved" and "OpenCodeEditResolved"
@@ -522,15 +541,27 @@ local function append_inline_diff(result, file)
 	return start_line, end_line
 end
 
+---Key hint for a pending review, naming only the keys that act on it.
 ---@param edit_state table
----@return number
-function M.get_first_file_line(edit_state)
-	local line = 3 -- top padding + header + panel blank
-	local messages = message_line_count(edit_state and edit_state.message)
-	if messages > 0 then
-		line = line + messages + 1 -- message lines + separating panel blank
+---@return string|nil
+local function review_hint(edit_state)
+	local keymaps = require("opencode.util.keymap")
+	local keys = (require("opencode.ui.chat.state").state.config or {}).keymaps
+	local function key(action) return keymaps.label("chat", action, keys) end
+	local items = {}
+	local count = #(edit_state.files or {})
+	if count > 1 then
+		local select_item, move_item = widget_base.selection_hint(count, keys)
+		items[#items + 1], items[#items + 2] = select_item, move_item
 	end
-	return line
+	items[#items + 1] = { key("accept_edit"), "accept" }
+	items[#items + 1] = { key("reject_edit"), "reject" }
+	if edit_state.review_mode ~= "readonly" then
+		items[#items + 1] = { key("resolve_edit"), "resolve" }
+	end
+	items[#items + 1] = { key("toggle_diff"), "diff" }
+	items[#items + 1] = { key("widget_message"), "message" }
+	return keymaps.hint(items, { omit_disabled = true })
 end
 
 local function render_edit(edit_state, resolution_label, header_hl, server_apply_notice, opts)
@@ -552,8 +583,11 @@ local function render_edit(edit_state, resolution_label, header_hl, server_apply
 	local selected = edit_state.selected_file or 1
 	local expanded_files = edit_state.expanded_files or {}
 	local readonly = edit_state.review_mode == "readonly"
+	local pending = resolution_label == nil and not edit_state.submitting
+	local selected_line
 	for i, file in ipairs(edit_state.files or {}) do
-		local file_start, file_end = append_file_line(result, file, i == selected, expanded_files[i] == true, readonly)
+		local file_start, file_end = append_file_line(result, file, i, i == selected, pending, expanded_files[i] == true, readonly)
+		if i == selected then selected_line = file_start end
 		if expanded_files[i] and file.diff_lines and #file.diff_lines > 0 then
 			add_panel_blank(result)
 			local _, diff_end = append_inline_diff(result, file)
@@ -577,11 +611,17 @@ local function render_edit(edit_state, resolution_label, header_hl, server_apply
 	end
 
 	add_panel_blank(result)
+	local hint = pending and #(edit_state.files or {}) > 0 and review_hint(edit_state)
+	if hint then
+		add_panel_line(result, hint, "OpenCodeEditMuted")
+		add_panel_blank(result)
+	end
 	add_trailing_separator(result)
 
 	return result.lines, result.highlights, widget_base.make_meta({
 		interactive_count = #(edit_state.files or {}),
 		first_interactive_line = first_file_line,
+		selected_line = selected_line,
 		file_ranges = file_ranges,
 	})
 end

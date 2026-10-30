@@ -18,7 +18,7 @@ end
 
 -- ─── Animation ────────────────────────────────────────────────────────────────
 
-local TASK_ANIM_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+local TASK_ANIM_FRAMES = tool_panel.ANIM_FRAMES
 local TASK_COMPLETE_ICON = "✓"
 local TASK_CANCELLED_ICON = "✕"
 local TASK_ERROR_ICON = "✗"
@@ -231,9 +231,11 @@ local function is_animation_frame(char, frames)
 	return false
 end
 
-local function set_frame_overlay(bufnr, line_nr, byte_col, frame, hl_group)
+-- Without a highlight of its own the frame combines with the character it
+-- covers, so it keeps the row's colour from the full render.
+local function set_frame_overlay(bufnr, line_nr, byte_col, frame)
 	local ok = pcall(vim.api.nvim_buf_set_extmark, bufnr, chat_anim_ns, line_nr, byte_col, {
-		virt_text = { { frame, hl_group or "Comment" } },
+		virt_text = { { frame } },
 		virt_text_pos = "overlay",
 		hl_mode = "combine",
 		priority = TASK_ANIMATION_PRIORITY,
@@ -284,7 +286,7 @@ function M.update_animation_frames_in_place()
 			if line_text and #line_text > 0 then
 				local first_char = vim.fn.strcharpart(line_text, 0, 1)
 				if is_animation_frame(first_char, TASK_ANIM_FRAMES) then
-					updated = set_frame_overlay(bufnr, pos.start_line, 0, task_frame, "Comment") or updated
+					updated = set_frame_overlay(bufnr, pos.start_line, 0, task_frame) or updated
 				end
 			end
 
@@ -300,7 +302,7 @@ function M.update_animation_frames_in_place()
 						local fifth_char = vim.fn.strcharpart(line, 4, 1)
 						if is_animation_frame(fifth_char, TASK_ANIM_FRAMES) then
 							local byte_offset = #vim.fn.strcharpart(line, 0, 4)
-							updated = set_frame_overlay(bufnr, line_nr, byte_offset, task_frame, "Comment") or updated
+							updated = set_frame_overlay(bufnr, line_nr, byte_offset, task_frame) or updated
 						end
 					end
 				end
@@ -328,8 +330,7 @@ function M.update_animation_frames_in_place()
 				local line = vim.api.nvim_buf_get_lines(bufnr, pos.start_line, pos.start_line + 1, false)[1] or ""
 				local offset = (line:sub(1, #"→ ") == "→ " or line:sub(1, #"↘ ") == "↘ ") and #"→ " or 0
 				if is_animation_frame(vim.fn.strcharpart(line:sub(offset + 1), 0, 1), TASK_ANIM_FRAMES) then
-					local hl = pos.activity_group.kind == "thought" and "OpenCodeThought" or "OpenCodeActivityRunning"
-					block_updated = set_frame_overlay(bufnr, pos.start_line, offset, task_frame, hl)
+					block_updated = set_frame_overlay(bufnr, pos.start_line, offset, task_frame)
 					updated = block_updated or updated
 				end
 			end
@@ -351,7 +352,7 @@ function M.update_animation_frames_in_place()
 							local last_char = vim.fn.strcharpart(trimmed, char_count - 1, 1)
 							if is_animation_frame(last_char, classic_frames) then
 								local byte_offset = #vim.fn.strcharpart(trimmed, 0, char_count - 1)
-								block_updated = set_frame_overlay(bufnr, line_nr, byte_offset, classic_frame, "Comment")
+								block_updated = set_frame_overlay(bufnr, line_nr, byte_offset, classic_frame)
 								updated = block_updated or updated
 							end
 						end

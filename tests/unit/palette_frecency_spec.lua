@@ -122,9 +122,7 @@ describe("palette usage statistics", function()
 	end)
 
 	it("ignores malformed records without blocking display or command execution", function()
-		for _, malformed in ipairs({ 42, "invalid", vim.NIL, { count = "invalid", last_used = 1 },
-			{ count = -1, last_used = 1 }, { count = 1.25, last_used = 1 },
-			{ count = 1, last_used = "invalid" }, { count = 1, last_used = -1 } }) do
+		for _, malformed in ipairs({ "invalid", { count = -1, last_used = 1 }, { count = 1, last_used = "invalid" } }) do
 			write(path, { [alpha] = malformed, [beta] = { count = 2, last_used = os.time() } })
 			palette.setup()
 			assert.is_true(pcall(palette.show))

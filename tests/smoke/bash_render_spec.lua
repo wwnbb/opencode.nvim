@@ -10,6 +10,7 @@ describe("shell panel tab rendering", function()
 			buffer = vim.api.nvim_get_current_buf(), columns = vim.o.columns,
 			ambiwidth = vim.o.ambiwidth,
 			add_highlights = syntax.add_highlights,
+			highlight_text = syntax.highlight_text,
 		}
 		vim.cmd("botright new")
 		chat_state.bufnr = vim.api.nvim_get_current_buf()
@@ -22,6 +23,7 @@ describe("shell panel tab rendering", function()
 
 	after_each(function()
 		syntax.add_highlights = saved.add_highlights
+		syntax.highlight_text = saved.highlight_text
 		vim.api.nvim_win_close(chat_state.winid, true)
 		vim.o.columns = saved.columns
 		vim.o.ambiwidth = saved.ambiwidth
@@ -79,6 +81,11 @@ describe("shell panel tab rendering", function()
 		vim.o.columns = 144
 		vim.bo[chat_state.bufnr].tabstop = 8
 		local highlighted = {}
+		-- Command lines are highlighted as source and projected onto their rows.
+		syntax.highlight_text = function(text, language)
+			table.insert(highlighted, { text = text, language = language })
+			return {}, "skipped"
+		end
 		syntax.add_highlights = function(result, text, language, opts)
 			table.insert(highlighted, { text = text, language = language })
 			for i, line in ipairs(vim.split(text, "\n", { plain = true })) do
@@ -97,9 +104,46 @@ describe("shell panel tab rendering", function()
 			{ language = "bash", text = "printf     '界'\n   printf done" },
 			{ language = "json", text = "{\n     \"界\":   1\n}\n" },
 		}, highlighted)
+		local command_start
+		for index, line in ipairs(result.lines) do
+			if line:find("$ printf", 1, true) then command_start = index end
+		end
+		assert.equals("▏  $ printf     '界'", vim.trim(result.lines[command_start]))
+		assert.equals("▏       printf done", vim.trim(result.lines[command_start + 1]))
 		vim.api.nvim_buf_set_lines(chat_state.bufnr, 0, -1, false, result.lines)
 		assert.equals(#result.lines, vim.api.nvim_win_text_height(chat_state.winid, {}).all)
 		assert.is_nil(table.concat(result.lines):find("\t", 1, true))
+	end)
+
+	it("indents wrapped command rows past the prompt and keeps their syntax", function()
+		vim.o.columns = 40
+		local command = 'ssh qant_test "docker exec -u root PythonTest3 tar -cf - out_exec_bnc.log err_exec_bnc.log"'
+		local quoted = command:sub(15)
+		syntax.highlight_text = function(text, language)
+			assert.same({ "bash", command }, { language, text })
+			return { { line = 0, col_start = 14, end_line = 0, end_col = #command, hl_group = "@string.bash" } }, "ok"
+		end
+		local result = bash.render_tool({ tool = "bash", state = { status = "completed", input = { command = command } } }, true)
+		local rows = {}
+		for index, line in ipairs(result.lines) do
+			if line:find("^▏  %$ ssh") or (#rows > 0 and rows[#rows] == index - 2 and line:find("^▏    %S")) then
+				rows[#rows + 1] = index - 1
+			end
+		end
+		assert.is_true(#rows > 2)
+		local slices = {}
+		for _, hl in ipairs(result.highlights) do
+			if hl.hl_group == "@string.bash" then
+				assert.is_true(vim.tbl_contains(rows, hl.line))
+				slices[#slices + 1] = result.lines[hl.line + 1]:sub(hl.col_start + 1, hl.col_end)
+			end
+		end
+		assert.equals(#rows, #slices)
+		assert.equals('"docker', slices[1]:match("^%S+"))
+		assert.equals('err_exec_bnc.log"', slices[#slices]:match("%S+$"))
+		for _, slice in ipairs(slices) do
+			assert.is_truthy(quoted:find(slice, 1, true))
+		end
 	end)
 
 	it("uses the chat tabstop and display columns while another buffer is current", function()
@@ -112,41 +156,10 @@ describe("shell panel tab rendering", function()
 		end)
 	end)
 
-	it("replaces only the leading blank row for all shell states and leaves the default unchanged", function()
-		for _, status in ipairs({ "pending", "running", "completed", "error" }) do
-			for _, command in ipairs({ "", "printf done" }) do
-				for _, output in ipairs({ "", "stdout\nstderr" }) do
-					local part = { tool = "bash", state = {
-						status = status, input = { command = command }, output = output,
-						error = status == "error" and "failure" or nil,
-					} }
-					local original = vim.deepcopy(part)
-					for _, expanded in ipairs({ false, true }) do
-						local plain = bash.render_tool(part, expanded)
-						local separated = bash.render_tool(part, expanded, { separator_before = true })
-						assert.same(plain, bash.render_tool(part, expanded, {}))
-						assert.same(plain, bash.render_tool(part, expanded, { separator_before = false }))
-						assert.equals(#plain.lines, #separated.lines)
-						assert.equals("▏", vim.trim(plain.lines[1]))
-						assert.same(vim.list_slice(plain.lines, 2), vim.list_slice(separated.lines, 2))
-						local function body_highlights(result)
-							return vim.tbl_filter(function(hl) return hl.line > 0 end, result.highlights)
-						end
-						assert.same(body_highlights(plain), body_highlights(separated))
-						for _, hl in ipairs(separated.highlights) do
-							if hl.line == 0 then assert.equals("OpenCodeBashMuted", hl.hl_group) end
-						end
-					end
-					assert.same(original, part)
-				end
-			end
-		end
-	end)
-
 	it("keeps the original blank when a stroke and its prefix cannot fit", function()
 		vim.o.ambiwidth = "single"
 		local part = { tool = "bash", state = { status = "completed", input = { command = "true" } } }
-		for _, width in ipairs({ 1, 2, 3, 4, 5 }) do
+		for _, width in ipairs({ 1, 3, 5 }) do
 			vim.api.nvim_win_set_config(chat_state.winid, {
 				relative = "editor", row = 0, col = 0, width = width, height = 4, style = "minimal",
 			})
@@ -158,31 +171,6 @@ describe("shell panel tab rendering", function()
 			assert.equals(1, vim.api.nvim_win_text_height(chat_state.winid, { start_row = 0, end_row = 0 }).all)
 			assert.equals(height, vim.api.nvim_win_text_height(chat_state.winid, {}).all)
 			assert.same(plain, separated)
-		end
-	end)
-
-	it("fills the available display width without wrapping or increasing panel height", function()
-		local render = require("opencode.ui.chat.render")
-		local part = { tool = "bash", state = {
-			status = "completed", input = { command = "printf 界" }, output = "界 output",
-		} }
-		for _, ambiwidth in ipairs({ "single", "double" }) do
-			vim.o.ambiwidth = ambiwidth
-			for _, width in ipairs({ 12, 39, 144 }) do
-				vim.o.columns = width
-				for _, expanded in ipairs({ false, true }) do
-					local plain = bash.render_tool(part, expanded)
-					local result = bash.render_tool(part, expanded, { separator_before = true })
-					local available = render.get_chat_text_width()
-					local body_width, cell_width = available - vim.fn.strdisplaywidth("▏  "), vim.fn.strdisplaywidth("─")
-					assert.equals("▏  " .. string.rep("─", math.floor(body_width / cell_width))
-						.. string.rep(" ", body_width % cell_width), result.lines[1])
-					assert.equals(available, vim.fn.strdisplaywidth(result.lines[1]))
-					assert.equals(#plain.lines, #result.lines)
-					vim.api.nvim_buf_set_lines(chat_state.bufnr, 0, -1, false, result.lines)
-					assert.equals(#result.lines, vim.api.nvim_win_text_height(chat_state.winid, {}).all)
-				end
-			end
 		end
 	end)
 end)

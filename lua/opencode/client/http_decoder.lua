@@ -2,6 +2,8 @@
 
 local M = {}
 local MAX_EXACT_INTEGER = 9007199254740991
+-- Response headers, chunk-size lines and trailers are framing, never payload.
+local MAX_HEADER_BYTES = 1024 * 1024
 
 local function parse_fields(lines, first)
 	local headers, previous = {}, nil
@@ -73,6 +75,7 @@ end
 function M.new(opts)
 	opts = opts or {}
 
+	local max_header_bytes = opts.max_header_bytes or MAX_HEADER_BYTES
 	local state = {
 		method = (opts.method or "GET"):upper(),
 		headers_parsed = false,
@@ -114,6 +117,7 @@ function M.new(opts)
 			if not state.chunk_size then
 				local line_end = state.chunk_buffer:find("\r\n", 1, true)
 				if not line_end then
+					if #state.chunk_buffer > max_header_bytes then return nil, "Chunk size line too long" end
 					return false
 				end
 
@@ -142,6 +146,7 @@ function M.new(opts)
 					state.chunk_buffer = state.chunk_buffer:sub(trailer_end + 4)
 					return true
 				end
+				if #state.chunk_buffer > max_header_bytes then return nil, "Trailers too long" end
 				return false
 			end
 
@@ -268,6 +273,9 @@ function M.new(opts)
 
 		state.header_buffer = state.header_buffer .. data
 		process_headers()
+		if not state.headers_parsed and not state.completed and #state.header_buffer > max_header_bytes then
+			emit_error("HTTP response headers exceeded " .. max_header_bytes .. " bytes")
+		end
 	end
 
 	function decoder:finish_eof()

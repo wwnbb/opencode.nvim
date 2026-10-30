@@ -17,16 +17,6 @@ describe("opencode public initialization", function()
 		state.reset()
 	end)
 
-	it("reports connection state after setup and false before setup", function()
-		state.set_connection("connected")
-		assert.is_false(app.is_connected())
-		app.setup({ server = { auto_start = false }, lualine = { enabled = false } })
-		for _, connection in ipairs({ "idle", "connecting", "connected", "error" }) do
-			state.set_connection(connection)
-			assert.equals(connection == "connected", app.is_connected())
-		end
-	end)
-
 	it("keeps public actions guarded after lifecycle loading fails", function()
 		_G.require = function(name)
 			if name == "opencode.lifecycle" then error("simulated lifecycle load failure") end

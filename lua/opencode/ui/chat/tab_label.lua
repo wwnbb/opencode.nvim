@@ -2,7 +2,7 @@ local M = {}
 local text = require("opencode.util.text")
 
 function M.title(value, width)
-	return text.truncate(tostring(value or ""):gsub("[%c]", " "), width or 18, "...", vim.fn.strwidth)
+	return text.truncate(tostring(value or ""):gsub("[%c]", " "), width or 18, "…", vim.fn.strwidth)
 end
 
 local statuses = {

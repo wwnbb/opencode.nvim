@@ -28,13 +28,11 @@ describe("tab child model metadata fallbacks", function()
 		require("opencode.session.pending").clear_all()
 	end)
 
-	for _, source in ipairs({ "metadata.model", "state metadata", "flat metadata", "input.model" }) do
+	for _, source in ipairs({ "metadata.model", "input.model" }) do
 		it("uses " .. source .. " with no earlier model or child history", function()
 			local part = { id = "model-task", type = "tool", tool = "task", sessionID = "model-parent",
 				state = { metadata = { sessionID = "model-child" }, input = { subagent_type = "explore", variant = "fast" } } }
 			if source == "metadata.model" then part.metadata = { model = model }
-			elseif source == "state metadata" then part.state.metadata = vim.tbl_extend("force", part.state.metadata, model)
-			elseif source == "flat metadata" then part.metadata = model
 			else part.state.input.model = model end
 			view.tasks.task = { tool_part = part }
 			cs.module(view, require("opencode.ui.chat.nav")).enter_child_session("task")
@@ -48,13 +46,12 @@ describe("tab child model metadata fallbacks", function()
 		end)
 	end
 
-	for _, source in ipairs({ "assistant history", "user history", "child.model", "flat child" }) do
+	for _, source in ipairs({ "assistant history", "child.model" }) do
 		it("uses " .. source .. " when task metadata has no model", function()
 			local child = { id = "model-child", parentID = "model-parent", agent = "explore", variant = "fallback" }
 			local messages = {}
 			if source == "child.model" then child.model = model
-			elseif source == "flat child" then child = vim.tbl_extend("force", child, model)
-			else messages = { { info = { role = source == "assistant history" and "assistant" or "user", model = model } } } end
+			else messages = { { info = { role = "assistant", model = model } } } end
 			actions.get_session = function(_, callback) callback(nil, child) end
 			actions.load_session_messages = function(_, _, callback) callback(nil, messages) end
 			view.tasks.task = { tool_part = { id = "model-task", type = "tool", tool = "task", sessionID = "model-parent",

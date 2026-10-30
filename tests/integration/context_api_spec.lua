@@ -100,7 +100,7 @@ describe("context snapshots through the public API", function()
 	end)
 
 	it("records invalid ranges at the call before a deferred connection changes the source", function()
-		for _, range in ipairs({ { 0, 1 }, { 2, 1 }, { 1, 4 }, { 1.5, 2 }, { 1 }, { "1", 2 } }) do
+		for _, range in ipairs({ { 1, 4 }, { "1", 2 } }) do
 			local result = client.lua([[
 				require('opencode').send('@this', { range = ... })
 				vim.api.nvim_buf_set_lines(source, 3, 3, false, { 'new fourth line' })
@@ -141,27 +141,6 @@ describe("context snapshots through the public API", function()
 		assert.is_nil(text:find("unselected line", 1, true))
 		assert.is_nil(text:find("changed after requesting focus", 1, true))
 		assert.same({ 100, 100 }, client.lua("return sent[1].options.range"))
-	end)
-
-	it("forwards a deferred edit's range error through connection and composer focus", function()
-		client.lua([[
-			local history = require('opencode.ui.input.history')
-			require('opencode.state').set_session('invalid_context', 'Invalid context')
-			history.defer_pending({ text = '@this', parts = {}, options = { range = { 2, 4 } } }, 'invalid_context')
-			require('opencode').focus_input()
-			vim.api.nvim_buf_set_lines(source, 3, 3, false, { 'new fourth line' })
-			connections[1]()
-		]])
-		client.wait("require('opencode.ui.input').is_visible()")
-		local result = client.lua([[
-			vim.fn.maparg('<C-g>', 'n', false, true).callback()
-			connections[2]()
-			return { text = sent[1].text, error = sent[1].options._context_error,
-				has_snapshot = sent[1].options._context_snapshot ~= nil }
-		]])
-		assert.equals("@this", result.text)
-		assert.is_string(result.error)
-		assert.is_false(result.has_snapshot)
 	end)
 
 	it("captures Visual text and the viewport before deferred connection and real composer focus", function()

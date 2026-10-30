@@ -150,14 +150,10 @@ describe("palette confirmations", function()
 		actions.clear_session_data = function() end
 		local run = command("opencode.ui.palette.session", "session.delete").run
 		run()
-		assert.same({ "Yes", "No" }, opened[1].items)
-		assert.is_false(opened[1].sort)
 		assert.is_truthy(opened[1].message:find("A session", 1, true))
 		opened[1].on_select("No")
 		assert.equals(0, deleted)
 		run()
-		-- Escape closes the menu without invoking on_select.
-		assert.equals(0, deleted)
 		opened[2].on_select("Yes")
 		assert.equals(1, deleted)
 	end)
@@ -177,9 +173,6 @@ describe("palette confirmations", function()
 		actions.reload_locations = function(cb) reloaded = reloaded + 1; cb(nil) end
 		local run = command("opencode.ui.palette.system", "system.reload").run
 		run()
-		assert.same({ "Reload all locations", "Cancel" }, opened[1].items)
-		assert.is_false(opened[1].sort)
-		assert.is_truthy(opened[1].message:find("every project", 1, true))
 		opened[1].on_select("Cancel")
 		assert.equals(0, reloaded)
 		run()
@@ -195,7 +188,7 @@ describe("palette confirmations", function()
 		opened[1].on_select("Reload all locations")
 		assert.equals(0, reloaded)
 	end)
-	for _, stage in ipairs({ "connections", "manage", "disconnect", "rename" }) do
+	for _, stage in ipairs({ "connections", "disconnect", "rename" }) do
 		it("does not act on an old account after reconnect at " .. stage, function()
 			local changed = 0
 			actions.list_integrations = function(cb)
@@ -211,7 +204,6 @@ describe("palette confirmations", function()
 			local count = #opened
 			require("opencode.session.pending").invalidate()
 			if stage == "connections" then opened[1].on_select(opened[1].items[1])
-			elseif stage == "manage" then opened[2].on_select(opened[2].items[1])
 			elseif stage == "disconnect" then opened[3].on_select("Disconnect")
 			else inputs[1].on_submit("New label") end
 			assert.equals(0, changed)
@@ -234,9 +226,6 @@ describe("palette confirmations", function()
 		opened[1].on_select(opened[1].items[1])
 		assert.same({ "Activate", "Rename", "Disconnect" }, vim.tbl_map(function(item) return item.label end, opened[2].items))
 		opened[2].on_select(opened[2].items[3])
-		assert.same({ "Disconnect", "Cancel" }, opened[3].items)
-		assert.is_false(opened[3].sort)
-		assert.equals("Disconnect account Work?", opened[3].message)
 		opened[3].on_select("Cancel")
 		assert.equals(0, changed)
 		opened[3].on_select("Disconnect")

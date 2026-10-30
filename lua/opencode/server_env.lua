@@ -3,10 +3,25 @@
 local M = {}
 
 local shell_env_cache = nil
+local SHELL_ENV_TIMEOUT = 10000
 
+-- NUL-separated output (env -0) keeps multi-line values intact; without NULs
+-- fall back to one assignment per line.
 function M.parse_env_output(output)
 	local env = {}
 	if type(output) ~= "string" or output == "" then
+		return env
+	end
+
+	if output:find("\0", 1, true) then
+		local first = true
+		for record in output:gmatch("([^%z]*)%z") do
+			local key, value = record:match("^([%w_]+)=(.*)$")
+			-- Interactive shell startup may print before the first record.
+			if not key and first then key, value = record:match("^.-\n([%w_]+)=(.*)$") end
+			if key then env[key] = value end
+			first = false
+		end
 		return env
 	end
 
@@ -32,13 +47,22 @@ function M.load_shell_env(opts)
 	local shell = os.getenv("SHELL") or vim.o.shell or "/bin/sh"
 	local shell_name = vim.fn.fnamemodify(shell, ":t")
 	local flag = (shell_name == "bash" or shell_name == "zsh") and "-lic" or "-lc"
-	local ok, output = pcall(vim.fn.system, { shell, flag, "env" })
-	if not ok or vim.v.shell_error ~= 0 then
+	local timeout = SHELL_ENV_TIMEOUT
+	-- A slow or interactive rc file must not freeze the editor; :wait() kills
+	-- the shell at the deadline and reports exit code 124.
+	local ok, result = pcall(function()
+		return vim.system({ shell, flag, "env -0 || env" }, { stdin = false }):wait(timeout)
+	end)
+	if not ok or not result or result.code ~= 0 then
+		local reason = not ok and tostring(result)
+			or (result and result.code == 124 and ("timed out after " .. timeout .. "ms"))
+			or ("exit code " .. tostring(result and result.code))
+		pcall(function() require("opencode.logger").warn("Login shell environment unavailable: " .. reason, { shell = shell }) end)
 		shell_env_cache = {}
 		return shell_env_cache
 	end
 
-	shell_env_cache = M.parse_env_output(output)
+	shell_env_cache = M.parse_env_output(result.stdout)
 	return shell_env_cache
 end
 

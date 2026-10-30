@@ -133,11 +133,7 @@ local function usage_part(state, room)
 	local selectors = require("opencode.selectors")
 	local usage = selectors.current_context(state.session_id)
 	local cost, complete = selectors.session_cost(state.session_id)
-	local function number(value)
-		if value >= 1000000 then return string.format("%.1fM", value / 1000000) end
-		if value >= 1000 then return string.format("%.1fK", value / 1000) end
-		return tostring(value)
-	end
+	local number = require("opencode.util.locale").compact_number
 	local context = usage and "ctx " .. number(usage.tokens) or ""
 	local full = context .. (usage and usage.percent and " (" .. usage.percent .. "%)" or "")
 	local money = cost and cost > 0 and (complete and "" or "≥") .. string.format("$%.2f", cost) or ""
@@ -160,8 +156,9 @@ function M.update(state)
 
 	if state.history_search then
 		local keys = require("opencode.util.keymap")
-		local text = "History · type to search · " .. keys.label("input", "command_enter") .. "/"
-			.. keys.label("input", "autocomplete_confirm") .. ":insert · Esc:cancel"
+		local text = keys.hint({ { status = "History" }, { status = "type to search" },
+			{ keys.label("input", "command_enter") .. " / " .. keys.label("input", "autocomplete_confirm"), "insert" },
+			{ "<Esc>", "cancel" } }, { omit_disabled = true })
 		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { clip(text, state.layout.content_width) })
 		vim.api.nvim_buf_clear_namespace(bufnr, NS_INFO, 0, -1)
 		mark(bufnr, 0, clip(text, state.layout.content_width), "OpenCodeInputInfo")
@@ -173,7 +170,7 @@ function M.update(state)
 		local keymaps = require("opencode.util.keymap")
 		local toggle = keymaps.label("input", "toggle_mode")
 		if toggle == "(disabled)" then toggle = "/shell" end
-		agent, model, provider, variant = "shell", toggle .. ": return to chat", "", nil
+		agent, model, provider, variant = "shell", keymaps.hint({ { toggle, "return to chat" } }) or "", "", nil
 	end
 	vim.api.nvim_set_hl(0, "OpenCodeInputBorderAgent", { link = agent_hl, default = false })
 

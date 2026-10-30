@@ -307,9 +307,12 @@ Background shell completions show a compact status, command and output preview
 instead of the server's raw shell tags. Press Enter or `O` on the block to
 expand or collapse the complete captured output and process IDs.
 
-`/diff` opens a Git diff browser with branch, committed, working and last-turn
-sources, base selection, file list, hunk navigation and reviewed markers. Native
-edit review remains available in the chat.
+`/diff` opens a Git diff browser with branch, committed, working, last-turn and
+session sources, base selection, file list, hunk navigation and reviewed markers.
+The session source diffs every turn of the current session up to a staged revert;
+like last-turn, it compares the server's working-copy snapshots, so manual edits
+made while the agent ran are included. Native edit review remains available in
+the chat.
 
 # Composer and previews
 
@@ -591,7 +594,10 @@ OpenCode's sessionless `/api/experimental/generate` endpoint remains available
 to final-only client callers, without streaming progress.
 
 Context comes from the unsaved current buffer: cursor prefix/suffix, surrounding
-lines, file header, language, and indentation settings. It also includes up to
+lines, file header, language, and indentation settings. Neovim diagnostics from a
+linter or LSP on the cursor line (on the selected lines for selection edits) are
+included as whole messages, most severe first, before surrounding lines while they
+fit in `max_bytes`. It also includes up to
 two related, loaded file buffers from the same project, prioritizing referenced
 paths/names and then same-directory files of the same language. This feature
 does not scan file contents on disk or issue LSP requests. Limits are configurable:
@@ -662,14 +668,18 @@ prompt asks for a separate **Diagnostics** section (**Диагностика** i
 after the code explanation. It includes each supplied message's source and
 check code when available, explains the issue, and suggests the smallest correction.
 Press `c` to copy the answer; `q` or `Esc` closes the popup and cancels a pending
-request. The popup's bottom row is a question input: press `i` to move into it,
-type a follow-up and press `Enter` to send it once the current answer is
-complete (`Esc` returns to the answer). The answer streams below the
+request. Press `i` to open a question composer along the bottom of the popup.
+It uses the chat input style, with a multiline field and a footer showing the
+explanation model: **Enter** inserts a new line, and your input send keys
+(**Ctrl+G** or **Ctrl+X Ctrl+S** by default) send the follow-up once the current
+answer is complete. `Esc` or `Ctrl+C` returns to the answer and keeps an unsent
+question for the next `i`. The answer streams below the
 conversation, with each question quoted. Follow-ups reuse the same selection
 context, send the earlier turns with the new question, and always use the
 built-in follow-up instruction, even with a custom `prompt`. A failed follow-up
 leaves the earlier answers in place so you can ask again; `c` copies the latest
-answer. Set `explanation.keymaps.ask` to change or disable the `i` key. Normal-mode `K` remains available for LSP hover. Call
+answer. The popup footer lists these keys; set `explanation.keymaps.ask` to
+change or disable the `i` key. Normal-mode `K` remains available for LSP hover. Call
 `require("opencode").explain_selection()` from your own Visual mapping if needed.
 
 Explanations have no timeout by default. Set `explanation.timeout_ms` to a
@@ -717,6 +727,24 @@ require("opencode").setup({
   },
   palette = { border = "rounded" }, -- command palette border is independent
 })
+```
+
+# Key hints
+
+Interactive surfaces show the keys they accept, for example
+`1-3 select · k / <Up> / j / <Down> move · <CR> confirm` under a permission
+request. Set `key_hints.enabled = false` to hide these hints everywhere:
+permission and question widgets, menu and popup footers, border labels on input
+and explanation popups, "press X to expand" notices, the subagent "Go back"
+line, pending-prompt actions, and the key rows of the welcome screen. Status
+text such as `1/2 answered` stays visible, and the keys keep working.
+
+Help screens (`?` in the chat, the native diff and VCS help, Keybindings Help)
+always list their keys. `palette.show_keybinds` separately controls the key
+column in the command palette.
+
+```lua
+require("opencode").setup({ key_hints = { enabled = false } })
 ```
 
 # Tokens per second
@@ -1070,7 +1098,7 @@ Follow these steps:
    - `chat.session_tabs.enabled`, `chat.session_tabs.auto_fit`, `chat.session_tabs.max_tabs`, `chat.session_tabs.separator`, `chat.session_tabs.icons`, `chat.session_tabs.colors`
    - top-level `keymaps.toggle`, `keymaps.command_palette`, `keymaps.toggle_logs`, `keymaps.close_session`, `keymaps.abort`, `keymaps.active_sessions`
    - `input.keymaps.send`, `input.keymaps.send_steer`, `input.keymaps.cancel`, `input.keymaps.variant_cycle`, `input.keymaps.agent_cycle`, `input.keymaps.model_cycle`
-   - `lualine.enabled`, `notifications.enabled`
+   - `lualine.enabled`, `notifications.enabled`, `key_hints.enabled`
    - Keep `danger_mode = false`; do not enable it unless I explicitly request the security tradeoff.
 6. Configure colors/highlights to match the existing colorscheme. Session tabs inherit Neovim's `TabLine`, `TabLineSel`, and `TabLineFill` groups by default; use `chat.session_tabs.colors` only when custom tab colors are needed, and `vim.api.nvim_set_hl` for existing `OpenCode*` highlight groups when needed.
 7. Configure keybindings consistently with the rest of this config, avoiding collisions.

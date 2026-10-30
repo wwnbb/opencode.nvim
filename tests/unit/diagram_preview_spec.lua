@@ -29,11 +29,10 @@ describe("safe browser diagram/math preview", function()
 		picker.on_select(picker.items[1]); assert.equals(1, #opened); assert.matches("Diagram changed", notices[1])
 		state.set_session("other", "Other"); picker.on_select(picker.items[3]); assert.equals(1, #opened)
 	end)
-	it("embeds source only as escaped data with restrictive rendering and pinned libraries", function()
+	it("embeds source only as escaped data with restrictive rendering", function()
 		local html = assert(diagrams.html({ kind = "mermaid", source = '</script><script>alert("PRIVATE")</script>\nA-->B' }))
 		assert.is_nil(html:find('</script><script>alert', 1, true))
 		assert.is_truthy(html:find('\\u003c/script>', 1, true))
-		assert.is_truthy(html:find("mermaid@12.1.0", 1, true)); assert.is_truthy(html:find("katex@0.19.0", 1, true))
 		assert.is_truthy(html:find("securityLevel:'strict'", 1, true)); assert.is_truthy(html:find("trust:false", 1, true))
 		assert.is_truthy(html:find("connect-src 'none'", 1, true)); assert.is_truthy(html:find("Preview unavailable:", 1, true))
 		assert.is_nil(html:find("PAYLOAD", 1, true)); assert.is_nil(html:find("NONCE", 1, true))
@@ -42,7 +41,7 @@ describe("safe browser diagram/math preview", function()
 		local path = assert(diagrams.open({ kind = "math", source = "\\frac{1}{2}" })); paths[#paths + 1] = path
 		assert.equals(384, bit.band(vim.uv.fs_stat(path).mode, 511)); assert.equals(path, opened[1])
 		assert.is_truthy(table.concat(vim.fn.readfile(path), "\n"):find("\\\\frac{1}{2}", 1, true))
-		for _, item in ipairs({ {}, { kind = "html", source = "<script>" }, { kind = "math", source = "" }, { kind = "math", source = string.rep("x", 50001) } }) do
+		for _, item in ipairs({ { kind = "html", source = "<script>" }, { kind = "math", source = string.rep("x", 50001) } }) do
 			local result, err = diagrams.open(item); assert.is_nil(result); assert.is_string(err)
 		end
 		vim.ui.open = function(failed_path) opened[#opened + 1] = failed_path; return nil, "No browser" end

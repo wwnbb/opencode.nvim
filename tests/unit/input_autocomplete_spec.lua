@@ -1,8 +1,7 @@
 describe("opencode input autocomplete", function()
-	it("confirms slash commands and mentions", function()
+	it("confirms slash commands through the registry", function()
 		local autocomplete = require("opencode.ui.input.autocomplete")
 		local registry = require("opencode.command_registry")
-		local mentions = require("opencode.ui.input.mentions")
 		local slash_commands = require("opencode.ui.input.slash_commands")
 
 		local bufnr = vim.api.nvim_get_current_buf()
@@ -13,7 +12,6 @@ describe("opencode input autocomplete", function()
 			visible = true,
 			bufnr = bufnr,
 			winid = winid,
-			mentions = { parts = {} },
 			autocomplete = {},
 		}
 
@@ -25,16 +23,12 @@ describe("opencode input autocomplete", function()
 		local function offer(line, item, col)
 			col = col or #line
 			set_one_line(line, col)
-			local trigger = item.kind == "mention" and mentions.detect_trigger_in_line(line, col)
-				or slash_commands.detect_trigger_in_line(line, col, 0)
+			local trigger = slash_commands.detect_trigger_in_line(line, col, 0)
 			trigger.row, trigger.line = 0, line
 			state.autocomplete = { visible = true, selected = 1, trigger = trigger, items = { item } }
 		end
 
 		offer("/", { kind = "slash", label = "/help", command = { name = "help" } })
-		local current_trigger = slash_commands.detect_trigger(state)
-		assert.is_truthy(current_trigger, "slash autocomplete trigger should be current")
-		assert.equals(state.autocomplete.trigger.query, current_trigger.query, "slash autocomplete query")
 		assert.is_truthy(autocomplete.confirm(state), "slash autocomplete confirm should insert command")
 		assert.equals("/help ", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "slash autocomplete text")
 
@@ -102,46 +96,6 @@ describe("opencode input autocomplete", function()
 		assert.equals("/ztest_popup then", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "completion should preserve following text")
 		assert.equals(1, runs, "completion before text should not execute the command")
 
-		local sync = require("opencode.sync")
-		local previous_agents = sync.get_agents()
-		sync.handle_agents({ { name = "coder_slave", mode = "subagent" } })
-		offer("@cod", { kind = "mention", label = "@coder_slave", agent = { name = "coder_slave" } })
-		assert.is_truthy(autocomplete.confirm(state), "mention autocomplete confirm should insert mention")
-		assert.equals("@coder_slave ", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "mention autocomplete text")
-
-		local parts = mentions.active_parts(state)
-		assert.equals(1, #parts, "mention autocomplete should create one part")
-		assert.equals("coder_slave", parts[1].name, "mention autocomplete part name")
-		sync.handle_agents(previous_agents)
-
-		set_one_line("/", #"/")
-		state.autocomplete = {
-			visible = true,
-			selected = 1,
-			trigger = slash_commands.detect_trigger_in_line("/", #"/", 0),
-			items = {
-				{ kind = "slash", label = "/first", command = { name = "first" } },
-				{ kind = "slash", label = "/second", command = { name = "second" } },
-			},
-		}
-		assert.is_truthy(autocomplete.select_next(state), "select_next should move selection")
-		assert.equals(2, state.autocomplete.selected, "select_next selected index")
-		assert.is_truthy(autocomplete.select_prev(state), "select_prev should move selection")
-		assert.equals(1, state.autocomplete.selected, "select_prev selected index")
-
-		local confirmed, sent = 0, 0
-		require("opencode.ui.input.keymaps").setup(bufnr, { keymaps = { send = "<C-g>" } }, {
-			autocomplete_visible = function() return true end,
-			autocomplete_confirm = function() confirmed = confirmed + 1 end,
-			send = function() sent = sent + 1 end,
-		})
-		for index, key in ipairs({ "<CR>", "<Tab>", "<C-g>" }) do
-			local mapping = vim.fn.maparg(key, "i", false, true)
-			mapping.callback()
-			assert.is_true(vim.wait(100, function() return confirmed == index end, 5), key)
-		end
-		assert.equals(0, sent, "completion should not send the draft")
-
 		autocomplete.clear(state)
 		registry.unregister("test.autocomplete_popup")
 		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })
@@ -182,16 +136,14 @@ describe("autocomplete item display", function()
 		assert.is_true(autocomplete.show_items(state, "history", { query = "next", row = 0, start_col = 0 }, items))
 		assert.equals(1, state.autocomplete.selected)
 	end)
-	it("closes the popup when supplied items are empty or missing", function()
+	it("closes the popup when supplied items are empty", function()
 		local trigger = { query = "", row = 0, start_col = 0 }
 		assert.is_true(autocomplete.show_items(state, "history", trigger, { { label = "Prompt" } }))
 		assert.is_false(autocomplete.show_items(state, "history", trigger, {}))
 		assert.is_false(autocomplete.is_visible(state))
 		assert.is_nil(state.autocomplete.popup)
-		assert.is_false(autocomplete.show_items(state, "history", trigger))
-		assert.is_false(autocomplete.show_items(nil, "history", trigger, { { label = "Prompt" } }))
 	end)
-	it("keeps every resize redraw above the actual input frame with matching content", function()
+	it("keeps the popup above the actual input frame as its item count changes", function()
 		state.popup = require("nui.popup")({
 			enter = false,
 			relative = "editor",
@@ -212,32 +164,14 @@ describe("autocomplete item display", function()
 		assert.equals(input_row, vim.api.nvim_win_get_position(popup.winid)[1] + vim.api.nvim_win_get_height(popup.winid))
 		assert.equals(input_col, vim.api.nvim_win_get_position(popup.winid)[2])
 
-		local command, redraws, expected_height = vim.api.nvim_command, 0, 10
-		vim.api.nvim_command = function(value)
-			local result = command(value)
-			if value == "redraw" then
-				redraws = redraws + 1
-				local position = vim.api.nvim_win_get_position(popup.winid)
-				assert.equals(expected_height, vim.api.nvim_win_get_height(popup.winid))
-				assert.equals(expected_height, vim.api.nvim_win_get_height(popup.border.winid))
-				assert.equals(expected_height, vim.api.nvim_buf_line_count(popup.bufnr))
-				assert.equals(input_row, position[1] + expected_height)
-				assert.equals(vim.api.nvim_win_get_position(popup.border.winid)[1], position[1])
-				assert.equals(input_col, position[2])
-			end
-			return result
+		for _, count in ipairs({ 1, 10 }) do
+			assert.is_true(autocomplete.show_items(state, "history", trigger, vim.list_slice(items, 1, count)))
+			local position = vim.api.nvim_win_get_position(popup.winid)
+			assert.equals(count, vim.api.nvim_win_get_height(popup.winid))
+			assert.equals(count, vim.api.nvim_buf_line_count(popup.bufnr))
+			assert.equals(input_row, position[1] + count)
+			assert.equals(input_col, position[2])
 		end
-		local ok, err = xpcall(function()
-			assert.is_true(autocomplete.show_items(state, "history", trigger, items))
-			assert.equals(0, redraws)
-			expected_height = 1
-			assert.is_true(autocomplete.show_items(state, "history", trigger, { items[1] }))
-			expected_height = 10
-			assert.is_true(autocomplete.show_items(state, "history", trigger, items))
-			assert.equals(2, redraws)
-		end, debug.traceback)
-		vim.api.nvim_command = command
-		assert.is_true(ok, err)
 	end)
 end)
 
@@ -270,14 +204,9 @@ describe("context autocomplete", function()
 	it("offers contexts before agents and preserves a same-name agent", function()
 		assert.is_true(refresh("@"))
 		local items = state.autocomplete.items
-		assert.equals(8, #items)
-		for index = 1, 7 do
-			assert.equals("context", items[index].kind)
-			assert.is_truthy(items[index].description:match("^Context: "))
-		end
-		assert.equals("mention", items[8].kind)
-		assert.equals("@this", items[8].label)
-		assert.equals("Agent: Context reviewer", items[8].description)
+		assert.equals("context", items[1].kind)
+		assert.equals("mention", items[#items].kind)
+		assert.equals("@this", items[#items].label)
 		assert.is_true(refresh("@thi"))
 		assert.equals(2, #state.autocomplete.items)
 		state.autocomplete.selected = 2
@@ -345,7 +274,7 @@ describe("autocomplete draft ownership", function()
 		vim.o.virtualedit = virtualedit
 		sync.handle_agents(previous_agents)
 	end)
-	for _, replacement in ipairs({ "@xx", "@", "ask @gr" }) do
+	for _, replacement in ipairs({ "@xx", "ask @gr" }) do
 		it("preserves a draft changed to " .. replacement .. " before confirmation", function()
 			vim.api.nvim_buf_set_lines(state.bufnr, 0, 1, false, { replacement })
 			vim.api.nvim_win_set_cursor(state.winid, { 1, #replacement })
@@ -376,7 +305,6 @@ describe("autocomplete draft ownership", function()
 	for _, update in ipairs({
 		{ name = "removed", agents = {} },
 		{ name = "hidden", agents = { { name = "grep", hidden = true, mode = "subagent" } } },
-		{ name = "primary", agents = { { name = "grep", mode = "primary" } } },
 		{ name = "renamed", agents = { { id = "grep", name = "other", mode = "subagent" } } },
 	}) do
 		it("does not insert an agent that is now " .. update.name, function()

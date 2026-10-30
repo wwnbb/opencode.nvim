@@ -25,32 +25,7 @@ function M.attach(render, attach_opts)
 		return value
 	end
 
-	---@param value number
-	---@return string
-	local function _format_compact_number(value)
-		if value < 1000 then
-			return tostring(math.floor(value + 0.5))
-		end
-
-		local units = { "", "k", "m", "b", "t" }
-		local unit_idx = 1
-		local scaled = value
-		while scaled >= 1000 and unit_idx < #units do
-			scaled = scaled / 1000
-			unit_idx = unit_idx + 1
-		end
-
-		local rounded = math.floor(scaled * 10 + 0.5) / 10
-		if rounded >= 1000 and unit_idx < #units then
-			rounded = rounded / 1000
-			unit_idx = unit_idx + 1
-		end
-
-		if rounded == math.floor(rounded) then
-			return string.format("%d%s", rounded, units[unit_idx])
-		end
-		return string.format("%.1f%s", rounded, units[unit_idx])
-	end
+	local _format_compact_number = require("opencode.util.locale").compact_number
 
 	local TOKEN_USAGE_FIELDS = { "input", "output", "reasoning" }
 	local TOKEN_CACHE_FIELDS = { "read", "write" }

@@ -1,5 +1,5 @@
--- A temporary, read-only view for an editor selection explanation, with a
--- question input along its bottom edge for follow-ups.
+-- A temporary, read-only view for an editor selection explanation. Asking a
+-- follow-up docks a question composer along its bottom edge.
 -- Request ownership and cancellation live in opencode.explanation.
 local M = {}
 
@@ -11,6 +11,8 @@ local spinner = require("opencode.ui.spinner")
 local active, group
 local config = {}
 local trigger_maps = {}
+-- Answer rows that stay visible above a growing question composer.
+local MIN_ANSWER_ROWS = 3
 
 local function restore_mappings(mappings)
 	for _, mapping in ipairs(mappings or {}) do keymaps.restore(mapping) end
@@ -62,41 +64,71 @@ local function render(view, text, saved_view)
 end
 
 local function pending_text(view)
-	return compose(view, spinner.get_loading_text(view.prefix and "Answering question" or "Explaining selection"))
+	if view.prefix then return compose(view, spinner.get_loading_text("Answering question")) end
+	local close = keymaps.hint({ { keymaps.label("explanation", "close", config.keymaps), "close" } }, { omit_disabled = true })
+	return spinner.get_loading_text("Explaining selection") .. (close and ("\n\n" .. close) or "")
 end
 
--- Answer rows fill the frame; with an input, a separator row and the input
--- take its last two rows.
-local function layout(with_input)
+-- Key hints for the frame's bottom border: the popup keys, or the composer's
+-- send/back keys while asking.
+local function footer(view)
+	local items = view.composer and { { "input", "send", "ask" }, { "popup", "cancel", "back" } }
+		or { { "explanation", "ask", "ask" }, { "explanation", "copy", "copy" }, { "explanation", "close", "close" } }
+	local hints = {}
+	for _, item in ipairs(items) do
+		if item[2] ~= "ask" or view.on_ask then
+			hints[#hints + 1] = { keymaps.label(item[1], item[2], item[1] == "explanation" and config.keymaps or nil), item[3] }
+		end
+	end
+	local text = keymaps.hint(hints, { omit_disabled = true })
+	return text and (" " .. text .. " ")
+end
+
+-- Answer rows fill the frame, except the bottom `reserved` rows held by an
+-- open question composer.
+local function layout(reserved)
 	local width = math.min(88, math.max(1, vim.o.columns - 10))
-	local height = math.min(24, math.max(with_input and 3 or 1, vim.o.lines - vim.o.cmdheight - 6))
+	local height = math.min(24, math.max(3, vim.o.lines - vim.o.cmdheight - 6))
 	return {
 		frame = { size = { width = width, height = height } },
-		content = { position = { row = 0, col = 0 }, size = { width = width, height = with_input and height - 2 or height } },
-		input = with_input and { position = { row = height - 1, col = 0 }, size = { width = width, height = 1 } } or nil,
+		content = { position = { row = 0, col = 0 }, size = { width = width, height = math.max(1, height - (reserved or 0)) } },
 	}
 end
 
 local function draw_frame(view)
-	local size = layout(view.input_bufnr ~= nil).frame.size
 	local lines = {}
-	for index = 1, size.height do lines[index] = "" end
-	if view.input_bufnr then lines[size.height - 1] = string.rep("─", size.width) end
-	view.popup:render(lines, view.input_bufnr and {
-		{ row = size.height - 2, col = 0, end_col = #lines[size.height - 1], hl_group = "FloatBorder" },
-	} or nil, "frame")
+	for index = 1, layout().frame.size.height do lines[index] = "" end
+	view.popup:render(lines, nil, "frame")
+	local border = view.popup.frame.border
+	if border and border.winid and vim.api.nvim_win_is_valid(border.winid) then
+		border:set_text("bottom", footer(view) or "", "center")
+	end
 end
 
-local function input_text(view)
-	return vim.trim(table.concat(vim.api.nvim_buf_get_lines(view.input_bufnr, 0, -1, false), "\n"))
+local function reserve(view, rows)
+	if view.reserved == rows then return end
+	view.reserved = rows
+	view.popup:resize(layout(rows))
 end
 
-local function update_placeholder(view)
-	if active ~= view or not vim.api.nvim_buf_is_valid(view.input_bufnr) then return end
-	local empty = table.concat(vim.api.nvim_buf_get_lines(view.input_bufnr, 0, -1, false), "") == ""
-	view.popup:render(nil, empty and {
-		{ row = 0, col = 0, opts = { virt_text = { { "Ask about the selection", "Comment" } }, virt_text_pos = "overlay" } },
-	} or {}, "input")
+-- The composer spans the frame's width along its bottom edge and grows upward
+-- with the question; the answer keeps the rows above it.
+local function dock(view)
+	return function(measure)
+		local frame = view.popup.frame.winid
+		local width, height = vim.api.nvim_win_get_width(frame), vim.api.nvim_win_get_height(frame)
+		local rows = measure(math.max(1, width - 2), height - 4 - MIN_ANSWER_ROWS)
+		reserve(view, rows + 4)
+		return {
+			relative = { type = "win", winid = frame }, zindex = 52,
+			row = math.max(0, height - rows - 4), col = 0, width = math.max(1, width - 2), height = rows,
+		}
+	end
+end
+
+local function explanation_model()
+	local global = require("opencode.state").get_config() or {}
+	return (global.explanation or config).model
 end
 
 local function start_spinner(view)
@@ -119,32 +151,41 @@ local function copy_answer()
 	vim.notify("Explanation copied", vim.log.levels.INFO)
 end
 
-local function focus_answer(view)
-	vim.cmd("stopinsert")
-	if vim.api.nvim_win_is_valid(view.winid) then vim.api.nvim_set_current_win(view.winid) end
+local function composer_closed(view)
+	view.composer = nil
+	if active ~= view then return false end
+	reserve(view, 0)
+	draw_frame(view)
+	return true
 end
 
-local function focus_input()
+-- A question typed during an answer stays in the composer until it can be
+-- sent; going back keeps it for the next ask.
+local function ask()
 	local view = active
-	if not view or not view.input_winid or not vim.api.nvim_win_is_valid(view.input_winid) then return end
-	vim.api.nvim_set_current_win(view.input_winid)
-	vim.cmd("startinsert!")
-end
-
--- A question typed during an answer stays in the input until it can be sent.
-local function submit()
-	local view = active
-	if not view then return end
-	local question = input_text(view)
-	if question == "" then return end
-	if view.phase == "pending" or view.phase == "streaming" then
-		vim.notify("OpenCode explanation: wait for the current answer", vim.log.levels.INFO)
-		return
-	end
-	view.popup:render({ "" }, nil, "input")
-	update_placeholder(view)
-	focus_answer(view)
-	view.on_ask(question)
+	if not view or not view.on_ask or view.composer then return end
+	view.composer = require("opencode.ui.completion_prompt").open({
+		winid = view.winid, title = "Ask", model = explanation_model(), text = view.draft,
+		placement = dock(view),
+		can_submit = function(value)
+			if vim.trim(value) == "" then return false end
+			if view.phase == "pending" or view.phase == "streaming" then
+				vim.notify("OpenCode explanation: wait for the current answer", vim.log.levels.INFO)
+				return false
+			end
+			return true
+		end,
+		on_submit = function(value)
+			view.draft = nil
+			if composer_closed(view) then view.on_ask(vim.trim(value)) end
+		end,
+		on_cancel = function(value)
+			view.draft = value
+			-- Leaving the composer for another window leaves the explanation too.
+			if composer_closed(view) and vim.api.nvim_get_current_win() ~= view.winid then M.close() end
+		end,
+	})
+	draw_frame(view)
 end
 
 local function configure_buffer(bufnr)
@@ -180,33 +221,29 @@ end
 function M.open(snapshot, on_close, on_ask)
 	M.close()
 	local view = { snapshot = snapshot, phase = "pending", on_close = on_close, on_ask = on_ask }
-	local layers = layout(on_ask ~= nil)
+	local layers = layout()
 	local popup = Popup.new({
 		frame = vim.tbl_extend("force", layers.frame, {
 			enter = false, focusable = false, zindex = 50,
-			border = { text = { top = " Explanation ", top_align = "center" } },
+			border = { text = { top = " Explanation ", top_align = "center", bottom = footer(view), bottom_align = "center" } },
 			buf_options = { filetype = "opencode_float", modifiable = false },
 		}),
 		content = vim.tbl_extend("force", layers.content, {
 			enter = true, focusable = true, border = "none", zindex = 51,
 			buf_options = { filetype = "opencode_explanation" },
 		}),
-		input = layers.input and vim.tbl_extend("force", layers.input, {
-			kind = "popup", enter = false, focusable = true, border = "none", zindex = 52,
-			buf_options = { filetype = "opencode_explanation_input", modifiable = true },
-			win_options = { wrap = false, number = false, relativenumber = false, signcolumn = "no" },
-		}),
 		focus_restore = "previous",
 		close_on_leave = true,
 		on_resize = function(current)
 			local saved_view = vim.api.nvim_win_call(view.winid, vim.fn.winsaveview)
-			current:resize(layout(view.input_bufnr ~= nil))
+			current:resize(layout(view.reserved))
 			draw_frame(view)
 			if view.text and view.phase ~= "pending" then render(view, view.text, saved_view) end
 		end,
 		on_close = function()
 			stop_spinner(view)
 			if active == view then active = nil end
+			if view.composer then view.composer.close() end
 			if view.on_close then
 				local callback = view.on_close
 				view.on_close = nil
@@ -217,7 +254,6 @@ function M.open(snapshot, on_close, on_ask)
 	view.popup = popup
 	popup:mount()
 	view.bufnr, view.winid = popup.bufnr, popup.winid
-	view.input_bufnr, view.input_winid = popup.input_bufnr, popup.input_winid
 	active = view
 	local bufnr = view.bufnr
 	vim.bo[bufnr].modifiable = false
@@ -230,17 +266,9 @@ function M.open(snapshot, on_close, on_ask)
 	vim.wo[view.winid].scrolloff = 2
 	local map, apply = keymaps.mapper("explanation", bufnr, config.keymaps)
 	map("n", "copy", copy_answer, { desc = "Copy explanation" })
-	if on_ask then map("n", "ask", focus_input, { desc = "Ask about the explanation" }) end
+	if on_ask then map("n", "ask", ask, { desc = "Ask about the explanation" }) end
 	map("n", "close", M.close)
 	apply()
-	if view.input_bufnr then
-		local input_map, input_apply = keymaps.mapper("popup", view.input_bufnr)
-		input_map({ "i", "n" }, "submit", submit, { desc = "Ask about the explanation" })
-		input_map({ "i", "n" }, "cancel", function() focus_answer(view) end, { desc = "Back to the explanation" })
-		input_apply()
-		popup:on({ "TextChanged", "TextChangedI" }, function() update_placeholder(view) end, "input")
-		update_placeholder(view)
-	end
 	draw_frame(view)
 	render(view, pending_text(view))
 	start_spinner(view)

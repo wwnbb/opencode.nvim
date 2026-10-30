@@ -177,6 +177,8 @@ local function normalize_line(line)
 	return math.max(0, math.floor(line))
 end
 
+-- last_render_highlight_signature holds the applied highlight frame (see
+-- highlight_frame); any direct buffer or extmark change drops it.
 function M.invalidate_render_highlights(start_line)
 	state.last_render_highlight_signature = nil
 	if start_line ~= nil then
@@ -266,10 +268,10 @@ function M.reset_chat_surface(opts)
 	if opts.force_full_render ~= false then
 		state.force_full_render = true
 	end
+	-- Shared memo pools serve every view; only global invalidations clear them.
 	if not opts.preserve_render_cache then
 		M.clear_render_cache()
 		M.clear_code_cache()
-		if not view.session_bound then memo.clear_all() end
 	end
 end
 
@@ -321,115 +323,167 @@ function M.render_cache_put(key, value, owner)
 	return value
 end
 
----@param parts string[]
----@param highlights table|nil
----@param start_line number|nil
-local function append_highlight_signature(parts, highlights, start_line)
-	if type(highlights) ~= "table" then
-		return
+---@param old_lines string[]
+---@param new_lines string[]
+---@return integer start 0-based first differing line
+---@return integer old_end exclusive end of the replaced old range
+---@return integer new_end exclusive end of the replacement new range
+function M.diff_lines(old_lines, new_lines)
+	local old_count, new_count = #old_lines, #new_lines
+	local limit = math.min(old_count, new_count)
+	local start = 0
+	while start < limit and old_lines[start + 1] == new_lines[start + 1] do
+		start = start + 1
 	end
-	start_line = start_line or 0
-	for _, hl in ipairs(highlights) do
-		if type(hl) == "table" and hl.hl_group then
-			local line = start_line + (hl.line or 0)
-			local end_line = hl.end_line and (start_line + hl.end_line) or line
-			table.insert(
-				parts,
-				table.concat({
-					tostring(line),
-					tostring(end_line),
-					tostring(hl.col_start or 0),
-					tostring(hl.col_end or hl.end_col or ""),
-					tostring(hl.hl_group or ""),
-					tostring(hl.priority or ""),
-					tostring(hl.hl_eol or ""),
-				}, ":")
-			)
-		end
+	local suffix = 0
+	while suffix < limit - start and old_lines[old_count - suffix] == new_lines[new_count - suffix] do
+		suffix = suffix + 1
 	end
+	return start, old_count - suffix, new_count - suffix
 end
 
+local WIDGET_MAPS = { "questions", "permissions", "edits", "tasks", "tools" }
+
+---Highlight sources of one rendered frame, kept by reference so the next frame
+---can be compared without building signatures.
 ---@param content_highlights table|nil
----@return string
-function M.render_highlight_signature(content_highlights)
-	local parts = {}
-	if type(content_highlights) == "table" and content_highlights._opencode_signature then
-		table.insert(parts, tostring(content_highlights._opencode_signature))
-	end
-	append_highlight_signature(parts, content_highlights, 0)
+---@param nui_lines NuiLine[]|nil
+function M.highlight_frame(content_highlights, nui_lines)
+	local maps = {}
+	for index, name in ipairs(WIDGET_MAPS) do maps[index] = state[name] or {} end
+	return { content = content_highlights or {}, nui_lines = nui_lines or {}, maps = maps }
+end
 
-	local function append_line_map(line_map)
-		local keys = {}
-		for key in pairs(line_map or {}) do
-			table.insert(keys, key)
-		end
-		table.sort(keys, function(a, b)
-			return tostring(a) < tostring(b)
-		end)
-		for _, key in ipairs(keys) do
-			local pos = line_map[key]
-			append_highlight_signature(parts, pos and pos.highlights, pos and pos.start_line or 0)
-		end
-	end
+local function highlight_bounds(hl, base)
+	local line = base + (hl.line or 0)
+	return line, hl.end_line and (base + hl.end_line) or line
+end
 
-	for _, line_map in ipairs({ state.questions, state.permissions, state.edits, state.tasks, state.tools }) do
-		append_line_map(line_map)
+---Grow [start, finish) until no highlight or widget range crosses an edge.
+---A nil finish leaves the range open to the end of the buffer.
+---@param frame table
+---@param start number
+---@param finish number|nil
+---@return number start
+---@return number|nil finish
+function M.extend_highlight_range(frame, start, finish)
+	start = normalize_line(start)
+	local function cross(line, end_line)
+		local moved = false
+		if line < start and end_line >= start then
+			start, moved = line, true
+		end
+		if finish and line < finish and end_line >= finish then
+			finish, moved = end_line + 1, true
+		end
+		return moved
 	end
-	local result = table.concat(parts, "|")
-	return result
+	local function scan(highlights, base)
+		local moved = false
+		if type(highlights) ~= "table" then return false end
+		for _, hl in ipairs(highlights) do
+			if type(hl) == "table" and cross(highlight_bounds(hl, base)) then moved = true end
+		end
+		return moved
+	end
+	local moved = true
+	while moved do
+		moved = scan(frame.content, 0)
+		for _, map in ipairs(frame.maps) do
+			for _, pos in pairs(map) do
+				if type(pos) == "table" then
+					local first, last = tonumber(pos.start_line), tonumber(pos.end_line)
+					if first and last and cross(normalize_line(first), last) then moved = true end
+					if scan(pos.highlights, pos.start_line or 0) then moved = true end
+				end
+			end
+		end
+	end
+	return math.max(0, start), finish
 end
 
 ---@param changed_start number|nil
 ---@param content_highlights table|nil
 ---@return number
 function M.highlight_clear_start(changed_start, content_highlights)
-	local clear_start = normalize_line(changed_start)
-	local function consider(highlights, start_line)
-		local moved = false
-		if type(highlights) ~= "table" then
-			return moved
-		end
-		start_line = start_line or 0
-		for _, hl in ipairs(highlights) do
-			if type(hl) == "table" then
-				local line = start_line + (hl.line or 0)
-				local end_line = hl.end_line and (start_line + hl.end_line) or line
-				if line < clear_start and end_line >= clear_start then
-					clear_start = line
-					moved = true
-				end
-			end
-		end
-		return moved
-	end
-	local function consider_widget_range(pos)
-		if type(pos) ~= "table" then
-			return false
-		end
-		local start_line = tonumber(pos.start_line)
-		local end_line = tonumber(pos.end_line)
-		if not start_line or not end_line then
-			return false
-		end
-		if start_line < clear_start and end_line >= clear_start then
-			clear_start = normalize_line(start_line)
-			return true
-		end
-		return false
-	end
+	return (M.extend_highlight_range(M.highlight_frame(content_highlights), changed_start))
+end
 
-	local moved = true
-	while moved do
-		moved = consider(content_highlights, 0)
-		for _, line_map in ipairs({ state.questions, state.permissions, state.edits, state.tasks, state.tools }) do
-			for _, pos in pairs(line_map or {}) do
-				moved = consider_widget_range(pos) or moved
-				moved = consider(pos.highlights, pos.start_line or 0) or moved
+local function same_highlight(a, a_base, b, b_base)
+	local a_line, a_end = highlight_bounds(a, a_base)
+	local b_line, b_end = highlight_bounds(b, b_base)
+	return a_line == b_line and a_end == b_end
+		and (a.col_start or 0) == (b.col_start or 0)
+		and (a.col_end or a.end_col) == (b.col_end or b.end_col)
+		and a.hl_group == b.hl_group and a.priority == b.priority and a.hl_eol == b.hl_eol
+end
+
+-- Next highlight that apply_extmark_highlights would place at or after from.
+local function next_applied(highlights, index, base, from)
+	while true do
+		index = index + 1
+		local hl = highlights[index]
+		if hl == nil then return index, nil end
+		if type(hl) == "table" and hl.hl_group and base + (hl.line or 0) >= from then return index, hl end
+	end
+end
+
+local function same_highlight_list(a, a_base, b, b_base, from)
+	a, b = type(a) == "table" and a or {}, type(b) == "table" and b or {}
+	local i, j, x, y = 0, 0, nil, nil
+	repeat
+		i, x = next_applied(a, i, a_base, from)
+		j, y = next_applied(b, j, b_base, from)
+		if (x == nil) ~= (y == nil) then return false end
+		if x and not same_highlight(x, a_base, y, b_base) then return false end
+	until x == nil
+	return true
+end
+
+local function has_text_highlight(line)
+	for _, text in ipairs(line and line._texts or {}) do
+		if text.extmark then return true end
+	end
+	return false
+end
+
+---Whether the extmark highlights previous applied from old_from are exactly
+---those frame applies from new_from. NuiText reuses its extmark id, so with
+---check_lines a highlighted line must also keep its NuiLine: applying a moved
+---line elsewhere would move the mark that the unchanged tail still relies on.
+---@param previous table
+---@param frame table
+---@param old_from number
+---@param new_from number
+---@param check_lines boolean|nil
+---@return boolean
+function M.same_frame_highlights(previous, frame, old_from, new_from, check_lines)
+	if previous.content._opencode_signature ~= frame.content._opencode_signature then return false end
+	local shift = new_from - old_from
+	if not same_highlight_list(previous.content, shift, frame.content, 0, new_from) then return false end
+	for index, map in ipairs(frame.maps) do
+		local old_map = previous.maps[index] or {}
+		for id, pos in pairs(map) do
+			local old = old_map[id]
+			if not same_highlight_list(old and old.highlights, (old and old.start_line or 0) + shift,
+				pos.highlights, pos.start_line or 0, new_from) then
+				return false
+			end
+		end
+		for id, old in pairs(old_map) do
+			if map[id] == nil and not same_highlight_list(old.highlights, (old.start_line or 0) + shift, nil, 0, new_from) then
+				return false
 			end
 		end
 	end
-	local result = math.max(0, clear_start)
-	return result
+	if check_lines then
+		local lines, old_lines = frame.nui_lines, previous.nui_lines
+		for row = new_from + 1, #lines do
+			local old, line = old_lines[row - shift], lines[row]
+			if old ~= line and (has_text_highlight(old) or has_text_highlight(line)) then return false end
+		end
+	end
+	return true
 end
 
 return M

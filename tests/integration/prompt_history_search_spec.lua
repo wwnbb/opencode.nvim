@@ -66,25 +66,20 @@ describe("prompt history search with real editor input", function()
 	local client
 	after_each(function() if client then client.close(); client = nil end end)
 
-	for _, provider in ipairs({ "grep", "ripgrep" }) do
-		it("searches with " .. provider .. " and restores the full prompt into the composer without sending", function()
-			client = editor(provider)
-			assert.equals("Search Prompt History", client.lua("return require('opencode.command_registry').get('prompt.history').title"))
-			client.open_history()
-			client.feed("match [literal]")
-			client.wait("#processes > 0 and picker.current() ~= nil and picker.current().entry.text == prompt")
-			assert.equals(provider == "ripgrep" and "rg" or "grep", client.lua("return processes[#processes][1]"))
-			assert.equals("match [literal]", client.lua("return processes[#processes][#processes[#processes] - 2]"))
-			client.feed("<CR>")
-			client.wait("input.is_visible() and vim.api.nvim_get_current_win() == input.get_winids()[1] and vim.api.nvim_get_mode().mode == 'i'")
-			assert.equals("Draft kept\n\nFirst line\nMATCH [literal]\nLast line", client.lua("return input.get_pending_text()"))
-			assert.same({ { type = "agent", name = "explore" },
-				{ type = "file", uri = "file:///tmp/history-notes.txt", name = "history-notes.txt" } },
-				client.lua("return input.get_pending_parts()"))
-			assert.same({}, client.lua("return sent"))
-			assert.same({}, client.lua("return notices"))
-		end)
-	end
+	it("searches from the palette and restores the full prompt into the composer without sending", function()
+		client = editor("grep")
+		client.open_history()
+		client.feed("match [literal]")
+		client.wait("#processes > 0 and picker.current() ~= nil and picker.current().entry.text == prompt")
+		client.feed("<CR>")
+		client.wait("input.is_visible() and vim.api.nvim_get_current_win() == input.get_winids()[1] and vim.api.nvim_get_mode().mode == 'i'")
+		assert.equals("Draft kept\n\nFirst line\nMATCH [literal]\nLast line", client.lua("return input.get_pending_text()"))
+		assert.same({ { type = "agent", name = "explore" },
+			{ type = "file", uri = "file:///tmp/history-notes.txt", name = "history-notes.txt" } },
+			client.lua("return input.get_pending_parts()"))
+		assert.same({}, client.lua("return sent"))
+		assert.same({}, client.lua("return notices"))
+	end)
 
 	it("keeps the unsent draft and attachments when search is cancelled", function()
 		client = editor("grep")

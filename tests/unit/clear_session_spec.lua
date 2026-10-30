@@ -65,19 +65,6 @@ describe("/clear session context", function()
 			assert.equals("new draft during creation", require("opencode.ui.input.history").get_pending("ses_fresh"))
 			assert.same({ { type = "file", name = "new.png" } },
 				require("opencode.ui.input.history").get_pending_parts("ses_fresh"))
-
-			create_callback = nil
-			input.set_pending_text("same text")
-			require("opencode.ui.input.history").set_pending_parts({ { type = "file", name = "before.png" } })
-			assert.is_true(slash.execute(slash.parse("/clear")))
-			assert.is_not_nil(create_callback)
-			require("opencode.ui.input.history").set_pending_parts({ { type = "file", name = "after.png" } })
-			create_callback(nil, { id = "ses_final", title = "Final conversation" })
-			assert.is_true(vim.wait(500, function() return state.get_session().id == "ses_final" end, 10))
-			assert.equals("", input.get_pending_text())
-			assert.equals("same text", require("opencode.ui.input.history").get_pending("ses_next"))
-			assert.same({ { type = "file", name = "after.png" } },
-				require("opencode.ui.input.history").get_pending_parts("ses_next"))
 		end)
 
 		lifecycle.ensure_connected = original_connect

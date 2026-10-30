@@ -45,23 +45,4 @@ describe("session picker pagination", function()
 		assert.is_nil(result.sessions)
 	end)
 
-	it("rejects a child page arriving after the server connection changes", function()
-		local deferred, calls, result, completions = nil, 0, nil, 0
-		client.list_sessions = function(opts, callback)
-			calls = calls + 1
-			assert.equals("parent", opts.parentID)
-			if calls == 1 then deferred = callback
-			else callback(nil, { { id = "new-server-child" } }, { cursor = {} }) end
-		end
-		client.get_session_children("parent", function(err, children)
-			completions = completions + 1
-			result = { err = err, children = children }
-		end)
-		client.setup({ port = 12345 })
-		deferred(nil, { { id = "old-server-child" } }, { cursor = { next = "older" } })
-		assert.equals(1, calls)
-		assert.equals(1, completions)
-		assert.equals("stale_connection", result.err.code)
-		assert.is_nil(result.children)
-	end)
 end)

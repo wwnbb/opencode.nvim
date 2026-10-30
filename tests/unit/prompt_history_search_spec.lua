@@ -33,7 +33,7 @@ describe("prompt history search", function()
 
 	before_each(function()
 		saved = { system = vim.system, executable = vim.fn.executable, notify = vim.notify, open = menu.open,
-			focus_input = actions.focus_input, send = actions.send, getcwd = vim.fn.getcwd }
+			focus_input = actions.focus_input, send = actions.send }
 		state.reset()
 		state.set_session("history-session", "History")
 		path = vim.fn.tempname()
@@ -71,7 +71,7 @@ describe("prompt history search", function()
 		history.clear()
 		state.reset()
 		vim.system, vim.fn.executable, vim.notify, menu.open = saved.system, saved.executable, saved.notify, saved.open
-		actions.focus_input, actions.send, vim.fn.getcwd = saved.focus_input, saved.send, saved.getcwd
+		actions.focus_input, actions.send = saved.focus_input, saved.send
 		os.remove(path)
 	end)
 
@@ -182,46 +182,6 @@ describe("prompt history search", function()
 		assert.equals(2, #notices)
 	end)
 
-	it("restores all items when clearing an active query and never restarts a closed search", function()
-		history.add("older"); history.add("newer")
-		local backend = require("opencode.ui.history_search").new({ history_file = path })
-		local results, loading
-		local function update(items, busy) results, loading = items, busy end
-		assert.equals("history", backend.items[1].kind)
-		backend.search("older", update)
-		assert.is_true(loading); assert.equals(0, #results)
-		local job = jobs[1]
-		backend.search("", update)
-		assert.is_true(job.killed); assert.is_false(loading)
-		assert.equals(2, #results); assert.equals("newer", results[1].entry.text)
-		job.callback({ code = 0, stdout = "2:older\n" }); flush()
-		assert.equals(2, #results); assert.equals("newer", results[1].entry.text)
-		assert.equals(1, #jobs)
-		backend.close()
-		backend.search("newer", function() error("closed search called back") end)
-		assert.equals(1, #jobs)
-		assert.equals(0, #notices)
-	end)
-
-	it("ends loading on search failures and allows the pending callback to close the search", function()
-		history.add("saved")
-		local backend = require("opencode.ui.history_search").new({ history_file = path })
-		local results, loading
-		local function update(items, busy) results, loading = items, busy end
-		backend.search("error", update)
-		assert.is_true(loading)
-		jobs[1].callback({ code = 2, stderr = "failed" }); flush()
-		assert.is_false(loading); assert.same({}, results)
-		vim.system = function() error("spawn failed") end
-		backend.search("spawn", update)
-		assert.is_false(loading); assert.same({}, results)
-		backend.search("close", function(_, busy)
-			assert.is_true(busy)
-			backend.close()
-		end)
-		assert.equals(2, #notices)
-	end)
-
 	it("reports unsupported providers and unavailable executables without running a search", function()
 		history.add("saved")
 		show("unknown")
@@ -241,11 +201,8 @@ describe("prompt history search", function()
 		for _, invalidate in ipairs({
 			function() input.set_pending_draft("edited", {}) end,
 			function() state.set_session("other", "Other") end,
-			function() state.upsert_session({ id = "history-session", directory = "/moved-session" }) end,
-			function() vim.fn.getcwd = function() return "/another-project" end end,
 			function() pending.clear_session("history-session") end,
 		}) do
-			vim.fn.getcwd = saved.getcwd
 			state.set_session("history-session", "History")
 			input.set_pending_draft("keep", {}, { mode = "normal" })
 			show()

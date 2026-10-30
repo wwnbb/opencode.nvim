@@ -21,7 +21,12 @@ function M.guard(view, generation)
 	end
 	local state = require("opencode.state")
 	local source, changed = state.get_session().id, false
-	local function switched() changed = true end
+	-- Once changed the guard stays invalid, so stop listening even when the
+	-- owner never reaches dispose().
+	local function switched()
+		changed = true
+		state.off("session.id", switched)
+	end
 	state.on("session.id", switched)
 	return { view = view,
 		valid = function() return not changed and state.get_session().id == source end,

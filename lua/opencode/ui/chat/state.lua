@@ -47,6 +47,7 @@ M.state = {
 	force_full_render = false, -- Next render must replace the whole chat buffer
 	session_stack = {},     -- Stack of { id, name } for parent session navigation
 	last_render_time = 0,
+	render_durations = {},  -- Recent render costs (ms) that pace the throttle
 	render_scheduled = false,
 	render_in_progress = false,
 	render_generation = 0,

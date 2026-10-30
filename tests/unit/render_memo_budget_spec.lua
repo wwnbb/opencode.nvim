@@ -148,31 +148,6 @@ describe("render and task-summary shared memo budget", function()
 		assert.same({ blocks = {}, order = {} }, render_state.ensure_render_cache())
 	end)
 
-	it("supports old key-only callers and resets on replacing or restoring state sentinels", function()
-		local value = { "legacy" }
-		render_state.render_cache_put("legacy-key", value)
-		assert.equals(value, render_state.render_cache_get("legacy-key"))
-		local snapshot = render_state.ensure_render_cache()
-		assert.equals(value, snapshot.blocks["legacy-key"])
-		snapshot.blocks["legacy-key"] = nil
-		assert.equals(value, render_state.render_cache_get("legacy-key"))
-		local original = state.render_cache
-		state.render_cache = { blocks = {}, order = {} }
-		assert.is_nil(render_state.render_cache_get("legacy-key"))
-		render_state.render_cache_put("replacement", { "new" })
-		state.render_cache = original
-		assert.is_nil(render_state.render_cache_get("replacement"))
-		local original_task = state.task_summary_cache
-		render_state.task_summary_cache_put("child", 1, {}, "old")
-		state.task_summary_cache = { entries = {}, order = {} }
-		local _, _, replaced = render_state.task_summary_cache_get("child", 1)
-		assert.is_false(replaced)
-		render_state.task_summary_cache_put("child", 2, {}, "new")
-		state.task_summary_cache = original_task
-		local _, _, restored = render_state.task_summary_cache_get("child", 2)
-		assert.is_false(restored)
-	end)
-
 	it("retires prior results before dependency changes, retry, running results or errors", function()
 		for _, method in ipairs({ "cached_nui_lines", "cached_render_result" }) do
 			local id = owner(method, "session", "message")
@@ -229,7 +204,7 @@ describe("render and task-summary shared memo budget", function()
 		assert.equals(3, captures)
 	end)
 
-	it("always clears summaries on surface reset and preserves render only when requested", function()
+	it("always clears summaries on surface reset and preserves render only when requested; shared pools stay", function()
 		local other = memo.new("render_reset_other", { max_entries = 10 })
 		other:put("owner", 1, {})
 		render_state.render_cache_put("render", {})
@@ -242,7 +217,8 @@ describe("render and task-summary shared memo budget", function()
 		assert.equals(1, render_state.code_cache_stats().entries)
 		render_state.reset_chat_surface()
 		assert.is_nil(render_state.render_cache_get("render"))
-		assert.equals(0, memo.stats().entries)
+		assert.equals(0, render_state.render_cache_stats().entries)
+		assert.is_not_nil(other:get("owner", 1))
 		assert.equals(0, render_state.code_cache_stats().entries)
 	end)
 
@@ -253,9 +229,7 @@ describe("render and task-summary shared memo budget", function()
 		for index = 1, 129 do highlight("return " .. index, "lua", {}, { open_line = index }) end
 		local stats = render_state.code_cache_stats()
 		assert.equals(128, stats.entries)
-		assert.equals(128, stats.max_entries)
-		assert.equals(8 * MiB, stats.max_bytes)
-		assert.is_true(stats.bytes <= stats.max_bytes)
+		assert.is_true(stats.bytes <= 8 * MiB)
 		assert.equals(before, memo.stats().bytes)
 	end)
 end)

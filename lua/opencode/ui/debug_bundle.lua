@@ -41,7 +41,7 @@ end
 
 function M.show()
 	local payload = vim.json.encode(M.collect())
-	local lines = { "Support snapshot (no credentials, endpoints, history or logs)", "", payload, "", keymaps.label("debug_bundle", "copy") .. ": copy JSON    " .. keymaps.label("debug_bundle", "close") .. ": close" }
+	local lines = { "Support snapshot (no credentials, endpoints, history or logs)", "", payload }
 	local float = require("opencode.ui.float")
 	local popup = float.create_centered_popup({ title = " Debug Bundle ", width = 90, height = 12 })
 	popup:mount()
@@ -56,7 +56,9 @@ function M.show()
 		vim.notify("Debug bundle copied", vim.log.levels.INFO)
 	end)
 	apply()
-	lines[#lines] = keymaps.label("debug_bundle", "copy") .. ": copy JSON    " .. keymaps.label("debug_bundle", "close") .. ": close"
+	local hint = keymaps.hint({ { keymaps.label("debug_bundle", "copy"), "copy JSON" },
+		{ keymaps.label("debug_bundle", "close"), "close" } }, { omit_disabled = true })
+	if hint then vim.list_extend(lines, { "", hint }) end
 	popup:render(lines)
 	return popup
 end

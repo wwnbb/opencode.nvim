@@ -32,12 +32,12 @@ function M.open(fields, opts, callback)
 				local label = keymaps.label("form", "option_" .. index)
 				choices[#choices + 1], normal = label, normal and label == tostring(index)
 			end
-			hints[#hints + 1] = (normal and ("1-" .. #choices) or table.concat(choices, " / ")) .. " select"
+			hints[#hints + 1] = { normal and ("1-" .. #choices) or table.concat(choices, " / "), "select" }
 		end
 		for _, action in ipairs({ "toggle", "custom", "next_field", "prev_field", "submit", "close" }) do
-			hints[#hints + 1] = keymaps.label("form", action) .. " " .. action:gsub("_", " ")
+			hints[#hints + 1] = { keymaps.label("form", action), (action:gsub("_", " ")) }
 		end
-		item.hint = table.concat(hints, " · ")
+		item.hint = keymaps.hint(hints)
 		local lines, highlights, meta = widget.get_lines_for_question("integration", item.questions, item, "pending",
 			{ width = vim.api.nvim_win_get_width(popup.winid) })
 		popup:render(lines, highlights)

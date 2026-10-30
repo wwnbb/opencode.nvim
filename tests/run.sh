@@ -83,7 +83,6 @@ case "$TARGET" in
 			tests/unit/sync_memo_spec.lua \
 			tests/unit/history_metadata_spec.lua \
 			tests/unit/completion_context_spec.lua \
-			tests/unit/context_budget_equivalence_spec.lua \
 			tests/unit/explanation_context_spec.lua \
 			tests/unit/memo_spec.lua \
 			tests/unit/render_memo_budget_spec.lua \

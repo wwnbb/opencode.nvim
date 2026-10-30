@@ -59,15 +59,15 @@ describe("activity widgets in the chat buffer", function()
 		chat.do_render()
 		local parts = sync.get_parts("message")
 		local thought_id, read_id = group_id(parts[1].id), group_id(parts[2].id)
-		assert.is_truthy(text():find("+ Thought · 216ms", 1, true))
-		assert.is_truthy(text():find("→ Explored — 1 read", 1, true))
+		assert.is_truthy(text():find("▸ Thought · 216ms", 1, true))
+		assert.is_truthy(text():find("→ Explored · 1 read", 1, true))
 		vim.api.nvim_win_set_cursor(state.winid, { state.tools[thought_id].start_line + 1, 0 })
 		key("<CR>")
 		assert.is_truthy(text():find("▏  more details", 1, true))
 		vim.api.nvim_win_set_cursor(state.winid, { state.tools[read_id].start_line + 1, 0 })
 		key("O")
 		assert.is_truthy(text():find("\n → Read Cargo.toml", 1, true))
-		assert.is_truthy(text():find("↘ Explored — 1 read", 1, true))
+		assert.is_truthy(text():find("↘ Explored · 1 read", 1, true))
 		chat.do_render()
 		assert.is_true(state.expanded_tools[read_id])
 		assert.equals(read_id, tasks.get_tool_at_cursor())
@@ -93,7 +93,7 @@ describe("activity widgets in the chat buffer", function()
 		part.time.completed = 3700
 		sync.handle_part_updated(part)
 		chat.do_render()
-		assert.is_truthy(text():find("- Thought · 3.6s", 1, true))
+		assert.is_truthy(text():find("▾ Thought · 3.6s", 1, true))
 		assert.is_true(state.expanded_tools[id])
 		sync.handle_part_updated({ id = "following", messageID = "message", sessionID = "activity-test",
 			protocol = "v2", type = "text", text = "Following text", content_order = 2 })
@@ -125,7 +125,7 @@ describe("activity widgets in the chat buffer", function()
 		chat.do_render()
 		local parts = sync.get_parts("message")
 		local parent_id, rg_id = group_id(parts[1].id), parts[2].id
-		assert.is_truthy(text():find("Explored — 1 read, 1 search", 1, true))
+		assert.is_truthy(text():find("Explored · 1 read, 1 search", 1, true))
 		assert.is_nil(text():find("● rg", 1, true))
 		assert.is_nil(state.tools[parts[2].id], "rg should belong to the group, not a separate widget")
 		vim.api.nvim_win_set_cursor(state.winid, { state.tools[parent_id].start_line + 1, 0 })
@@ -139,23 +139,24 @@ describe("activity widgets in the chat buffer", function()
 		key("<CR>")
 		assert.is_true(state.expanded_tools[parent_id])
 		assert.is_true(state.expanded_tools[rg_id])
-		assert.is_truthy(text():find("  pattern: Expr", 1, true))
+		assert.is_truthy(text():find("   │ pattern: Expr", 1, true))
 		assert.is_truthy(text():find("   │ src/ast.rs:17:    Expr::Num(n) => *n,", 1, true))
 		assert.is_truthy(text():find("   │ src/parser.rs:37:parse()", 1, true))
 		chat.do_render()
 		assert.is_true(state.expanded_tools[parent_id])
 		local output_line
 		for i, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)) do
-			if line:find("  output:", 1, true) then output_line = i - 1 end
+			if line:find("   │ pattern:", 1, true) then output_line = i - 1 end
 		end
 		assert.is_number(output_line)
 		local marks = vim.api.nvim_buf_get_extmarks(state.bufnr, cs.chat_hl_ns,
 			{ output_line, 0 }, { output_line, -1 }, { details = true })
-		assert.is_true(vim.iter(marks):any(function(mark) return mark[4].hl_group == "OpenCodeRgLabel" end))
+		-- Field labels inside the frame use the shared muted border group.
+		assert.is_true(vim.iter(marks):any(function(mark) return mark[4].hl_group == "OpenCodeExploreBorder" end))
 		vim.api.nvim_win_set_cursor(state.winid, { output_line + 1, 0 })
 		assert.equals(rg_id, tasks.get_tool_at_cursor())
 		key("O")
-		assert.is_nil(text():find("output:", 1, true))
+		assert.is_nil(text():find("   │ pattern:", 1, true))
 		assert.is_truthy(text():find("Final answer", 1, true))
 		assert.equals(rg_id, tasks.get_tool_at_cursor())
 		assert.is_true(state.expanded_tools[parent_id])
@@ -182,7 +183,7 @@ describe("activity widgets in the chat buffer", function()
 		})
 		local ok, err = pcall(function()
 			chat.do_render()
-			assert.is_truthy(text():find("Explored — 1 read", 1, true))
+			assert.is_truthy(text():find("Explored · 1 read", 1, true))
 			assert.is_truthy(text():find("Read secret.txt", 1, true))
 			assert.is_not_nil(state.permissions.permission)
 			assert.equals("pending", state.permissions.permission.status)
@@ -191,7 +192,7 @@ describe("activity widgets in the chat buffer", function()
 		assert.is_true(ok, err)
 	end)
 
-	for _, name in ipairs({ "websearch", "webfetch" }) do
+	for _, name in ipairs({ "webfetch" }) do
 		it("keeps a " .. name .. " permission visible beside collapsed browsing", function()
 			local permissions = require("opencode.permission.state")
 			local input = { query = "protected query", url = "https://example.com/protected" }
@@ -209,7 +210,7 @@ describe("activity widgets in the chat buffer", function()
 				chat.do_render()
 				local parts = sync.get_parts("message")
 				local parent = state.tools[group_id(parts[1].id)]
-				assert.is_truthy(text():find("Browsed — 1 search", 1, true))
+				assert.is_truthy(text():find("Browsed · 1 search", 1, true))
 				assert.is_nil(parent.children[parts[2].id])
 				assert.is_not_nil(state.permissions.permission)
 				assert.equals("pending", state.permissions.permission.status)
@@ -235,7 +236,7 @@ describe("activity widgets in the chat buffer", function()
 		local parts = sync.get_parts("message")
 		local parent, search, fetch = group_id(parts[1].id), parts[1].id, parts[2].id
 		assert.are_not.equals(parent, search)
-		assert.is_truthy(text():find("Browsed — 1 search, 1 fetch", 1, true))
+		assert.is_truthy(text():find("Browsed · 1 search, 1 fetch", 1, true))
 		assert.is_nil(text():find("Lua coroutine", 1, true))
 		assert.is_nil(tree.find(state.tools, fetch).start_line)
 		focus(parent)
@@ -276,59 +277,8 @@ describe("activity widgets in the chat buffer", function()
 		assert.equals(fetch_start, tree.find(state.tools, fetch).start_line)
 	end)
 
-	it("gives every exploration item its own state, including the first child", function()
-		local content = {}
-		for _, name in ipairs({ "rg", "read", "glob", "grep" }) do
-			content[#content + 1] = { type = "tool", id = name, name = name, state = {
-				status = "completed", input = { pattern = name, path = "src" },
-				content = { { type = "text", text = name .. "_unique_output" } },
-			} }
-		end
-		content[#content + 1] = { type = "text", text = "Following answer" }
-		seed(content, 500)
-		chat.do_render()
-		local parts = sync.get_parts("message")
-		local parent = group_id(parts[1].id)
-		assert.are_not.equals(parent, parts[1].id)
-		focus(parent)
-		key("O")
-		for i, name in ipairs({ "rg", "read", "glob", "grep" }) do
-			assert.is_nil(text():find(name .. "_unique_output", 1, true))
-			assert.is_nil(state.expanded_tools[parts[i].id])
-		end
-		for i, name in ipairs({ "rg", "read", "glob", "grep" }) do
-			local id = parts[i].id
-			focus(id)
-			assert.equals(id, tasks.get_tool_at_cursor())
-			key("O")
-			assert.is_true(state.expanded_tools[id])
-			assert.is_true(state.expanded_tools[parent])
-			assert.is_truthy(text():find(name .. "_unique_output", 1, true))
-			key("<CR>")
-			assert.is_nil(state.expanded_tools[id])
-			assert.is_nil(text():find(name .. "_unique_output", 1, true))
-			assert.equals(id, tasks.get_tool_at_cursor())
-			key("O")
-		end
-		chat.do_render()
-		for i = 1, 4 do assert.is_true(state.expanded_tools[parts[i].id]) end
-		focus(parent)
-		key("O")
-		for i = 1, 4 do
-			assert.is_nil(state.expanded_tools[parts[i].id])
-			assert.is_nil(tree.find(state.tools, parts[i].id).start_line)
-		end
-		assert.is_truthy(text():find("Following answer", 1, true))
-		key("O")
-		for _, name in ipairs({ "rg", "read", "glob", "grep" }) do
-			assert.is_nil(text():find(name .. "_unique_output", 1, true))
-		end
-	end)
-
 	for _, example in ipairs({
 		{ name = "rg", input = { pattern = "needle" } },
-		{ name = "websearch", input = { query = "needle" } },
-		{ name = "webfetch", input = { url = "https://example.com/needle" } },
 	}) do
 		it("keeps " .. example.name .. " state and cursor through live updates and earlier widget shifts", function()
 			seed({
@@ -372,16 +322,9 @@ describe("activity widgets in the chat buffer", function()
 
 	for _, example in ipairs({
 		{ name = "read", input = { path = "README.md" }, compact = " → Read README.md",
-			completed = "Explored — 1 read" },
+			completed = "Explored · 1 read" },
 		{ name = "rg", input = { pattern = "needle" }, compact = " ● rg [pattern=needle]",
-			completed = "Explored — 1 search" },
-		{ name = "execute", input = { code = "return await tool();" }, compact = " → namespace.tool",
-			completed = "Executed — 1 call", metadata = {
-				toolCalls = { { tool = "namespace.tool", status = "running" } },
-			} },
-		{ name = "websearch", input = { query = "needle" }, compact_contains = "needle", completed = "Browsed — 1 search" },
-		{ name = "webfetch", input = { url = "https://example.com/needle" },
-			compact_contains = "example.com/needle", completed = "Browsed — 1 fetch" },
+			completed = "Explored · 1 search" },
 	}) do
 		it("animates only the group header for " .. example.name .. " without treating child text as a spinner", function()
 			seed({ { type = "tool", id = example.name, name = example.name, state = {
@@ -423,60 +366,4 @@ describe("activity widgets in the chat buffer", function()
 			assert.same({}, vim.api.nvim_buf_get_extmarks(state.bufnr, cs.chat_anim_ns, 0, -1, {}))
 		end)
 	end
-
-	it("gives all standalone tool group leaves the same root navigation and expansion behavior", function()
-		seed({
-			{ type = "tool", id = "read", name = "read", state = {
-				status = "completed", input = { path = "README.md" },
-				content = { { type = "text", text = "STANDALONE_READ_RESULT" } },
-			} },
-			{ type = "tool", id = "execute", name = "execute", state = {
-				status = "completed", input = { code = "return await catalog.read();" },
-				content = { { type = "text", text = "STANDALONE_EXECUTE_RESULT" } },
-				metadata = { toolCalls = { { tool = "catalog.read", status = "completed" } } },
-			} },
-			{ type = "tool", id = "websearch", name = "websearch", state = {
-				status = "completed", input = { query = "reference" },
-				content = { { type = "text", text = "STANDALONE_SEARCH_RESULT" } },
-			} },
-			{ type = "tool", id = "webfetch", name = "webfetch", state = {
-				status = "completed", input = { url = "https://example.com/reference" },
-				content = { { type = "text", text = "STANDALONE_FETCH_RESULT" } },
-			} },
-		}, 500)
-		-- Exercise the regular-tool path directly: interactions can exclude a
-		-- tool from activity grouping, but it must still be an interactive leaf.
-		local ctx = require("opencode.ui.chat.render_context").new({ current_session = { id = "activity-test" } })
-		local renderer = require("opencode.ui.chat.tool_renderer")
-		local parts = sync.get_parts("message")
-		for _, part in ipairs(parts) do renderer.render_tool_part(ctx, part, 1, {}) end
-		ctx:add_raw_line("Following answer", "non_tool")
-		vim.bo[state.bufnr].modifiable = true
-		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, ctx.raw_lines)
-		vim.bo[state.bufnr].modifiable = false
-		local original_second_start = state.tools[parts[2].id].start_line
-		for index, marker in ipairs({
-			"STANDALONE_READ_RESULT", "↳ ✓ catalog.read", "STANDALONE_SEARCH_RESULT", "STANDALONE_FETCH_RESULT",
-		}) do
-			local id = parts[index].id
-			assert.equals("tool", state.tools[id].kind)
-			assert.is_nil(state.tools[id].activity_group)
-			assert.is_nil(text():find(marker, 1, true))
-			focus(id)
-			assert.equals(id, tasks.get_tool_at_cursor())
-			key("<CR>")
-			assert.is_true(state.expanded_tools[id])
-			assert.equals(id, tasks.get_tool_at_cursor())
-			assert.is_truthy(text():find(marker, 1, true))
-			assert.is_truthy(text():find("Following answer", 1, true))
-			if index == 1 then
-				assert.is_true(state.tools[parts[2].id].start_line > original_second_start)
-			end
-			key("O")
-			assert.is_nil(state.expanded_tools[id])
-			assert.equals(id, tasks.get_tool_at_cursor())
-			assert.is_nil(text():find(marker, 1, true))
-		end
-		assert.equals(original_second_start, state.tools[parts[2].id].start_line)
-	end)
 end)

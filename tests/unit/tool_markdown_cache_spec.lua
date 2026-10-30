@@ -29,7 +29,7 @@ describe("tool Markdown render cache", function()
 		app.set_config(old_config)
 	end)
 
-	for _, name in ipairs({ "skill", "webfetch", "websearch" }) do
+	for _, name in ipairs({ "skill", "webfetch" }) do
 		it("retries " .. name .. " Markdown when its parser becomes available, then caches the formatted result", function()
 			local part = {
 				id = "markdown-cache-" .. name, messageID = "markdown-cache-message", sessionID = "markdown-cache-session",

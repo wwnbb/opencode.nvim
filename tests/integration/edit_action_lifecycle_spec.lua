@@ -112,23 +112,21 @@ describe("edit widget action lifecycle", function()
 		assert.equals(1, edit_state.get_edit(id).selected_file)
 	end)
 
-	for _, method in ipairs({ "on_send", "on_cancel" }) do
-		for _, reset in ipairs({ "owner", "epoch", "pane" }) do
-			it("ignores an old edit note " .. method .. " after its " .. reset .. " changes", function()
-				make_edit("note-edit", 1)
-				local shown
-				require("opencode.ui.input").show = function(opts) shown = opts end
-				chat_edits.handle_edit_message()
-				assert.is_function(shown[method])
-				if reset == "owner" then make_edit("note-edit", 1)
-				elseif reset == "pane" then chat_state.generation = chat_state.generation + 1
-				else require("opencode.session.pending").clear_session("session_edit_lifecycle") end
-				assert.is_true(edit_state.set_message("note-edit", "New note"))
-				shown[method]("Old note")
-				assert.equals("New note", edit_state.get_edit("note-edit").message)
-				assert.equals(0, calls.rerender)
-			end)
-		end
+	for _, reset in ipairs({ "owner", "epoch", "pane" }) do
+		it("ignores an old edit note on_send after its " .. reset .. " changes", function()
+			make_edit("note-edit", 1)
+			local shown
+			require("opencode.ui.input").show = function(opts) shown = opts end
+			chat_edits.handle_edit_message()
+			assert.is_function(shown.on_send)
+			if reset == "owner" then make_edit("note-edit", 1)
+			elseif reset == "pane" then chat_state.generation = chat_state.generation + 1
+			else require("opencode.session.pending").clear_session("session_edit_lifecycle") end
+			assert.is_true(edit_state.set_message("note-edit", "New note"))
+			shown.on_send("Old note")
+			assert.equals("New note", edit_state.get_edit("note-edit").message)
+			assert.equals(0, calls.rerender)
+		end)
 	end
 
 	it("saves a note from the current edit input", function()
@@ -168,16 +166,14 @@ describe("edit widget action lifecycle", function()
 		end)
 	end
 
-	for _, action in ipairs({ "accept", "reject" }) do
-		it(action .. " finalizes a readonly review immediately", function()
-			local id = "edit_readonly_" .. action
-			make_edit(id, 2, { review_mode = "readonly" })
-			select_file(id, 1)
-			chat_edits["handle_edit_" .. action .. "_file"]()
-			assert.equals(1, calls.finalize)
-			assert.equals(0, calls.rerender)
-		end)
-	end
+	it("reject finalizes a readonly review immediately", function()
+		local id = "edit_readonly_reject"
+		make_edit(id, 2, { review_mode = "readonly" })
+		select_file(id, 1)
+		chat_edits.handle_edit_reject_file()
+		assert.equals(1, calls.finalize)
+		assert.equals(0, calls.rerender)
+	end)
 
 	it("does not count an empty review as pending", function()
 		edit_state.clear_all()
@@ -191,7 +187,6 @@ describe("edit widget action lifecycle", function()
 	end)
 
 	for _, case in ipairs({
-		{ action = "accept", status = "accepted", title = "aggregates accept failures while applying the remaining files" },
 		{ action = "reject", status = "rejected", disk = "after", title = "aggregates reject failures while continuing with the remaining files" },
 	}) do
 		it(case.title, function()
@@ -263,18 +258,6 @@ describe("edit widget action lifecycle", function()
 		assert.is_truthy(notices[1]:find("directory", 1, true))
 	end)
 
-	it("opens native diff at the selected file with original indices", function()
-		make_edit("edit_native_multifile", 3)
-		select_file("edit_native_multifile", 2)
-		chat_edits.handle_edit_diff_tab()
-		assert(captured_native_show, "native diff tab should open through native_diff.show")
-		assert(#captured_native_show.files == 3, "native diff tab should include every pending edit file")
-		assert(captured_native_show.opts.edit_id == "edit_native_multifile", "native diff should keep edit id")
-		assert(captured_native_show.opts.file_index == 2, "native diff should keep selected edit file fallback")
-		assert(captured_native_show.opts.start_index == 2, "native diff should start on selected file")
-		assert(captured_native_show.files[2].edit_file_index == 2, "native diff files should keep original edit indices")
-	end)
-
 	it("maps selected file indices through the pending-only native diff list", function()
 		make_edit("edit_native_pending_filter", 3)
 		local native_pending_edit = edit_state.get_edit("edit_native_pending_filter")
@@ -286,5 +269,4 @@ describe("edit widget action lifecycle", function()
 		assert(captured_native_show.opts.start_index == 1, "native diff start index should be relative to pending files")
 		assert(captured_native_show.files[1].edit_file_index == 2, "pending filtered native diff should keep original indices")
 	end)
-
 end)

@@ -13,7 +13,7 @@ describe("Thought rendering", function()
 			for _, config in ipairs({ { thinking = { enabled = false } }, { session = { thinking = "hide" } } }) do
 				app_state.set_config(config)
 				assert.is_false(activity.is_expanded(hidden))
-				assert.is_truthy(activity.render(hidden).lines[1]:find("+ Thought", 1, true))
+				assert.is_truthy(activity.render(hidden).lines[1]:find("▸ Thought", 1, true))
 				assert.is_nil(table.concat(activity.render(hidden).lines, "\n"):find("Reachable body", 1, true))
 				assert.is_truthy(table.concat(activity.render(hidden, true).lines, "\n"):find("▏  Reachable body", 1, true))
 			end
@@ -29,11 +29,11 @@ describe("Thought rendering", function()
 				refs = { { part = part, message = { id = "message" } } } }
 			local collapsed_result = activity.render(group, false)
 			local collapsed = collapsed_result.lines
-			assert.equals("+ Thought: Plan · 216ms", vim.trim(collapsed[1]))
+			assert.equals("▸ Thought: Plan · 216ms", vim.trim(collapsed[1]))
 			assert.equals(2, #collapsed)
 			local expanded_result = activity.render(group, true)
 			local expanded = expanded_result.lines
-			assert.equals("- Thought · 216ms", vim.trim(expanded[1]))
+			assert.equals("▾ Thought · 216ms", vim.trim(expanded[1]))
 			assert.is_truthy(table.concat(expanded, "\n"):find("▏  second line", 1, true))
 			local active = { id = "active", type = "reasoning", text = "Still thinking", time = { created = 100 } }
 			local running = { id = active.id, kind = "thought", completed = false,

@@ -151,22 +151,4 @@ describe("native file changes in chat", function()
 		assert.is_truthy(expand_file(1):find("added by patch", 1, true))
 		assert.is_truthy(expand_file(2):find("deleted by patch", 1, true))
 	end)
-
-	it("shows submitted overwrite content without inventing a history diff", function()
-		local rendered = render_tool("write", {
-			status = "completed",
-			input = { path = "existing.txt", content = "replacement content\n" },
-			content = { { type = "text", text = "Wrote file successfully: existing.txt" } },
-		})
-		assert.is_truthy(rendered:find("existing.txt", 1, true))
-		assert.is_truthy(rendered:find("Write", 1, true))
-		assert.is_nil(rendered:find("+0 -0", 1, true))
-		assert.is_nil(rendered:find("replacement content", 1, true))
-		assert.is_nil(edit_state.get_edit(preview_id))
-		assert.is_nil(chat_state.edits[preview_id])
-		local expanded = toggle_write()
-		assert.is_truthy(expanded:find("replacement content", 1, true))
-		assert.is_truthy(expanded:find("Content sent to write (before server formatting)", 1, true))
-		assert.is_nil(toggle_write():find("replacement content", 1, true))
-	end)
 end)

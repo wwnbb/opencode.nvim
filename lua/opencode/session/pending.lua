@@ -4,6 +4,10 @@ local M = {}
 local epoch = require("opencode.session.epoch")
 local attention = require("opencode.session.attention")
 local outbox, queues = {}, {}
+-- Terminal records only guard against late admission of recent prompts.
+-- Keep a bounded set per session, oldest retired first.
+local TERMINAL_LIMIT = 64
+local terminal_order = {}
 local last_revert_events = {}
 local admission_waiters = {}
 
@@ -40,6 +44,27 @@ function M.list(session_id)
 	return vim.deepcopy(outbox[session_id] or {})
 end
 
+local function is_terminal(status) return status == "delivered" or status == "cancelled" end
+
+local function retire(session_id, message_id)
+	local order = terminal_order[session_id] or {}
+	terminal_order[session_id] = order
+	order[#order + 1] = message_id
+	if #order <= TERMINAL_LIMIT * 2 then return end
+	local records, kept, seen = outbox[session_id] or {}, {}, {}
+	for i = #order, 1, -1 do
+		local id = order[i]
+		local record = records[id]
+		if not seen[id] and record and is_terminal(record.status) then
+			seen[id] = true
+			if #kept < TERMINAL_LIMIT then kept[#kept + 1] = id else records[id] = nil end
+		end
+	end
+	order = {}
+	for i = #kept, 1, -1 do order[#order + 1] = kept[i] end
+	terminal_order[session_id] = order
+end
+
 function M.update(session_id, message_id, patch)
 	local record = outbox[session_id] and outbox[session_id][message_id]
 	if not record then
@@ -55,6 +80,7 @@ function M.update(session_id, message_id, patch)
 	-- already confirmed acceptance. Neither callback may regress that evidence.
 	if status == "delivered" or status == "cancelled" then record.status = status
 	elseif (status == "accepted" or status == "queued") and patch.status == "uncertain" then record.status = status end
+	if is_terminal(record.status) and not is_terminal(status) then retire(session_id, message_id) end
 	if record.status ~= "submitting" and admission_waiters[session_id] then
 		local waiters = admission_waiters[session_id][message_id]
 		admission_waiters[session_id][message_id] = nil
@@ -81,12 +107,21 @@ function M.admit(item)
 end
 
 -- Native history contains only delivered messages, unlike local/inbox echoes.
--- Record even previously unknown IDs so late admission cannot resurrect them.
+-- Record previously unknown recent IDs so late admission cannot resurrect them;
+-- older turns are far behind any inbox read still in flight.
 function M.reconcile_history(session_id, messages)
+	local ids = {}
 	for _, message in ipairs(messages or {}) do
 		local info = message.info or message
-		if info.role == "user" and not info.provisional then
-			M.update(session_id, info.id, { status = "delivered", delivery_missing = false })
+		if info.role == "user" and not info.provisional then ids[#ids + 1] = info.id end
+	end
+	-- Native message IDs ascend; a page need not be ordered.
+	table.sort(ids)
+	local records = outbox[session_id] or {}
+	for i, id in ipairs(ids) do
+		local record = records[id]
+		if (record and record.status ~= "delivered") or (not record and i > #ids - TERMINAL_LIMIT) then
+			M.update(session_id, id, { status = "delivered", delivery_missing = false })
 		end
 	end
 end
@@ -113,7 +148,7 @@ end
 
 function M.clear_session(session_id)
 	epoch.bump(session_id)
-	outbox[session_id], queues[session_id] = nil, nil
+	outbox[session_id], queues[session_id], terminal_order[session_id] = nil, nil, nil
 	last_revert_events[session_id] = nil
 	admission_waiters[session_id] = nil
 end
@@ -130,7 +165,7 @@ end
 
 function M.clear_all()
 	M.invalidate()
-	outbox = {}
+	outbox, terminal_order = {}, {}
 	epoch.clear_epochs()
 	last_revert_events = {}
 	admission_waiters = {}

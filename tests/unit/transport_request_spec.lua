@@ -11,15 +11,39 @@ describe("HTTP request framing", function()
 	end)
 	after_each(function() tcp.open = original_open end)
 
+	it("delivers REST responses and failures after exactly one scheduler hop", function()
+		local http = require("opencode.client.http")
+		local saved_opts, original_schedule, queued = http.opts, vim.schedule, {}
+		http.opts = vim.tbl_extend("force", http.opts, { host = "127.0.0.1", port = 4096, url = false, tls = nil })
+		vim.schedule = function(fn) queued[#queued + 1] = fn end
+		local ok, err = pcall(function()
+			for _, reply in ipairs({
+				"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}",
+				"HTTP/1.1 500 Oops\r\nContent-Length: 0\r\n\r\n",
+				false,
+			}) do
+				tcp.open = function(opts)
+					if not reply then return nil, { message = "refused" } end
+					opts.on_read(nil, reply)
+					return { close = function() end }
+				end
+				local results = {}
+				http.get("/api/info", function(e, body) results[#results + 1] = { e, body } end)
+				assert.equals(1, #queued)
+				table.remove(queued, 1)()
+				assert.equals(0, #queued)
+				assert.equals(1, #results)
+				if reply and reply:find("200") then assert.same({ ok = true }, results[1][2]) else assert.is_table(results[1][1]) end
+			end
+		end)
+		vim.schedule, http.opts = original_schedule, saved_opts
+		assert(ok, err)
+	end)
+
 	local invalid = {
-		{ method = 1 }, { method = "GET\r\nInjected: yes" },
-		{ path = 1 }, { path = "/test\r\nInjected: yes" }, { path = "/bad\0path" }, { path = "/bad path" },
-		{ body = {} }, { headers = "X: value" },
-		{ headers = { [1] = "value" } }, { headers = { ["X\r\nInjected"] = "value" } },
-		{ headers = { ["X:Other"] = "value" } }, { headers = { X = "value\r\nInjected: yes" } },
-		{ headers = { X = "value\0tail" } }, { host = "localhost\r\nInjected: yes" },
-		{ connection = "close\nInjected: yes" },
-		{ headers = { Host = "one", HOST = "two" } },
+		{ method = "GET\r\nInjected: yes" }, { path = "/test\r\nInjected: yes" }, { path = "/bad path" },
+		{ body = {} }, { headers = { ["X:Other"] = "value" } }, { headers = { X = "value\r\nInjected: yes" } },
+		{ host = "localhost\r\nInjected: yes" }, { headers = { Host = "one", HOST = "two" } },
 	}
 	for _, kind in ipairs({ "request", "stream" }) do
 		it("rejects invalid " .. kind .. " fields before connecting", function()

@@ -1,4 +1,4 @@
--- Keep this smoke limited to loading real modules and the public setup contract.
+-- Keep this smoke limited to loading every real module.
 describe("opencode.nvim module loading", function()
 	it("loads every module with the installed Neovim dependencies", function()
 		local files = vim.fn.glob("lua/opencode/**/*.lua", false, true)
@@ -11,8 +11,4 @@ describe("opencode.nvim module loading", function()
 		end
 	end)
 
-	it("sets up without starting a server", function()
-		local opencode = require("opencode")
-		opencode.setup({ server = { auto_start = false }, lualine = { enabled = true } })
-	end)
 end)

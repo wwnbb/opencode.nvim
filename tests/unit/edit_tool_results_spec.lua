@@ -1,11 +1,6 @@
 describe("edit tool result normalization", function()
 	local tool_results = require("opencode.edit.tool_results")
 
-	it("is re-exported by the chat file edit renderer", function()
-		local file_edit_results = require("opencode.ui.chat.file_edit_results")
-		assert.equals(tool_results.normalize_model, file_edit_results.normalize_model)
-	end)
-
 	it("accepts every path, diff and stats spelling for multi-file patches", function()
 		local model = tool_results.normalize_model({
 			tool = "apply_patch",

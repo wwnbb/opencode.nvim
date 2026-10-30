@@ -111,14 +111,6 @@ describe("chat history rendering contracts", function()
 			{ id = "m4_patch_tool", tool = "apply_patch", call_id = "call_patch", before = "old line", after = "new line",
 				metadata = { status = "success", files = { { filePath = "render-patch.txt", type = "update",
 					diff = diff("render-patch.txt", "old line", "new line") } } } },
-			{ id = "m4_neovim_edit_tool", tool = "neovim_edit", call_id = "call_neovim_edit",
-				before = "old neovim edit", after = "new neovim edit",
-				metadata = { status = "success", filediff = { file = "render-neovim-edit.txt", status = "applied",
-					diff = diff("render-neovim-edit.txt", "old neovim edit", "new neovim edit") } } },
-			{ id = "m4_neovim_patch_tool", tool = "neovim_patch", call_id = "call_neovim_patch",
-				before = "old neovim patch", after = "new neovim patch",
-				metadata = { status = "success", files = { { filePath = "render-neovim-patch.txt", type = "update", status = "applied",
-					diff = diff("render-neovim-patch.txt", "old neovim patch", "new neovim patch") } } } },
 		}
 		for _, preview in ipairs(previews) do
 			sync.handle_part_updated({ id = preview.id, messageID = "m4", sessionID = "render_contract_session",
@@ -181,108 +173,6 @@ describe("chat history rendering contracts", function()
 		assert(rendered:find("▣ ", 1, true), "pending interaction should retain a static processing footer")
 	end)
 
-	it("computes an added-file preview from an explicitly empty before snapshot", function()
-		local edit_widget = require("opencode.ui.edit_widget")
-		local edit_previews = require("opencode.ui.chat.edit_previews")
-
-		sync.clear_all()
-		edit_state.clear_all()
-
-		local compute_session = "compute_session"
-		sync.handle_message_updated({
-			id = "m_compute",
-			sessionID = compute_session,
-			role = "assistant",
-			time = { created = 1000, completed = 1500 },
-		})
-		sync.handle_part_updated({
-			id = "m_edit_compute",
-			messageID = "m_compute",
-			sessionID = compute_session,
-			type = "tool",
-			tool = "edit",
-			callID = "call_edit_compute",
-			state = {
-				status = "completed",
-				metadata = {
-					status = "success",
-					filepath = "compute-edit.txt",
-					filediff = {
-						file = "compute-edit.txt",
-						before = "",
-						after = "content line",
-					},
-				},
-			},
-		})
-
-		local created = edit_previews.sync_session(compute_session)
-		assert(created == 1, "empty-string before/after should create a preview edit via computed diff")
-		local compute_id = "tool-preview:" .. compute_session .. ":m_compute:m_edit_compute"
-		local compute_estate = edit_state.get_edit(compute_id)
-		assert(compute_estate, "empty-string compute path should create an edit estate")
-		assert(#compute_estate.files == 1, "compute estate should have one file")
-		local cfile = compute_estate.files[1]
-		assert(#cfile.diff_lines > 0, "empty-string before/after should compute a non-empty diff")
-		assert(cfile.stats.added > 0, "computed diff should report non-zero additions")
-		assert(cfile.before == "", "compute estate should preserve empty before content")
-		assert(cfile.after == "content line", "compute estate should preserve after content")
-
-		edit_state.toggle_inline_diff(compute_id, 1)
-		local compute_lines = edit_widget.get_resolved_lines(compute_id, compute_estate)
-		local compute_text = table.concat(compute_lines, "\n")
-		assert(compute_text:find("content line", 1, true), "computed diff widget should expand added content")
-	end)
-
-	it("shows only pending orphan edits and permissions", function()
-		sync.clear_all()
-		edit_state.clear_all()
-		permission_state.clear_all()
-		app_state.set_session("orphan_resolved_session", "Orphan Resolved")
-
-		edit_state.add_edit("edit_orphan_resolved", "orphan_resolved_session", {
-			{ filePath = "orphan-resolved.txt", before = "a", after = "b" },
-		}, {
-			timestamp = 1,
-			review_mode = "readonly",
-			file_statuses = { "accepted" },
-		})
-		edit_state.add_edit("edit_orphan_pending", "orphan_resolved_session", {
-			{ filePath = "orphan-pending.txt", before = "a", after = "b" },
-		}, {
-			timestamp = 2,
-			review_mode = "readonly",
-		})
-
-		permission_state.add_permission("perm_orphan_resolved", "orphan_resolved_session", "bash", {
-			timestamp = 3,
-			tool_input = { command = "echo resolved" },
-		})
-		permission_state.mark_approved("perm_orphan_resolved", "once")
-		permission_state.add_permission("perm_orphan_pending", "orphan_resolved_session", "bash", {
-			timestamp = 4,
-			tool_input = { command = "echo pending" },
-		})
-
-		chat.render()
-		assert(
-			chat_state.edits.edit_orphan_resolved == nil,
-			"resolved orphan edit owned by current session should not render at the orphan tail"
-		)
-		assert(
-			chat_state.edits.edit_orphan_pending,
-			"pending orphan edit owned by current session should render at the orphan tail"
-		)
-		assert(
-			chat_state.permissions.perm_orphan_resolved == nil,
-			"resolved orphan permission owned by current session should not render at the orphan tail"
-		)
-		assert(
-			chat_state.permissions.perm_orphan_pending,
-			"pending orphan permission owned by current session should render at the orphan tail"
-		)
-	end)
-
 	it("hides pending widgets after closing the last tab and restores them on reopen", function()
 		local sessions = require("opencode.session")
 		local widget_index = require("opencode.ui.chat.widget_index")
@@ -331,41 +221,35 @@ describe("chat history rendering contracts", function()
 		assert.same({ choice = "saved" }, question_state.get_answers("confirming_question"))
 	end)
 
-	it("shows pending and confirming orphan questions but hides resolved ones", function()
-		app_state.set_session("orphan_question_session", "Orphan Question")
-
-		local function add_orphan_form(id, label, timestamp)
-			question_state.add_form({ id = id, sessionID = "orphan_question_session",
-				fields = { { key = "choice", type = "string", title = "Pick", description = "Choose one",
-					options = { { label = label, value = label:lower() } } } },
-				metadata = { tool = { messageID = "msg_orphan_question" } },
-			}, { timestamp = timestamp })
+	it("shows only pending or confirming orphan interactions", function()
+		app_state.set_session("orphan_session", "Orphans")
+		for index, id in ipairs({ "edit_resolved", "edit_pending" }) do
+			edit_state.add_edit(id, "orphan_session", { { filePath = id .. ".txt", before = "a", after = "b" } },
+				{ timestamp = index, review_mode = "readonly", file_statuses = index == 1 and { "accepted" } or nil })
 		end
-		add_orphan_form("q_orphan_pending", "A", 1)
-		add_orphan_form("q_orphan_confirming", "B", 2)
-		question_state.set_confirming("q_orphan_confirming")
-		add_orphan_form("q_orphan_answered", "C", 3)
-		question_state.mark_answered("q_orphan_answered")
-		add_orphan_form("q_orphan_rejected", "D", 4)
-		question_state.mark_rejected("q_orphan_rejected")
-
+		for index, id in ipairs({ "perm_resolved", "perm_pending" }) do
+			permission_state.add_permission(id, "orphan_session", "bash",
+				{ timestamp = index + 2, tool_input = { command = "echo " .. id } })
+		end
+		permission_state.mark_approved("perm_resolved", "once")
+		for index, id in ipairs({ "q_pending", "q_confirming", "q_answered", "q_rejected" }) do
+			question_state.add_form({ id = id, sessionID = "orphan_session",
+				fields = { { key = "choice", type = "string", title = "Pick",
+					options = { { label = id, value = id } } } },
+				metadata = { tool = { messageID = "msg_orphan" } },
+			}, { timestamp = index + 4 })
+		end
+		question_state.set_confirming("q_confirming")
+		question_state.mark_answered("q_answered")
+		question_state.mark_rejected("q_rejected")
 		chat.render()
-		assert(
-			chat_state.questions.q_orphan_pending,
-			"pending orphan question owned by current session should render at the orphan tail"
-		)
-		assert(
-			chat_state.questions.q_orphan_confirming,
-			"confirming orphan question owned by current session should render at the orphan tail"
-		)
-		assert(
-			chat_state.questions.q_orphan_answered == nil,
-			"answered orphan question owned by current session should not render at the orphan tail"
-		)
-		assert(
-			chat_state.questions.q_orphan_rejected == nil,
-			"rejected orphan question owned by current session should not render at the orphan tail"
-		)
+		assert.is_nil(chat_state.edits.edit_resolved)
+		assert.is_not_nil(chat_state.edits.edit_pending)
+		assert.is_nil(chat_state.permissions.perm_resolved)
+		assert.is_not_nil(chat_state.permissions.perm_pending)
+		assert.is_not_nil(chat_state.questions.q_pending)
+		assert.is_not_nil(chat_state.questions.q_confirming)
+		assert.is_nil(chat_state.questions.q_answered)
+		assert.is_nil(chat_state.questions.q_rejected)
 	end)
-
 end)

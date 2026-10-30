@@ -3,6 +3,9 @@
 
 local M = {}
 
+local text = require("opencode.util.text")
+local tool_names = require("opencode.util.tool_names")
+
 -- Permission types whose request is a shell command: native "shell" and the bash tool's own "bash".
 local SHELL_TYPES = { bash = true, shell = true }
 
@@ -27,33 +30,11 @@ local TOOL_INPUT_FIELDS = {
 	"subagentType",
 }
 
-local TOOL_DISPLAY_NAMES = {
-	apply_patch = "Apply Patch",
-	bash = "Bash",
-	codesearch = "Code Search",
-	edit = "Edit",
-	glob = "Glob",
-	grep = "Grep",
-	list = "List",
-	neovim_patch = "Neovim Patch",
-	neovim_edit = "Neovim Edit",
-	read = "Read",
-	rg = "Ripgrep",
-	skill = "Skill",
-	task = "Task",
-	webfetch = "WebFetch",
-	websearch = "Web Search",
-	write = "Write",
-}
-
 local TITLES = {
 	external_directory = "External directory",
 	diff_review = "Diff review",
 	doom_loop = "Continue after repeated failures",
 }
-for _, tool in ipairs({ "bash", "read", "glob", "grep", "rg", "list", "webfetch", "websearch", "codesearch", "task" }) do
-	TITLES[tool] = TOOL_DISPLAY_NAMES[tool]
-end
 
 ---@param ... any
 ---@return string
@@ -154,23 +135,6 @@ local function resolve_tool_input(perm_state, part)
 	return input
 end
 
----@param tool_name any
----@return string
-local function format_tool_name(tool_name)
-	if type(tool_name) ~= "string" or vim.trim(tool_name) == "" then
-		return ""
-	end
-	local trimmed = vim.trim(tool_name)
-	local mapped = TOOL_DISPLAY_NAMES[trimmed:lower()]
-	if mapped then
-		return mapped
-	end
-	local spaced = trimmed:gsub("([a-z0-9])([A-Z])", "%1 %2"):gsub("[_%.-]+", " ")
-	return (spaced:gsub("(%S)(%S*)", function(first, rest)
-		return first:upper() .. rest
-	end))
-end
-
 ---@param perm_state table
 ---@param part table|nil
 ---@return string
@@ -186,27 +150,11 @@ local function resolve_tool_name(perm_state, part)
 		tool_state.toolName, part_metadata.tool, part_metadata.tool_name, part_metadata.toolName)
 end
 
----A path relative to the working directory, else to the home directory.
+---A path as every widget shows it (util/text.normalize_path).
 ---@param filepath string
 ---@return string
 function M.display_path(filepath)
-	if type(filepath) ~= "string" or filepath == "" then
-		return ""
-	end
-	local cwd = vim.fn.getcwd()
-	if cwd:sub(-1) ~= "/" then
-		cwd = cwd .. "/"
-	end
-	-- A wildcard over the whole working directory keeps the directory it covers.
-	local relative = filepath:sub(1, #cwd) == cwd and filepath:sub(#cwd + 1) or nil
-	if relative and relative ~= "" and not relative:match("^[*?]") then
-		return relative
-	end
-	local home = os.getenv("HOME") or ""
-	if home ~= "" and (filepath == home or filepath:sub(1, #home + 1) == home .. "/") then
-		return "~" .. filepath:sub(#home + 1)
-	end
-	return filepath
+	return text.normalize_path(filepath)
 end
 
 ---Working directory of a shell request, or "" when it runs in the current directory.
@@ -265,6 +213,7 @@ end
 ---@field type string Native permission type
 ---@field title string Display name of the permission
 ---@field tool string Display name of the tool that asked, or ""
+---@field own boolean The asking tool's own permission (a shell request from bash included)
 ---@field shell boolean Shell request: the command is the requested resource
 ---@field command string Command the request runs, or ""
 ---@field details OpenCodePermissionDetail[]
@@ -287,10 +236,12 @@ function M.describe(perm_state)
 	local input = resolve_tool_input(perm_state, part)
 	local metadata = type(perm_state.metadata) == "table" and perm_state.metadata or {}
 	local shell = M.is_shell(permission_type)
+	local tool_name = vim.trim(resolve_tool_name(perm_state, part)):lower()
 	local request = {
 		type = permission_type,
-		title = TITLES[permission_type] or permission_type,
-		tool = format_tool_name(resolve_tool_name(perm_state, part)),
+		title = TITLES[permission_type] or tool_names.display_name(permission_type),
+		tool = tool_names.display_name(tool_name),
+		own = tool_name ~= "" and (tool_name == permission_type or (shell and tool_name == "bash")),
 		shell = shell,
 		command = "",
 		details = {},

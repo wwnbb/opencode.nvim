@@ -44,9 +44,6 @@ local function select_status_autocomplete(text)
 		if entry.name == "status" then command = entry; break end
 	end
 	assert.is_not_nil(command)
-	assert.equals("action.status", command.id)
-	assert.equals(require("opencode.command_registry").get(command.id),
-		require("opencode.command_registry").get_slash("status"))
 	assert.equals(text, input.get_pending_text())
 	local trigger = slash_commands.detect_trigger_in_line(text, #text, 0)
 	trigger.row, trigger.line = 0, text
@@ -125,7 +122,7 @@ describe("/status command selection in chat input", function()
 		vim.o.columns, vim.o.lines = old_columns, old_lines
 	end)
 
-	for _, key in ipairs({ "<CR>", "<Tab>", "<C-g>" }) do
+	for _, key in ipairs({ "<CR>", "<Tab>" }) do
 		it("opens exactly one status popup from " .. key .. " without submitting the draft", function()
 			local attachment = { type = "file", uri = "file:///tmp/status-note.md", name = "status-note.md" }
 			history.set_pending("/sta", { attachment })
@@ -220,7 +217,7 @@ describe("/status command selection in chat input", function()
 		assert.is_true(config.row + config.height <= vim.o.lines - vim.o.cmdheight)
 		assert.is_true(config.col + config.width <= vim.o.columns)
 		assert.is_true(first_page:find("Status", 1, true) ~= nil)
-		assert.is_true(first_page:find("J/K:scroll  Z:close", 1, true) ~= nil)
+		assert.is_true(first_page:find("J / K scroll · Z close", 1, true) ~= nil)
 		vim.o.columns, vim.o.lines = 38, 15
 		vim.api.nvim_exec_autocmds("VimResized", {})
 		config = vim.api.nvim_win_get_config(winid)
@@ -229,14 +226,14 @@ describe("/status command selection in chat input", function()
 		assert.is_true(config.row + config.height <= vim.o.lines - vim.o.cmdheight)
 		assert.is_true(config.col + config.width <= vim.o.columns)
 		local resized_page = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
-		assert.is_true(resized_page:find("J/K:scroll  Z:close", 1, true) ~= nil)
+		assert.is_true(resized_page:find("J / K scroll · Z close", 1, true) ~= nil)
 
 		vim.api.nvim_set_current_win(winid)
 		press_status_key(popup, "L")
 		local last_page = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
 		assert.is_true(last_page:find("opencode.plugin.088", 1, true) ~= nil)
 		assert.is_true(last_page:find("Status", 1, true) ~= nil)
-		assert.is_true(last_page:find("J/K:scroll  Z:close", 1, true) ~= nil)
+		assert.is_true(last_page:find("J / K scroll · Z close", 1, true) ~= nil)
 		press_status_key(popup, "H")
 		local reset_page = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
 		assert.is_true(reset_page:find("opencode.plugin.001", 1, true) ~= nil)

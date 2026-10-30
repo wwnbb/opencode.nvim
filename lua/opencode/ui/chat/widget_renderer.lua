@@ -1,10 +1,16 @@
 local cs = require("opencode.ui.chat.state")
+
+require("opencode.ui.highlights").register("opencode.ui.chat.widget_renderer", function()
+	local panel = require("opencode.ui.panel")
+	panel.set_hl("OpenCodeSessionError", "DiagnosticError", "ErrorMsg")
+	panel.set_hl("OpenCodeSessionErrorBorder", "DiagnosticError", "ErrorMsg")
+end)
+
 return cs.factory("widget_renderer", function(view)
 local M = {}
 
 local state = view
 local render = cs.module(view, require("opencode.ui.chat.render"))
-local panel = require("opencode.ui.panel")
 local event_util = require("opencode.events.util")
 local question_widget = require("opencode.ui.question_widget")
 local permission_widget = require("opencode.ui.permission_widget")
@@ -12,11 +18,6 @@ local edit_widget = require("opencode.ui.edit_widget")
 local widget_base = require("opencode.ui.widget_base")
 local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 local chat_bash = cs.module(view, require("opencode.ui.chat.bash"))
-
-local function ensure_session_error_highlights()
-	panel.set_hl("OpenCodeSessionError", "DiagnosticError", "ErrorMsg")
-	panel.set_hl("OpenCodeSessionErrorBorder", "DiagnosticError", "ErrorMsg")
-end
 
 local function capture_widget_focus(kind, widget_id, widget_start, meta)
 	local focus_offset = widget_base.get_focus_offset(meta)
@@ -56,10 +57,11 @@ local function append_interactive_widget(ctx, widget)
 end
 
 ---What the tool row rendered for a call shows, for the permission widgets below it.
----Leaf rows are compact list rows; the others are "▏" panels.
+---A row whose last line is not a "▏" panel line is a compact row.
+---@param ctx table Render context the row was just added to
 ---@param tool_part table|nil
 ---@return OpenCodePermissionToolRow|nil tool_row With `position`, the row's rendered position
-local function tool_row_for(tool_part)
+local function tool_row_for(ctx, tool_part)
 	local part_id = type(tool_part) == "table" and tool_part.id or nil
 	local pos = part_id and state.tools[part_id]
 	if not pos or type(pos.tool_part) ~= "table" or pos.end_line < pos.start_line then
@@ -71,7 +73,7 @@ local function tool_row_for(tool_part)
 		end_line = pos.end_line,
 		command = command,
 		folded = folded,
-		compact = pos.kind == "tool",
+		compact = not vim.startswith(ctx:line_text(pos.end_line) or "", "▏"),
 		position = pos,
 	}
 end
@@ -198,7 +200,6 @@ function M.render_widget_items(ctx, index, widget_items, tool_row)
 end
 
 function M.render_session_error_notice(ctx, notice)
-	ensure_session_error_highlights()
 	local result = { lines = {}, highlights = {} }
 	render.add_panel_line(result, notice.content, "OpenCodeSessionError", {
 		prefix_hl_group = "OpenCodeSessionErrorBorder",
@@ -234,7 +235,7 @@ end
 
 ---@param tool_part? table The call's tool part, when its row was rendered just before
 function M.render_widgets_for_tool_call(ctx, index, message_id, call_id, tool_part)
-	M.render_widget_items(ctx, index, index:items_for_tool_call(message_id, call_id), tool_row_for(tool_part))
+	M.render_widget_items(ctx, index, index:items_for_tool_call(message_id, call_id), tool_row_for(ctx, tool_part))
 end
 
 function M.render_orphan_widgets(ctx, index, session_msg_ids)

@@ -1,69 +1,43 @@
 local tool_labels = require("opencode.ui.chat.tool_labels")
 
 describe("opencode tool labels", function()
-	it("format_tool_line renders golden label strings", function()
+	it("labels task child rows with display names, quoted patterns and shared vocabulary", function()
 		for _, case in ipairs({
-			{ '✱ Glob "*.lua" (3 matches)', "glob", { status = "completed", input = { pattern = "*.lua" }, metadata = { count = 3 } } },
-			{ "~ Finding files...", "glob", { status = "pending", input = { pattern = "*.lua" } } },
-			{ '✱ Grep "TODO" (2 matches)', "grep", { status = "completed", input = { pattern = "TODO" }, metadata = { matches = 2 } } },
-			{ '✱ Glob "*.lua"', "glob", { status = "completed", input = { pattern = "*.lua" } } },
-			{ '✱ Grep "TODO"', "grep", { status = "completed", input = { pattern = "TODO" } } },
-			{ '✱ Ripgrep "fn" (5 matches)', "rg", { status = "completed", input = { pattern = "fn" }, metadata = { matchCount = 5 } } },
-			{ "→ Read ..." .. string.rep("x", 37), "read", { status = "completed", input = { path = string.rep("x", 60) } } },
-			{ "~ Reading file...", "read", { status = "pending", input = { path = "short.lua" } } },
-			{ "← Wrote " .. string.rep("y", 20), "write", { status = "completed", input = { path = string.rep("y", 20) } } },
-			{ "← Edit ..." .. string.rep("z", 37), "edit", { status = "completed", input = { path = string.rep("z", 50) } } },
-			{ "# Run tests", "bash", { status = "completed", input = { description = "Run tests" } } },
-			{ "~ Writing command...", "bash", { status = "pending", input = {} } },
-			{ "⠋ Explore Task – Find stuff", "task", { status = "running", input = { subagent_type = "explore", description = "Find stuff" } } },
-			{ "✓ Explore Task – Find stuff", "task", { status = "completed", input = { subagent_type = "explore", description = "Find stuff" } } },
-			{ '→ Skill "my-skill"', "skill", { status = "completed", input = { name = "my-skill" } } },
-			{ "~ foo...", "foo", { status = "pending", input = {} } },
-			{ "⚙ foo", "foo", { status = "completed", input = {} } },
+			{ 'Glob "*.lua" (3 files)', "glob", { status = "completed", input = { pattern = "*.lua" }, metadata = { count = 3 } } },
+			{ 'Grep "TODO" (1 match)', "grep", { status = "completed", input = { pattern = "TODO" }, metadata = { matches = 1 } } },
+			{ "Shell Run checks", "bash", { status = "completed", input = { description = "Run checks" } } },
+			{ "Explore Task · Find stuff", "task", { status = "completed", input = { subagent_type = "explore", description = "Find stuff" } } },
+			{ "WebSearch", "websearch", { status = "completed", input = {} } },
+			{ "My Tool", "my_tool", { status = "completed", input = {} } },
 		}) do
-			assert.equals(case[1], tool_labels.format_tool_line({ tool = case[2], state = case[3] }), case[2] .. ": " .. case[3].status)
+			assert.equals(case[1], tool_labels.format_summary_item_label({ tool = case[2], state = case[3] }), case[2])
 		end
-	end)
-
-	it("format_summary_item_label prefers titles, truncates paths, and formats counts", function()
-		for _, case in ipairs({
-			{ "Grep X", "grep", { status = "completed", title = "X", input = { pattern = "p" } } },
-			{ "Grep X", "grep", { status = "running", title = "X", input = { pattern = "p" } } },
-			{ "Read ..." .. string.rep("a", 37), "read", { status = "completed", input = { path = string.rep("a", 41) } } },
-			{ "Ripgrep fn (5 matches)", "rg", { status = "completed", input = { pattern = "fn" }, metadata = { matchCount = 5 } } },
-		}) do
-			assert.equals(case[1], tool_labels.format_summary_item_label({ tool = case[2], state = case[3] }), case[2] .. ": " .. case[3].status)
-		end
+		assert.equals("1 tool call", tool_labels.format_toolcall_count(1))
+		assert.equals("3 tool calls", tool_labels.format_toolcall_count(3))
+		assert.equals("Read lua/x.lua", tool_labels.format_summary_item_label({
+			tool = "read", state = { status = "completed", input = { path = vim.fn.getcwd() .. "/lua/x.lua" } },
+		}))
 	end)
 
 	it("keeps Unicode paths and descriptions intact when shortening labels", function()
-		for _, tool in ipairs({ "read", "write", "edit" }) do
-			local label = tool_labels.format_summary_item_label({
-				tool = tool,
-				state = { status = "completed", input = { path = string.rep("я", 41) } },
-			})
-			assert.equals(tool:gsub("^%l", string.upper) .. " ..." .. string.rep("я", 37), label)
-		end
-		assert.equals("Bash " .. string.rep("я", 37) .. "...", tool_labels.format_summary_item_label({
-			tool = "bash", state = { input = { description = string.rep("я", 60) } },
+		assert.equals("Grep X", tool_labels.format_summary_item_label({
+			tool = "grep", state = { status = "running", title = "X", input = { pattern = "p" } },
 		}))
-		assert.equals("Grep " .. string.rep("я", 49) .. "...", tool_labels.format_summary_item_label({
-			tool = "grep", state = { status = "completed", title = string.rep("я", 60) },
+		assert.equals("Read …" .. string.rep("я", 39), tool_labels.format_summary_item_label({
+			tool = "read", state = { status = "completed", input = { path = string.rep("я", 41) } },
+		}))
+		assert.equals("Shell " .. string.rep("я", 39) .. "…", tool_labels.format_summary_item_label({
+			tool = "bash", state = { input = { description = string.rep("я", 60) } },
 		}))
 	end)
 
-	it("format_state_duration formats durations across units", function()
+	it("format_state_duration uses the shared duration format", function()
 		local cases = {
 			{ { start = 5, ["end"] = 5 }, nil, "end <= start yields nil" },
 			{ { start = 1000, ["end"] = 4500 }, "3.5s", "seconds with one decimal" },
 			{ { start = 0, ["end"] = 550 }, "550ms", "sub-second timestamps remain milliseconds" },
-			{ { start = 0, ["end"] = 0.5 }, "1ms", "fractional milliseconds round to the nearest millisecond" },
-			{ { start = 0, ["end"] = 55000 }, "55s", "whole seconds" },
-			{ { start = 0, ["end"] = 62000 }, "1m02s", "minutes and seconds" },
-			{ { start = 0, ["end"] = 9500 }, "9.5s", "sub-ten seconds keeps decimal" },
-			{ { start = 0, ["end"] = 59999 }, "1m00s", "rounded seconds carry into minutes" },
-			{ { start = 0, ["end"] = 119999 }, "2m00s", "minute remainder does not become 60 seconds" },
-			{ nil, nil, "nil time yields nil" },
+			{ { start = 0, ["end"] = 62000 }, "1m 2s", "minutes and seconds" },
+			{ { start = 0, ["end"] = 3700000 }, "1h 1m", "hours and minutes" },
 		}
 		for _, case in ipairs(cases) do
 			assert.equals(case[2], tool_labels.format_state_duration(case[1]), case[3])
@@ -79,6 +53,6 @@ describe("opencode tool labels", function()
 				state = { status = "completed", input = { agent = "explore" } },
 			} },
 		})
-		assert.equals("550ms", require("opencode.ui.chat.tool_labels").format_state_duration(projected.parts[1].state.time))
+		assert.equals("550ms", tool_labels.format_state_duration(projected.parts[1].state.time))
 	end)
 end)

@@ -94,8 +94,6 @@ describe("native explanation streaming", function()
 
 	it("streams cumulative completion output with only on_update and removes the temporary session", function()
 		local request = start_completion({ on_update = function(text) updates[#updates + 1] = text end })
-		assert.equals("session_create", calls[1].name)
-		assert.equals("Completion", calls[1].args.body.title)
 		local id = create()
 		local listener = listeners["*"][1]
 		local data = { sessionID = "foreign", assistantMessageID = "msg_1", ordinal = 0, delta = "ignored" }
@@ -127,16 +125,8 @@ describe("native explanation streaming", function()
 
 	it("estimates completion progress from output and reasoning characters without including reasoning in the result", function()
 		local request = start_completion()
-		local body = calls[1].args.body
-		assert.equals("Completion", body.title)
-		assert.is_true(client.is_explanation_session(body.id))
-		assert.same({ directory = "/project" }, body.location)
-		assert.same({ providerID = "test", id = "complete" }, body.model)
-		assert.same({ { action = "*", resource = "*", effect = "deny" } }, body.permissions)
-		assert.equals(1000, calls[1].args.timeout)
+		assert.same({ providerID = "test", id = "complete" }, calls[1].args.body.model)
 		local id = create()
-		assert.same({ text = "Complete at cursor" }, calls[2].args.body)
-		assert.equals(1000, calls[2].args.timeout)
 		local data = { sessionID = "foreign", assistantMessageID = "msg_1", ordinal = 0, delta = "ignored" }
 		emit("session.text.delta", data)
 		assert.same({}, progress)

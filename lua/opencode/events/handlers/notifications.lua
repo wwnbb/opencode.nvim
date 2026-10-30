@@ -82,7 +82,10 @@ function M.setup(events)
 	local permissions = {}
 	local questions = {}
 	local edits = {}
+	-- Reconnect attempts repeat the same failure; report each one once per outage.
+	local stream_errors = {}
 
+	events.on("connected", function() stream_errors = {} end)
 	events.on("error", function(data)
 		vim.schedule(function()
 			local message
@@ -94,6 +97,8 @@ function M.setup(events)
 			if message == "" then
 				message = "Unknown error"
 			end
+			if stream_errors[message] then return end
+			stream_errors[message] = true
 			vim.notify("OpenCode event stream error: " .. message, vim.log.levels.ERROR)
 		end)
 	end)
@@ -153,9 +158,14 @@ function M.setup(events)
 			elseif data.action == "answered" or data.action == "rejected" or data.action == "unavailable" then
 				questions[data.id] = nil
 			end
+		elseif data.kind == "permission" and data.action == "unavailable" then
+			permissions[data.id] = nil
 		elseif data.kind == "edit" and (data.action == "sent" or data.action == "settled" or data.action == "cancelled") then
 			edits[data.id] = nil
 		end
+	end)
+	events.on("session.closed", function(data)
+		for _, id in ipairs(data and (data.session_ids or { data.session_id }) or {}) do active[id] = nil end
 	end)
 
 	events.on("permission_removed", function(data)
@@ -175,17 +185,20 @@ function M.setup(events)
 		if not session_id or not status_type then return end
 		local root_session_id = event_util.runtime_root_for_session(session_id) or session_id
 		if not require("opencode.state").is_runtime_session(root_session_id) then return end
+		-- Each subagent child reports its own busy/idle; only the root finishing its
+		-- turn is "done", and a child must neither fire nor consume that notice.
 		if data.reason == "session_abort" or data.reason == "send_failed" or data.reason == "abort" then
-			active[root_session_id] = nil
+			active[session_id] = nil
 			return
 		end
 		if status_type == "busy" or status_type == "retry" then
-			active[root_session_id] = true
+			active[session_id] = true
 			return
 		end
 		if status_type ~= "idle" then return end
-		local was_active = active[root_session_id]
-		active[root_session_id] = nil
+		local was_active = active[session_id]
+		active[session_id] = nil
+		if session_id ~= root_session_id then return end
 		if type(status) == "table" and (status.outcome == "failed" or status.outcome == "interrupted") then
 			return
 		end
@@ -203,7 +216,7 @@ function M.setup(events)
 		local session_id = data and data.sessionID
 		if not session_id or event_util.is_abort_error(data.error) then return end
 		local root_session_id = event_util.runtime_root_for_session(session_id) or session_id
-		active[root_session_id] = nil
+		active[session_id] = nil
 		vim.schedule(function()
 			if not require("opencode.state").is_runtime_session(root_session_id) then
 				return

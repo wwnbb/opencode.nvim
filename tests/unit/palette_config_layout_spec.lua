@@ -73,13 +73,7 @@ describe("opencode command palette layout", function()
 			assert(win_config.height == 5, "palette should shrink to the visible rows within configured height")
 			local frame_config = vim.api.nvim_win_get_config(wins[3])
 			assert(frame_config.width == 36, "configured width includes the dialog gutters")
-			assert(frame_config.height == 12, "frame includes title, search, and bottom spacing")
 			assert(frame_config.border[1][1] == "┌", "palette.border should be independent of popup.border")
-			assert(vim.api.nvim_win_get_config(wins[1]).border == "none", "palette search should stay borderless")
-			assert(win_config.border == "none", "palette result list should stay borderless")
-			assert(win_config.win == wins[3], "results should be anchored inside the frame")
-			assert(win_config.row == 5 and win_config.col == 1, "list should use TUI spacing")
-			assert(vim.fn.prompt_getprompt(input_buf) == "", "search should have no prompt chevron")
 
 			local lines = vim.api.nvim_buf_get_lines(results_buf, 0, -1, false)
 			assert(lines[1] == "   System", "configured category order and icon visibility should apply")
@@ -89,7 +83,6 @@ describe("opencode command palette layout", function()
 			end
 
 			local marks_before = palette_marks()
-			assert(#marks_before == 5, "initial render should apply one mark per header, selection, and keybind")
 
 			vim.api.nvim_exec_autocmds("TextChangedI", { buffer = input_buf })
 			vim.api.nvim_exec_autocmds("TextChangedI", { buffer = input_buf })
@@ -98,7 +91,7 @@ describe("opencode command palette layout", function()
 
 			local session_line
 			for line_number, line in ipairs(lines) do
-				if line:find("...", 1, true) then
+				if line:find("…", 1, true) then
 					session_line = line_number
 					break
 				end

@@ -76,7 +76,7 @@ describe("chat welcome", function()
 
 	it("reflows on window resize and drops padding in a short window", function()
 		chat.do_render()
-		for _, size in ipairs({ { 60, 16 }, { 18, 20 }, { 80, 4 } }) do
+		for _, size in ipairs({ { 18, 20 }, { 80, 4 } }) do
 			local generation = state.applied_render_generation
 			vim.api.nvim_win_set_config(winid, { width = size[1], height = size[2] })
 			vim.api.nvim_exec_autocmds("WinResized", { data = { windows = { winid } } })

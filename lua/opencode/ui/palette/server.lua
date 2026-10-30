@@ -13,7 +13,7 @@ function M.show()
 		items[#items + 1] = { value = "upgrade", label = "Update OpenCode on this host", description = "Native installer detection; unsupported installers report a failure" }
 	end
 	return menu.open({ title = " Server ", width = 82, sort = false, items = items,
-		message = target .. (status.discovered and (" — native service PID " .. tostring(status.pid or "unverified")) or ""),
+		message = target .. (status.discovered and (" · native service PID " .. tostring(status.pid or "unverified")) or ""),
 		on_select = function(item)
 			if item.value == "reconnect" then actions.disconnect(); actions.reconnect(function() vim.notify("OpenCode reconnected", vim.log.levels.INFO) end); return end
 			local fresh = actions.managed_server_status()

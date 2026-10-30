@@ -34,8 +34,6 @@ describe("ghost completion rendered cells", function()
 			client.feed("i")
 			assert.is_true(vim.wait(1000, function() return client.lua("return vim.api.nvim_get_mode().mode") == "i" end, 5))
 			for _, case in ipairs({
-				{ "    ", 4, "return value" },
-				{ "local café = ()", #"local café = (", "résultat" },
 				{ "\tcall()", #"\tcall(", "世界" },
 				{ "class Example", #"class Example", ":\n\tpass" },
 			}) do

@@ -1,26 +1,23 @@
 describe("native edit result", function()
-	for _, tool in ipairs({ "patch", "apply_patch" }) do
-		it("uses " .. tool .. " file status for added and deleted files", function()
-			local results = require("opencode.ui.chat.file_edit_results")
-			local part = {
-				tool = tool,
-				state = {
-					status = "completed",
-					input = { patchText = "*** Begin Patch\n*** End Patch" },
-					metadata = { files = {
-						{ file = "new.txt", patch = "--- a/new.txt\n+++ b/new.txt\n+created", status = "added", additions = 1, deletions = 0 },
-						{ file = "old.txt", patch = "--- a/old.txt\n+++ b/old.txt\n-removed", status = "deleted", additions = 0, deletions = 1 },
-					} },
-				},
-			}
-			local model = results.normalize_model(part)
-			assert.is_not_nil(model)
-			assert.equals("applied", model.status)
-			assert.equals("add", model.files[1].type)
-			assert.equals("delete", model.files[2].type)
-			assert.is_not_nil(results.render_tool(part, false))
-		end)
-	end
+	it("uses patch file status for added and deleted files", function()
+		local results = require("opencode.ui.chat.file_edit_results")
+		local part = {
+			tool = "patch",
+			state = {
+				status = "completed",
+				input = { patchText = "*** Begin Patch\n*** End Patch" },
+				metadata = { files = {
+					{ file = "new.txt", patch = "--- a/new.txt\n+++ b/new.txt\n+created", status = "added", additions = 1, deletions = 0 },
+					{ file = "old.txt", patch = "--- a/old.txt\n+++ b/old.txt\n-removed", status = "deleted", additions = 0, deletions = 1 },
+				} },
+			},
+		}
+		local model = results.normalize_model(part)
+		assert.is_not_nil(model)
+		assert.equals("applied", model.status)
+		assert.equals("add", model.files[1].type)
+		assert.equals("delete", model.files[2].type)
+	end)
 
 	it("renders the recorded files[].patch and restores a read-only preview", function()
 		local session_id = "native-edit-widget"

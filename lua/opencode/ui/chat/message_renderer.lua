@@ -56,10 +56,13 @@ local function render_session_chrome(ctx)
 		bc_line:append(NuiText(ctx.current_session.name or "Subagent", "Special"))
 		ctx:add_line(bc_line)
 
-		local hint_line = NuiLine()
-		hint_line:append(NuiText(require("opencode.util.keymap").label("chat", "leave_subagent", (ctx.chat_config or {}).keymaps)
-			.. " Go back", "Comment"))
-		ctx:add_line(hint_line)
+		local keymaps = require("opencode.util.keymap")
+		local back = keymaps.hint({ { keymaps.label("chat", "leave_subagent", (ctx.chat_config or {}).keymaps), "Go back" } })
+		if back then
+			local hint_line = NuiLine()
+			hint_line:append(NuiText(back, "Comment"))
+			ctx:add_line(hint_line)
+		end
 		ctx:add_raw_line("")
 	end
 
@@ -280,18 +283,15 @@ local function render_retry_status_if_needed(ctx, messages, msg_idx)
 		return
 	end
 
-	local retry_msg = session_status.message or "Retrying..."
-	if #retry_msg > 80 then
-		retry_msg = retry_msg:sub(1, 80) .. "..."
-	end
+	local retry_msg = require("opencode.util.text").truncate(session_status.message or "Retrying…", 80, "…")
 	local attempt = session_status.attempt or 0
 	local retry_info = ""
 	if session_status.next then
-		local wait_sec = math.max(0, math.floor((session_status.next - os.time() * 1000) / 1000))
-		if wait_sec > 0 then
-			retry_info = string.format(" [retrying in %ds attempt #%d]", wait_sec, attempt)
+		local wait_ms = math.max(0, math.floor((session_status.next - os.time() * 1000) / 1000) * 1000)
+		if wait_ms > 0 then
+			retry_info = string.format(" [retrying in %s · attempt #%d]", require("opencode.util.locale").duration(wait_ms), attempt)
 		else
-			retry_info = string.format(" [retrying attempt #%d]", attempt)
+			retry_info = string.format(" [retrying · attempt #%d]", attempt)
 		end
 	else
 		retry_info = string.format(" [attempt #%d]", attempt)
@@ -302,13 +302,32 @@ local function render_retry_status_if_needed(ctx, messages, msg_idx)
 	ctx:add_line(status_line)
 end
 
+-- Rendered user prompts extend the highlight signature. Appending to the string
+-- per message copies it every time; join the pieces once when the render ends.
+-- Matches the render_cache_key(previous, message_id, agent) chain exactly.
+local user_signatures = setmetatable({}, { __mode = "k" })
+
+local function add_user_signature(ctx, message_id, agent)
+	local parts = user_signatures[ctx]
+	if not parts then
+		parts = { tostring(ctx.content_highlights._opencode_signature or "") }
+		user_signatures[ctx] = parts
+	end
+	parts[#parts + 1] = tostring(message_id or "")
+	parts[#parts + 1] = tostring(agent or "")
+end
+
+local function finish_user_signature(ctx)
+	local parts = user_signatures[ctx]
+	user_signatures[ctx] = nil
+	if parts then ctx.content_highlights._opencode_signature = table.concat(parts, "\0") end
+end
+
 local function render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
 	local start_line = ctx:line_count()
 	local agent = message.agent or local_state.message_agent.get(ctx.current_session.id, message.id)
 		or ctx.history_metadata.agent(message.id) or "unknown"
-	ctx.content_highlights._opencode_signature = ctx:render_cache_key(
-		ctx.content_highlights._opencode_signature, message.id, agent
-	)
+	add_user_signature(ctx, message.id, agent)
 	local file_parts, attachment_parts = {}, {}
 	for _, part in ipairs(render_parts.parts or {}) do
 		if part._editor_context then
@@ -344,18 +363,20 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 	ctx:add_nui_lines(msg_lines)
 	local prompt_status, pending_input = require("opencode.selectors").prompt_status(ctx.current_session.id, message.id)
 	if prompt_status then
+		local keymaps = require("opencode.util.keymap")
+		local items = { { status = prompt_status } }
 		if pending_input then
-			local keymaps = require("opencode.util.keymap")
 			local configured = keymaps.get("chat", (ctx.chat_config or {}).keymaps)
 			for _, command in ipairs(cs.module(view, require("opencode.ui.chat.pending_inputs")).commands) do
 				local action = command.name .. "_pending"
 				if #keymaps.keys(configured[action]) > 0
 					and (command.name ~= "steer" or pending_input.status == "queued")
 					and (command.name ~= "queue" or pending_input.status == "accepted") then
-					prompt_status = prompt_status .. " · " .. keymaps.label("chat", action, configured) .. " " .. command.name
+					items[#items + 1] = { keymaps.label("chat", action, configured), command.name }
 				end
 			end
 		end
+		prompt_status = keymaps.hint(items)
 		local status_line = NuiLine()
 		status_line:append(NuiText(prompt_status, "Comment"))
 		ctx:add_line(status_line)
@@ -394,20 +415,23 @@ local function render_activity(ctx, group)
 end
 
 local function render_text_part(ctx, message, part, part_idx, render_parts, incomplete_assistant)
-	local cache_key = nil
-	if not incomplete_assistant then
-		cache_key = ctx:render_cache_key(
-			"text",
-			ctx.current_session.id,
-			message.id,
-			part.id or part_idx,
-			render_parts.message_revision,
-			part.id and render_parts.part_revisions[part.id] or 0,
-			ctx.chat_width
-		)
-	end
+	-- Every text change bumps the part's own revision, including streamed deltas,
+	-- so sibling tool updates must not re-render this part. Unidentified parts
+	-- have no part revision and fall back to the message revision.
+	local part_revision = part.id and render_parts.part_revisions[part.id]
+	local cache_key = ctx:render_cache_key(
+		"text",
+		ctx.current_session.id,
+		message.id,
+		part.id or part_idx,
+		part_revision or ("message:" .. tostring(render_parts.message_revision)),
+		ctx.chat_width
+	)
 	local content_lines = ctx:cached_nui_lines(cache_key, function()
-		return render.render_content(part.text, { highlight_code = ctx:code_highlighter(message.id, part.id or part_idx) })
+		return render.render_content(part.text, {
+			highlight_code = ctx:code_highlighter(message.id, part.id or part_idx),
+			streaming = incomplete_assistant,
+		})
 	end, ctx:render_owner_key("text", message.id, part.id or part_idx))
 	if #content_lines == 0 then return end
 	-- TextPart has marginTop=1 even between adjacent text parts. Capture the
@@ -604,9 +628,7 @@ local function render_local_notices(ctx, index, all_messages, max_user_message_l
 			message_start_line = ctx:line_count()
 			local agent = message.agent or local_state.message_agent.get(ctx.current_session.id, message.id)
 				or "unknown"
-			ctx.content_highlights._opencode_signature = ctx:render_cache_key(
-				ctx.content_highlights._opencode_signature, message.id, agent
-			)
+			add_user_signature(ctx, message.id, agent)
 			local msg_lines = render.render_user_message(message.content or "", agent, nil, {
 				max_lines = max_user_message_lines,
 				highlight_code = ctx:code_highlighter(message.id),
@@ -690,19 +712,27 @@ local function render_empty_state(ctx, chrome_lines)
 	if ctx:line_count() > chrome_lines then
 		return
 	end
-	local function key(action)
-		return require("opencode.util.keymap").label("chat", action, ctx.chat_config.keymaps)
+	local keymaps = require("opencode.util.keymap")
+	-- A row is { text, highlight, key prefix to emphasize }.
+	local function key_row(action, description, hl)
+		local key = keymaps.label("chat", action, ctx.chat_config.keymaps)
+		local text = keymaps.hint({ { key, description } }, { join = "  " })
+		return text and { text, hl, key }
 	end
-	local focus_key, palette_key, help_key = key("focus_input"), key("command_palette"), key("help")
 	local rows = {
 		{ "OpenCode", "OpenCodeWelcomeTitle" },
 		{ "What would you like to build?", "OpenCodeWelcomeHint" },
-		{ "" },
-		{ focus_key .. "  Start a conversation", nil, focus_key },
-		{ "" },
-		{ palette_key .. "  Command palette", "OpenCodeWelcomeHint", palette_key },
-		{ help_key .. "  Help & shortcuts", "OpenCodeWelcomeHint", help_key },
 	}
+	local focus = key_row("focus_input", "Start a conversation")
+	if focus then
+		vim.list_extend(rows, {
+			{ "" },
+			focus,
+			{ "" },
+			key_row("command_palette", "Command palette", "OpenCodeWelcomeHint"),
+			key_row("help", "Help & shortcuts", "OpenCodeWelcomeHint"),
+		})
+	end
 	local lines = {}
 	for _, row in ipairs(rows) do
 		for _, chunk in ipairs(render.wrap_text_with_ranges(row[1], ctx.chat_width)) do
@@ -761,6 +791,7 @@ function M.render(ctx, index)
 	end
 
 	render_empty_state(ctx, chrome_lines)
+	finish_user_signature(ctx)
 
 	return {
 		all_messages = all_messages,

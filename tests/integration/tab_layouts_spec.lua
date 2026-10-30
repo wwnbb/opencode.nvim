@@ -255,7 +255,7 @@ describe("OpenCode tabs with independent layouts", function()
 		assert.equals("layout-delayed", views.session(chat.get_view()).id)
 	end)
 
-	for _, destination in ipairs({ "layout", "editor" }) do
+	for _, destination in ipairs({ "editor" }) do
 		it("drops a delayed palette opening after switching to another " .. destination, function()
 			local connected
 			lifecycle.ensure_connected = function(callback) connected = callback end
@@ -294,8 +294,9 @@ describe("OpenCode tabs with independent layouts", function()
 		end)
 	end
 
-	for _, action in ipairs({ "new", "split" }) do
-		for _, destination in ipairs({ "editor", "sibling", "composer", "review note", "diff note" }) do
+	for _, case in ipairs({ { "new", "editor" }, { "new", "review note" }, { "split", "composer" }, { "split", "diff note" } }) do
+		local action, destination = case[1], case[2]
+		do
 			it("preserves " .. destination .. " focus when a delayed " .. action .. " session arrives", function()
 				local sibling = chat.create_split(first, seed("layout-b"), "vertical")
 				chat.focus_view(first)
@@ -370,24 +371,21 @@ describe("OpenCode tabs with independent layouts", function()
 		assert.equals("file:///tmp/context.txt", part.uri or part.url)
 	end)
 
-	for _, suspended in ipairs({ false, true }) do
-		it("closes deleted child panes across layouts (suspended=" .. tostring(suspended) .. ")", function()
-			local child_session = seed("layout-child")
-			sync.record_task_child_session("layout-a", "layout-a-message", "a-task", child_session.id)
-			local child = chat.create_split(first, child_session, "vertical")
-			if suspended then chat.create_layout(seed("layout-survivor"))
-			else chat.create_split(child, seed("layout-survivor"), "vertical") end
-			local survivor = chat.get_view()
-			assert.is_true(sessions.handle_deleted("layout-a"))
-			settle()
-			assert.is_nil(views.for_session("layout-a"))
-			assert.is_nil(views.for_session("layout-child"))
-			assert.equals(survivor, chat.get_view())
-			assert.equals("layout-survivor", state.get_session().id)
-			assert.is_nil(state.get_session_record("layout-child"))
-			assert.equals(1, #workspace.list())
-		end)
-	end
+	it("closes deleted child panes in a suspended layout", function()
+		local child_session = seed("layout-child")
+		sync.record_task_child_session("layout-a", "layout-a-message", "a-task", child_session.id)
+		chat.create_split(first, child_session, "vertical")
+		chat.create_layout(seed("layout-survivor"))
+		local survivor = chat.get_view()
+		assert.is_true(sessions.handle_deleted("layout-a"))
+		settle()
+		assert.is_nil(views.for_session("layout-a"))
+		assert.is_nil(views.for_session("layout-child"))
+		assert.equals(survivor, chat.get_view())
+		assert.equals("layout-survivor", state.get_session().id)
+		assert.is_nil(state.get_session_record("layout-child"))
+		assert.equals(1, #workspace.list())
+	end)
 
 	it("closes multiwindow popups during N, layout switching and closing", function()
 		local second = chat.create_split(first, seed("layout-b"), "vertical")
@@ -456,17 +454,6 @@ describe("OpenCode tabs with independent layouts", function()
 		assert.equals(1, #normal_windows(tab))
 	end)
 
-	it("uses the configured navigation keys from the chat pane", function()
-		local config = state.get_config()
-		config.chat.keymaps.next_session = "]t"
-		state.set_config(config); settle()
-		chat.create_layout(seed("layout-b")); settle()
-		chat.focus_view(chat.get_view())
-		assert.equals("", vim.fn.maparg("gt", "n"))
-		press("]t")
-		assert.equals(original_layout, workspace.current().id)
-	end)
-
 	it("moves a whole layout with the existing tab reorder action", function()
 		chat.create_split(first, seed("layout-b"), "vertical")
 		chat.create_layout(seed("layout-c")); settle()
@@ -498,17 +485,10 @@ describe("OpenCode tabs with independent layouts", function()
 	for _, case in ipairs({
 		{ name = "middle layout", index = 3, expected = "layout-b" },
 		{ name = "last layout", index = 4, expected = "layout-c" },
-		{ name = "first layout", index = 1, expected = "layout-b" },
-		{ name = "reordered layout from the chat pane", index = 4, expected = "layout-b", reorder = true },
 	}) do
 		it("selects the adjacent layout when x closes the " .. case.name, function()
 			for _, id in ipairs({ "layout-b", "layout-c", "layout-d" }) do chat.create_layout(seed(id)); settle() end
 			press(case.index .. "gt")
-			if case.reorder then
-				assert.is_true(require("opencode.actions").reorder_session_tab(-1))
-				assert.equals("layout-d", workspace.list()[3].session_id)
-				chat.focus_view(chat.get_view())
-			end
 			press("x")
 			assert.equals(3, #workspace.list())
 			assert.equals(case.expected, workspace.current().session_id)

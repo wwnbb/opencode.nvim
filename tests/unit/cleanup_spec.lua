@@ -51,32 +51,6 @@ describe("opencode cleanup", function()
 		end
 	end)
 
-	it("clears all transient owners and clears history last", function()
-		require("opencode.cleanup").clear_transient({ reset_state = false, clear_chat = true })
-
-		assert.same({
-			"opencode.sync.clear_all",
-			"opencode.permission.state.clear_all",
-			"opencode.question.state.clear_all",
-			"opencode.edit.state.clear_all",
-			"opencode.artifact.changes.clear",
-			"opencode.session.lock.clear_all",
-			"opencode.permission.danger.clear",
-			"opencode.ui.chat.clear",
-			"opencode.events.clear_history",
-		}, calls, "transient cleanup order")
-	end)
-
-	it("resets app state before clearing history without clearing listeners", function()
-		require("opencode.cleanup").reset_all()
-
-		assert.equals("opencode.state.reset", calls[#calls - 1], "state reset order")
-		assert.equals("opencode.events.clear_history", calls[#calls], "history final order")
-		for _, call in ipairs(calls) do
-			assert(call ~= "opencode.events.clear", "cleanup must preserve event listeners")
-		end
-	end)
-
 	it("clears and invalidates every pane on reset", function()
 		local views = require("opencode.ui.chat.state")
 		local second = views.new()

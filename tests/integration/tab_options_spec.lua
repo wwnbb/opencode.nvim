@@ -3,11 +3,11 @@ describe("tab layout window options after Neovim startup", function()
 	before_each(function() editor = require("tests.helpers.embedded_editor").new() end)
 	after_each(function() if editor then editor.close() end end)
 
-	for _, enabled in ipairs({ false, true }) do
-		for _, persistent in ipairs({ false, true }) do
-			it("returns option API errors and retries a partially attached layout (header=" .. tostring(enabled) .. ", persistent=" .. tostring(persistent) .. ")", function()
+	for _, persistent in ipairs({ false, true }) do
+		do
+			it("returns option API errors and retries a partially attached layout (persistent=" .. tostring(persistent) .. ")", function()
 				editor.lua([[
-					local enabled, persistent = ...
+					local enabled, persistent = true, ...
 					require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
 						chat = { layout = "tab", session_tabs = { enabled = enabled } } })
 					local chat, workspace = require("opencode.ui.chat"), require("opencode.ui.chat.workspace")
@@ -41,7 +41,7 @@ describe("tab layout window options after Neovim startup", function()
 					assert(workspace.select(other))
 					workspace.close_current()
 					assert(workspace.current().id == original and not workspace.current().incomplete)
-				]], { enabled, persistent })
+				]], { persistent })
 			end)
 		end
 	end

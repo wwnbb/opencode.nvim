@@ -172,7 +172,7 @@ end
 ---@param has_multiple boolean
 ---@param answered_count number
 ---@param total_count number
----@return string
+---@return string|nil
 local function format_hint(
 	option_count,
 	is_multi,
@@ -183,26 +183,26 @@ local function format_hint(
 )
 	local parts = {}
 	if option_count > 0 then
-		local select_part, move_part = widget_base.selection_hint(math.min(option_count, 9), chat_keys())
-		table.insert(parts, select_part)
-		table.insert(parts, move_part)
+		local select_item, move_item = widget_base.selection_hint(math.min(option_count, 9), chat_keys())
+		table.insert(parts, select_item)
+		table.insert(parts, move_item)
 	else
 		table.insert(parts, "select an answer")
 	end
-	if is_multi then table.insert(parts, key("toggle_selection") .. " toggle") end
-	table.insert(parts, key("confirm") .. " continue")
+	if is_multi then table.insert(parts, { key("toggle_selection"), "toggle" }) end
+	table.insert(parts, { key("confirm"), "continue" })
 
 	if has_multiple then
-		table.insert(parts, string.format("%d/%d answered", answered_count, total_count))
-		table.insert(parts, key("next_question") .. " / " .. key("prev_question") .. " review")
+		table.insert(parts, { status = string.format("%d/%d answered", answered_count, total_count) })
+		table.insert(parts, { key("next_question") .. " / " .. key("prev_question"), "review" })
 	end
 	if allow_custom then
-		table.insert(parts, key("custom_input") .. " custom")
+		table.insert(parts, { key("custom_input"), "custom" })
 	end
 	if #keymaps.keys(keymaps.get("chat", chat_keys()).cancel_question) > 0 then
-		table.insert(parts, key("cancel_question") .. " cancel")
+		table.insert(parts, { key("cancel_question"), "cancel" })
 	end
-	return table.concat(parts, " · ")
+	return keymaps.hint(parts, { omit_disabled = true })
 end
 
 ---@param result table
@@ -313,8 +313,18 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 	local selections = selection_state.selections and selection_state.selections[current_tab] or {}
 
 	if not current_question then
-		add_panel_line(result, "Form: " .. ((selection_state.form or {}).title or "Waiting"), "OpenCodeQuestionTitle")
-		add_panel_line(result, selection_state.server_error or next(selection_state.field_errors or {}) and select(2, next(selection_state.field_errors)) or key("confirm", selection_state.keymap_scope) .. " to review form defaults", "OpenCodeQuestionMuted")
+		local form_title = trim_string((selection_state.form or {}).title)
+		add_panel_blank(result)
+		add_header(result, form_title, "pending", form_title == "" and "(waiting)" or nil)
+		add_panel_blank(result)
+		local error_text = selection_state.server_error
+			or (next(selection_state.field_errors or {}) and select(2, next(selection_state.field_errors)))
+		if error_text then add_panel_line(result, error_text, "OpenCodeQuestionError") end
+		local hint = keymaps.hint({ { key("confirm", selection_state.keymap_scope), "review form defaults" } },
+			{ omit_disabled = true })
+		if hint then add_panel_line(result, hint, "OpenCodeQuestionMuted") end
+		if error_text or hint then add_panel_blank(result) end
+		add_trailing_separator(result)
 		return result.lines, result.highlights, widget_base.make_meta()
 	end
 
@@ -332,11 +342,8 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 	local body = trim_string(current_question.question)
 	if body ~= "" and body ~= title then
 		append_text_lines(result, current_question.question, "OpenCodeQuestionOutput")
-	elseif body == "" and title ~= "" then
-		add_panel_line(result, title, "OpenCodeQuestionTitle")
+		add_panel_blank(result)
 	end
-
-	add_panel_blank(result)
 
 	local option_count = 0
 	local first_option_line = #result.lines
@@ -375,17 +382,24 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		local custom_selected = selections.custom_present == true
 		local custom_marker = custom_selected and icons.selected or icons.unselected
 		local custom_line = custom_text ~= "" and (custom_marker .. " Custom: " .. custom_text)
-			or (custom_marker .. " Custom answer...")
-		custom_interactive_line = add_panel_line(
+			or (custom_marker .. " Custom answer…")
+		local custom_line_index, _, custom_rows = add_panel_line(
 			result,
 			custom_line,
-			custom_selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionMuted"
+			custom_selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionOutput"
 		)
+		custom_interactive_line = custom_line_index
+		if custom_selected then
+			highlight_panel_text(result, custom_rows, custom_marker, "OpenCodeQuestionSelectedMarker")
+		end
 		if custom_text ~= "" then
 			option_lines[0], option_end_lines[0] = custom_interactive_line, #result.lines - 1
 		end
 	end
 
+	local has_choices = option_count > 0 or allow_custom
+	if has_choices then add_panel_blank(result) end
+	local tail_start = #result.lines
 	local error_text = (selection_state.field_errors or {})[current_question.key] or selection_state.server_error
 	if error_text then add_panel_line(result, error_text, "OpenCodeQuestionError") end
 	if current_question.field_type == "external" then
@@ -394,10 +408,15 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		local confirm_key = key("confirm", scope)
 		local copy_key = key(scope == "form" and "custom" or "custom_input", scope)
 		local external_hint
-		if selections.is_answered then external_hint = "Acknowledged · " .. confirm_key .. ": continue"
-		elseif selections.external_ready then external_hint = "Complete the external action, then " .. confirm_key .. ": confirm completion"
-		else external_hint = confirm_key .. ": open link · " .. copy_key .. ": copy link · then confirm completion" end
-		add_panel_line(result, external_hint, "OpenCodeQuestionMuted")
+		if selections.is_answered then
+			external_hint = keymaps.hint({ { status = "Acknowledged" }, { confirm_key, "continue" } }, { omit_disabled = true })
+		elseif selections.external_ready then
+			external_hint = keymaps.hint({ "Complete the external action, then " .. confirm_key .. " confirms completion" })
+		else
+			external_hint = keymaps.hint({ { confirm_key, "open link" }, { copy_key, "copy link" }, "then confirm completion" },
+				{ omit_disabled = true })
+		end
+		if external_hint then add_panel_line(result, external_hint, "OpenCodeQuestionMuted") end
 	end
 	if status == "pending" and current_question.field_type ~= "external" then
 		local answered_count = 0
@@ -408,22 +427,22 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 			end
 		end
 
-		add_panel_blank(result)
-		add_panel_line(
-			result,
-			selection_state.hint or format_hint(
-				option_count,
-				is_multi,
-				allow_custom,
-				#questions > 1,
-				answered_count,
-				#questions
-			),
-			"OpenCodeQuestionMuted"
+		local hint = selection_state.hint or format_hint(
+			option_count,
+			is_multi,
+			allow_custom,
+			#questions > 1,
+			answered_count,
+			#questions
 		)
+		if hint then
+			add_panel_line(result, hint, "OpenCodeQuestionMuted")
+		end
 	end
 
-	add_panel_blank(result)
+	if #result.lines > tail_start then
+		add_panel_blank(result)
+	end
 	add_trailing_separator(result)
 
 	local interactive_count = option_count
@@ -467,9 +486,9 @@ function M.get_submitting_lines(_request_id, question_data, selection_state, opt
 	local rejecting = selection_state.submission_kind == "reject"
 
 	add_panel_blank(result)
-	add_header(result, title, "pending", rejecting and "cancelling" or "submitting")
+	add_header(result, title, "pending", rejecting and "(cancelling)" or "(submitting)")
 	add_panel_blank(result)
-	add_panel_line(result, rejecting and "Cancelling question..." or "Submitting answer...", "OpenCodeQuestionMuted")
+	add_panel_line(result, rejecting and "Cancelling question…" or "Submitting answer…", "OpenCodeQuestionMuted")
 	add_panel_blank(result)
 	add_trailing_separator(result)
 
@@ -485,7 +504,7 @@ function M.get_answered_lines(_request_id, question_data, answers, opts)
 	local result = widget_base.new_result(opts)
 	local questions = get_questions(question_data)
 	add_panel_blank(result)
-	add_header(result, "answered", "answered")
+	add_header(result, "", "answered", "(answered)")
 	add_panel_blank(result)
 
 	for i, question in ipairs(questions) do
@@ -519,9 +538,7 @@ function M.get_rejected_lines(_request_id, question_data, opts)
 	local title = questions[1] and get_question_title(questions[1], "Question") or "Question"
 
 	add_panel_blank(result)
-	add_header(result, title, "rejected", "cancelled")
-	add_panel_blank(result)
-	add_panel_line(result, "Cancelled", "OpenCodeQuestionError")
+	add_header(result, title, "rejected", "(cancelled)")
 	add_panel_blank(result)
 	add_trailing_separator(result)
 
@@ -538,9 +555,7 @@ function M.get_confirmation_lines(_request_id, question_data, selection_state, o
 	local questions = get_questions(question_data)
 
 	add_panel_blank(result)
-	add_header(result, "ready to submit", "pending")
-	if selection_state.server_error then add_panel_line(result, selection_state.server_error, "OpenCodeQuestionError") end
-	for key, err in pairs(selection_state.field_errors or {}) do add_panel_line(result, key .. ": " .. err, "OpenCodeQuestionError") end
+	add_header(result, "", "pending", "(ready to submit)")
 	add_panel_blank(result)
 
 	for i, question in ipairs(questions) do
@@ -565,13 +580,21 @@ function M.get_confirmation_lines(_request_id, question_data, selection_state, o
 			return selected and icons.selected or icons.unselected
 		end, {
 			add_raw_line = add_panel_raw_line,
+			highlight_text = highlight_panel_text,
 			selected_hl = "OpenCodeQuestionSelected",
 			option_hl = "OpenCodeQuestionOutput",
+			marker_hl = "OpenCodeQuestionSelectedMarker",
 		})
 
 	add_panel_blank(result)
-	add_panel_line(result, key("confirm") .. " to continue · " .. key("back") .. " returns to questions", "OpenCodeQuestionMuted")
-	add_panel_blank(result)
+	local tail_start = #result.lines
+	if selection_state.server_error then add_panel_line(result, selection_state.server_error, "OpenCodeQuestionError") end
+	for field, err in pairs(selection_state.field_errors or {}) do
+		add_panel_line(result, field .. ": " .. err, "OpenCodeQuestionError")
+	end
+	local hint = keymaps.hint({ { key("confirm"), "continue" }, { key("back"), "back to questions" } }, { omit_disabled = true })
+	if hint then add_panel_line(result, hint, "OpenCodeQuestionMuted") end
+	if #result.lines > tail_start then add_panel_blank(result) end
 	add_trailing_separator(result)
 
 	return result.lines,

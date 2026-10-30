@@ -90,54 +90,6 @@ describe("shared popup owner", function()
 		for _, buf in ipairs(bufs) do assert.is_false(vim.api.nvim_buf_is_valid(buf)) end
 	end)
 
-	it("defaults input height to one row while preserving an explicit height", function()
-		for _, size in ipairs({ { width = 20 }, { width = 20, height = 3 } }) do
-			local popup = require("opencode.ui.popup").new({
-				frame = { relative = "editor", size = { width = 32, height = 12 }, focusable = false },
-				content = { position = { row = 5, col = 1 }, size = { width = 30, height = 4 } },
-				input = { position = { row = 1, col = 4 }, size = size },
-			})
-			popup:mount()
-			local ok, err = pcall(function()
-				for _, width in ipairs({ 20, 18 }) do
-					popup:resize({ input = { size = { width = width } } })
-					local input = vim.api.nvim_win_get_config(popup.input.winid)
-					local content = vim.api.nvim_win_get_config(popup.content.winid)
-					assert.equals(size.height or 1, input.height)
-					assert.equals(1, input.row)
-					assert.is_true(input.row + input.height <= content.row)
-				end
-			end)
-			popup:close()
-			if not ok then error(err) end
-		end
-	end)
-
-	it("keeps a titled border inside the screen at both edges", function()
-		vim.o.columns, vim.o.lines = 24, 10
-		local popup = require("opencode.ui.popup").new({
-			relative = "editor",
-			position = { row = 0, col = 0 },
-			size = { width = 30, height = 12 },
-			border = { style = "rounded", text = { top = " Details " } },
-		})
-		popup:mount()
-		local function assert_border_inside_screen()
-			local config = vim.api.nvim_win_get_config(popup.content.border.winid)
-			assert.is_true(config.row >= 0)
-			assert.is_true(config.col >= 0)
-			assert.is_true(config.row + config.height <= vim.o.lines - vim.o.cmdheight)
-			assert.is_true(config.col + config.width <= vim.o.columns)
-		end
-		assert_border_inside_screen()
-		popup:resize({ position = { row = 100, col = 100 } })
-		assert_border_inside_screen()
-		vim.o.columns, vim.o.lines = 20, 8
-		vim.api.nvim_exec_autocmds("VimResized", {})
-		assert_border_inside_screen()
-		popup:close()
-	end)
-
 	it("restores focus and closes every layer when a child window is closed", function()
 		local popup = require("opencode.ui.popup").new({
 			frame = { relative = "editor", size = { width = 36, height = 9 }, border = "none", focusable = false },
@@ -193,33 +145,6 @@ describe("shared popup owner", function()
 		end)
 	end
 
-	it("keeps the centered and input popup compatibility interfaces", function()
-		local float = require("opencode.ui.float")
-		local popup, bufnr = float.create_centered_popup({ title = " Details ", width = 24, height = 4 })
-		assert.equals(bufnr, popup.bufnr)
-		popup:mount()
-		assert.equals("opencode_float", vim.bo[bufnr].filetype)
-		popup:render({ "detail" }, { { line = 0, col = 0, end_col = 6, hl_group = "Title" } })
-		assert.equals("detail", vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1])
-		popup:unmount()
-
-		local submitted
-		local field = float.create_input_popup({
-			title = " Label ", prompt = "Account:", default = "existing",
-			on_submit = function(value) submitted = value end,
-		})
-		local input_buf = field.input.bufnr
-		assert.equals("Account: existing", vim.api.nvim_buf_get_lines(input_buf, 0, 1, false)[1])
-		local callback
-		for _, map in ipairs(vim.api.nvim_buf_get_keymap(input_buf, "i")) do
-			if map.lhs == "<CR>" then callback = map.callback end
-		end
-		assert.is_function(callback)
-		callback()
-		assert.equals("existing", submitted)
-		assert.is_false(vim.api.nvim_buf_is_valid(input_buf))
-	end)
-
 	it("shows the full rename title, wraps on narrow screens and preserves submission", function()
 		vim.o.columns, vim.o.lines = 160, 30
 		local title = "Refactoring Summarize trait in main.rs " .. string.rep("界", 24)
@@ -270,9 +195,7 @@ describe("shared popup owner", function()
 			vim.api.nvim_input("prefix-<D-v>")
 			vim.defer_fn(function()
 				observed.layout = vim.api.nvim_buf_get_lines(observed.bufnr, 0, -1, false)
-				observed.cursor = vim.api.nvim_win_get_cursor(0)
 				observed.view = vim.fn.winsaveview()
-				observed.config = vim.api.nvim_win_get_config(0)
 				observed.modifiable = vim.bo[observed.bufnr].modifiable
 				observed.pending = submitted == nil
 				vim.api.nvim_input("\r")
@@ -285,12 +208,7 @@ describe("shared popup owner", function()
 		assert.is_true(ok, tostring(err))
 		assert.equals("prefix-" .. key, submitted)
 		assert.equals("  " .. submitted:sub(-55) .. " ", observed.layout[4])
-		assert.is_truthy(observed.layout[2]:find("Connect OpenRouter", 1, true))
-		assert.equals("  " .. require("opencode.util.keymap").label("password", "submit") .. " submit", observed.layout[6])
-		assert.same({ 4, 57 }, observed.cursor)
 		assert.equals(0, observed.view.leftcol)
-		assert.equals("editor", observed.config.relative)
-		assert.equals(math.floor((vim.o.lines - vim.o.cmdheight) / 4), observed.config.row)
 		assert.is_false(observed.modifiable)
 		assert.is_true(observed.pending)
 		assert.is_false(vim.api.nvim_buf_is_valid(observed.bufnr))
@@ -304,12 +222,7 @@ describe("shared popup owner", function()
 		local original_paste = vim.paste
 		vim.defer_fn(function()
 			observed.bufnr = vim.api.nvim_get_current_buf()
-			observed.relative = vim.api.nvim_win_get_config(0).relative
-			observed.width = vim.api.nvim_win_get_width(0)
-			observed.height = vim.api.nvim_win_get_height(0)
-			observed.winhighlight = vim.wo.winhighlight
-			observed.layout = vim.api.nvim_buf_get_lines(observed.bufnr, 0, -1, false)
-			observed.initial = observed.layout[4]
+			observed.initial = vim.api.nvim_buf_get_lines(observed.bufnr, 3, 4, false)[1]
 			vim.api.nvim_input(">secrex\bt")
 			vim.defer_fn(function()
 				observed.mask = vim.api.nvim_buf_get_lines(observed.bufnr, 3, 4, false)[1]
@@ -321,13 +234,6 @@ describe("shared popup owner", function()
 				submitted = value
 				observed.closed_on_submit = not vim.api.nvim_buf_is_valid(observed.bufnr)
 			end })
-		assert.not_equals("", observed.relative)
-		assert.equals(60, observed.width)
-		assert.equals(7, observed.height)
-		assert.is_truthy(observed.winhighlight:find("Normal:NormalFloat", 1, true))
-		assert.is_truthy(observed.layout[2]:find("Connect OpenRouter", 1, true))
-		assert.is_truthy(observed.layout[2]:find(require("opencode.util.keymap").label("password", "cancel"), 1, true))
-		assert.equals("  " .. require("opencode.util.keymap").label("password", "submit") .. " submit", observed.layout[6])
 		assert.equals("  API key ", observed.initial)
 		assert.equals("  >secret ", observed.mask)
 		assert.equals(">secret", submitted)

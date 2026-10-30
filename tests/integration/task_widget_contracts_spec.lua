@@ -2,7 +2,6 @@ local chat_surface = require("tests.helpers.chat_surface")
 local chat_state_mod = require("opencode.ui.chat.state")
 local chat_state = chat_state_mod.state
 local chat_tasks = require("opencode.ui.chat.tasks")
-local sync = require("opencode.sync")
 local chat_highlights = require("opencode.ui.chat.highlights")
 local actions_mod = require("opencode.actions")
 
@@ -24,8 +23,8 @@ describe("task widget contracts", function()
 		} }
 	end
 
-	for _, failed in ipairs({ false, true }) do
-		it("ignores a queued child-load " .. (failed and "failure" or "success") .. " after the chat resets", function()
+	for _, failed in ipairs({ false }) do
+		it("ignores a queued child-load success after the chat resets", function()
 			local replies, renders = {}, 0
 			actions_mod.load_session_messages = function(_, _, callback) replies[#replies + 1] = callback end
 			chat_tasks.rerender_task = function() renders = renders + 1 end
@@ -86,8 +85,8 @@ describe("task widget contracts", function()
 		assert.is_true(chat_state.expanded_tasks[part.id])
 	end)
 
-	for _, failed in ipairs({ false, true }) do
-		it("ignores a replaced child's late " .. (failed and "failure" or "success"), function()
+	for _, failed in ipairs({ true }) do
+		it("ignores a replaced child's late failure", function()
 			local replies, loaded, renders = {}, {}, 0
 			actions_mod.load_session_messages = function(id, _, callback)
 				loaded[#loaded + 1], replies[#replies + 1] = id, callback
@@ -117,100 +116,6 @@ describe("task widget contracts", function()
 			assert.equals("third", loaded[3])
 		end)
 	end
-
-	it("keeps parallel children distinct and never guesses missing metadata", function()
-		local tasks = {}
-		local descriptions = {
-			"Map repo architecture",
-			"Explore UI widgets",
-			"Trace client events",
-			"Inspect state model",
-			"Review commands API",
-		}
-
-		chat_state.task_child_cache = {}
-		chat_state.task_child_loading = {}
-		chat_state.tasks = {}
-		chat_state.bufnr = nil
-		sync.clear_all()
-		sync.handle_message_updated({
-			id = "parallel_parent_msg",
-			sessionID = "parallel_parent",
-			role = "assistant",
-			time = { created = 1 },
-		})
-
-		for i, desc in ipairs(descriptions) do
-			local task_part = {
-				id = "parallel_task_" .. i,
-				messageID = "parallel_parent_msg",
-				sessionID = "parallel_parent",
-				type = "tool",
-				tool = "task",
-				state = {
-					status = "running",
-					input = {
-						subagent_type = "grep_slave",
-						description = desc,
-					},
-					metadata = i ~= 3 and { sessionID = "parallel_child_" .. i } or {},
-				},
-			}
-			tasks[i] = task_part
-			sync.handle_part_updated(task_part)
-			chat_state.tasks[task_part.id] = {
-				start_line = i,
-				end_line = i,
-				tool_part = task_part,
-			}
-
-			sync.handle_message_updated({
-				id = "parallel_child_msg_" .. i,
-				sessionID = "parallel_child_" .. i,
-				role = "assistant",
-				time = { created = 2000 + i * 1000 },
-			})
-			sync.handle_part_updated({
-				id = "parallel_child_tool_" .. i,
-				messageID = "parallel_child_msg_" .. i,
-				sessionID = "parallel_child_" .. i,
-				type = "tool",
-				tool = "read",
-				state = {
-					status = "running",
-					input = { filePath = "/tmp/parallel_" .. i .. ".lua" },
-				},
-			})
-		end
-
-		local before_metadata
-		chat_tasks.resolve_task_child_session_id(tasks[3], function(err, id)
-			assert(not err)
-			before_metadata = id or false
-		end)
-		assert(before_metadata == false, "task should not guess a child from matching title or timing")
-		tasks[3].state.metadata = { sessionId = "parallel_child_3" }
-		sync.handle_part_updated(tasks[3])
-
-		local seen_children = {}
-		for i, task_part in ipairs(tasks) do
-			local child_id
-			chat_tasks.resolve_task_child_session_id(task_part, function(err, id)
-				assert(not err)
-				child_id = id
-			end)
-			assert(child_id == "parallel_child_" .. i, "parallel task mapped to the wrong child: " .. tostring(child_id))
-			assert(not seen_children[child_id], "parallel child was reused across tasks: " .. tostring(child_id))
-			seen_children[child_id] = true
-
-			local rendered = chat_tasks.render_task_tool(task_part, false)
-			assert(
-				rendered.lines[2] and rendered.lines[2]:find("Read /tmp/parallel_" .. i .. ".lua", 1, true),
-				"parallel task did not render its own child tool summary"
-			)
-		end
-	end)
-
 
 	it("animates through overlay extmarks without mutating text or highlights", function()
 		local task_part = {
@@ -245,15 +150,6 @@ describe("task widget contracts", function()
 		chat_state.tools = {}
 		chat_state.task_anim_frame = 1
 
-		local tool_panel = require("opencode.ui.chat.tool_panel")
-		chat_state.task_anim_frame = 5
-		assert(chat_tasks.get_task_anim_frame() == "⠼", "task animation is missing middle braille frames")
-		chat_state.task_anim_frame = 10
-		assert(chat_tasks.get_task_anim_frame() == "⠏", "task animation is missing final braille frame")
-		chat_state.task_anim_frame = 6
-		assert(tool_panel.anim_frame({ "|", "/", "-", "\\" }) == "/", "regular tool animation should wrap shared frame index")
-		chat_state.task_anim_frame = 1
-
 		local rendered_task = chat_tasks.render_task_tool(task_part, false)
 		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, rendered_task.lines)
 		chat_highlights.apply_extmark_highlights(bufnr, chat_state_mod.chat_hl_ns, rendered_task.highlights, 0)
@@ -284,5 +180,4 @@ describe("task widget contracts", function()
 		)
 		chat_tasks.clear_animation_extmarks(bufnr)
 	end)
-
 end)

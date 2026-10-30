@@ -9,7 +9,8 @@ local text_util = require("opencode.util.text")
 
 M.PANEL_PREFIX = "▏  "
 M.PANEL_BLANK_PREFIX = "▏"
-M.ANIM_FRAMES = { "|", "/", "-", "\\" }
+-- One spinner for every running row: tasks, groups, thoughts and tool rows.
+M.ANIM_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
 ---Read/search results may arrive as text or as an output/content envelope.
 ---An explicitly empty output still takes precedence over content.
@@ -200,8 +201,8 @@ function M.header(text, opts)
 	return text
 end
 
----Elapsed time of a finished tool state as "1m 2s"/"15.0s" (locale.duration).
----Task headers keep tool_labels.format_state_duration ("1m02s"/"15s").
+---Elapsed time of a finished tool state as "1m 2s"/"15.0s" (locale.duration),
+---the one duration format of every row.
 ---@param time table|nil state.time
 ---@param native_only? boolean Read only time.start/time["end"], not created/completed
 ---@return string|nil
@@ -285,13 +286,18 @@ function M.visible_count(entries, expanded, max_entries)
 	return math.min(max_entries, #entries)
 end
 
+---The one fold hint: "… (N more lines, press O to expand)". `opts` names
+---another chat action for content that opens elsewhere ("press <CR> to inspect").
 ---@param remaining number
 ---@param noun? string
+---@param opts? { action?: string, verb?: string }
 ---@return string
-function M.overflow_text(remaining, noun)
-	noun = noun or "lines"
-	local key = require("opencode.util.keymap").label("chat", "toggle_tool", (view.config or {}).keymaps)
-	return "… (" .. tostring(remaining) .. " more " .. noun .. ", press " .. key .. " to expand)"
+function M.overflow_text(remaining, noun, opts)
+	noun, opts = noun or "lines", opts or {}
+	local keymaps = require("opencode.util.keymap")
+	local key = keymaps.label("chat", opts.action or "toggle_tool", (view.config or {}).keymaps)
+	return "… (" .. keymaps.hint({ { status = tostring(remaining) .. " more " .. noun },
+		"press " .. key .. " to " .. (opts.verb or "expand") }, { sep = ", " }) .. ")"
 end
 
 ---@param result table

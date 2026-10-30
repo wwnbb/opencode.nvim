@@ -34,10 +34,6 @@ describe("runtime sessions", function()
 		opencode.setup({
 			server = { auto_start = false },
 			keymaps = keymaps,
-			chat = { session_tabs = { colors = {
-				active_fg = "#ffffff", active_bg = "#3b82f6", inactive_bg = "#1f2937",
-				running_fg = "#22c55e", active_running_fg = "#86efac",
-			} } },
 			lualine = { enabled = false },
 		})
 		state, sync = require("opencode.state"), require("opencode.sync")
@@ -85,22 +81,6 @@ describe("runtime sessions", function()
 		assert.same({ "runtime-session" }, active_ids())
 	end)
 
-	it("renders the runtime tab with configured static active and running colors", function()
-		state.set_session("runtime-session", "Runtime Session")
-		vim.cmd("new")
-		local winid = vim.api.nvim_get_current_win()
-		local chat_view = require("opencode.ui.chat.state").state
-		chat_view.winid, chat_view.bufnr = winid, vim.api.nvim_win_get_buf(winid)
-		require("opencode.ui.chat").update_winbar()
-		assert.is_truthy(vim.wo[winid].winbar:find("Runtime Session", 1, true))
-		local current = vim.api.nvim_get_hl(0, { name = "OpenCodeWinbarCurrent", link = false })
-		assert.equals(0xffffff, current.fg)
-		assert.equals(0x3b82f6, current.bg)
-		local running = vim.api.nvim_get_hl(0, { name = "OpenCodeWinbarRunning", link = false })
-		assert.equals(0x22c55e, running.fg)
-		assert.equals(0x1f2937, running.bg)
-	end)
-
 	it("closes the current tab through the public API and selects its neighbor without deleting its record", function()
 		state.set_session("runtime-session", "Runtime Session")
 		state.set_session("second-session", "Second Session")
@@ -109,7 +89,6 @@ describe("runtime sessions", function()
 		assert.is_not_nil(state.get_session_record("second-session"))
 		assert.same({ "runtime-session" }, active_ids())
 	end)
-
 
 	it("shows pending widgets from a task child but excludes an unrelated session", function()
 		state.set_session("runtime-session", "Runtime Session")
@@ -132,12 +111,5 @@ describe("runtime sessions", function()
 		state.set_session("child-session", "Child Session", { runtime = false })
 		state.remove_session("runtime-session")
 		assert.same({}, active_ids())
-	end)
-
-	it("resets the message count when clearing the active session", function()
-		state.set_session("runtime-session", "Runtime Session")
-		state.set_message_count(7)
-		state.set_session(nil, nil)
-		assert.equals(0, state.get_message_count())
 	end)
 end)

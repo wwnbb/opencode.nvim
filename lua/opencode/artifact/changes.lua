@@ -12,27 +12,6 @@ DEFAULTS.backup_dir = vim.fn.stdpath("cache") .. "/opencode/backups"
 
 local defaults = vim.deepcopy(DEFAULTS)
 
-local BOM = "\xEF\xBB\xBF"
-
----@param content string
----@return string
-local function strip_bom(content)
-	if content:sub(1, 3) == BOM then
-		return content:sub(4)
-	end
-	return content
-end
-
----@param content string
----@param bom boolean|nil
----@return string
-local function join_bom(content, bom)
-	if bom then
-		return BOM .. content
-	end
-	return content
-end
-
 ---@enum OpenCodeChangeStatus
 M.STATUS = {
 	PENDING = "pending",
@@ -369,8 +348,8 @@ function M.update_status(id, status, opts)
 end
 
 ---@param filepath string
----@param original_content string|nil
----@param modified_content string|nil
+---@param original_content string|nil Exact file bytes before the change
+---@param modified_content string|nil Exact file bytes after the change
 ---@param opts? table
 ---@return string|nil change_id
 function M.add_change(filepath, original_content, modified_content, opts)
@@ -380,18 +359,8 @@ function M.add_change(filepath, original_content, modified_content, opts)
 	end
 
 	local change_id = generate_id()
-	local raw_original = original_content or ""
-	local raw_modified = modified_content or ""
-	local original = strip_bom(raw_original)
-	local modified = strip_bom(raw_modified)
-	local original_bom = opts.before_bom
-	if original_bom == nil then
-		original_bom = raw_original:sub(1, 3) == BOM
-	end
-	local modified_bom = opts.bom
-	if modified_bom == nil then
-		modified_bom = raw_modified:sub(1, 3) == BOM or raw_original:sub(1, 3) == BOM
-	end
+	local original = original_content or ""
+	local modified = modified_content or ""
 	local change = {
 		id = change_id,
 		filepath = filepath,
@@ -401,8 +370,6 @@ function M.add_change(filepath, original_content, modified_content, opts)
 		stats = calc_stats(original, modified),
 		status = M.STATUS.PENDING,
 		requires_confirm = needs_confirmation(filepath),
-		bom = modified_bom,
-		original_bom = original_bom,
 		file_type = M.normalize_file_type(opts.file_type),
 		metadata = opts.metadata or {},
 	}
@@ -462,8 +429,7 @@ function M.accept(id, opts)
 	end
 
 	local before_exists = change.file_type ~= "add"
-	local original = join_bom(change.original_content, change.original_bom)
-	if not opts.force and (disk.exists ~= before_exists or (disk.exists and disk.content ~= original)) then
+	if not opts.force and (disk.exists ~= before_exists or (disk.exists and disk.content ~= change.original_content)) then
 		return false, "File changed since review; current content preserved: " .. change.filepath
 	end
 
@@ -471,7 +437,7 @@ function M.accept(id, opts)
 	if change.file_type == "delete" then
 		ok, err = os.remove(change.filepath)
 	else
-		ok, err = write_file(change.filepath, join_bom(change.modified_content, change.bom))
+		ok, err = write_file(change.filepath, change.modified_content)
 	end
 	if not ok then
 		M.update_status(id, M.STATUS.FAILED, { message = err })
@@ -512,8 +478,8 @@ function M.reject(id, opts)
 		return false, "Path is now a " .. disk.kind .. "; current path preserved: " .. change.filepath, reason
 	end
 
-	local original = join_bom(change.original_content, change.original_bom)
-	local proposed = join_bom(change.modified_content, change.bom)
+	local original = change.original_content
+	local proposed = change.modified_content
 	local file_type = change.file_type
 	local before_exists = file_type ~= "add"
 	local after_exists = file_type ~= "delete"

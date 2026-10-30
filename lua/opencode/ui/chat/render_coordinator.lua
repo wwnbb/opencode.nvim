@@ -45,8 +45,8 @@ function M.merge_requests(existing, data)
 	end
 	if data._render_global or not scoped then merged._render_global = true end
 	for key, value in pairs(data) do
-		if key == "force" then
-			merged.force = merged.force == true or value == true
+		if key == "force" or key == "immediate" then
+			merged[key] = merged[key] == true or value == true
 		elseif key ~= "_render_sessions" and key ~= "_render_global" and merged[key] == nil then
 			merged[key] = value
 		end

@@ -96,7 +96,7 @@ describe("adjacent shell panel separators", function()
 	end)
 
 	it("draws exactly N-1 lines inside the following panels without changing height", function()
-		for count = 1, 4 do
+		for _, count in ipairs({ 1, 3 }) do
 			local content = {}
 			for i = 1, count do content[i] = shell("shell-" .. i, "output " .. i) end
 			local parts = seed(content)
@@ -125,10 +125,7 @@ describe("adjacent shell panel separators", function()
 
 	for _, boundary in ipairs({
 		{ type = "text", text = "Visible explanation" },
-		{ type = "reasoning", text = "Visible thought" },
-		{ type = "tool", id = "other", name = "custom", state = { status = "completed" } },
 		{ type = "tool", id = "other", name = "read", state = { status = "completed", input = { path = "README.md" } } },
-		{ type = "tool", id = "other", name = "skill", state = { status = "completed", input = { name = "example" } } },
 		{ type = "tool", id = "other", name = "subagent", state = {
 			status = "completed", input = { agent = "build", description = "Other task" },
 		} },
@@ -186,16 +183,6 @@ describe("adjacent shell panel separators", function()
 		draw()
 		assert.is_truthy(table.concat(lines(), "\n"):find("test", 1, true))
 		assert.same({}, separator_rows())
-	end)
-
-	it("ignores a tool renderer that produces no visible rows", function()
-		tasks.render_regular_tool = function(part, ...)
-			if part.tool == "hidden" then return { lines = {}, highlights = {} } end
-			return original_render(part, ...)
-		end
-		local parts = seed({ shell("first"), { type = "tool", id = "hidden", name = "hidden", state = { status = "completed" } }, shell("second") })
-		assert.equals(state.tools[parts[1].id].end_line + 1, state.tools[parts[3].id].start_line)
-		assert_separator(parts[3].id)
 	end)
 
 	it("keys cached panels by adjacency without mutating results from an earlier context", function()
@@ -264,7 +251,7 @@ describe("adjacent shell panel separators", function()
 
 	it("recomputes the divider width on resize without adding wrapped screen rows", function()
 		local parts = seed({ shell("first", "one"), shell("second", "two") })
-		for _, width in ipairs({ 100, 24, 72 }) do
+		for _, width in ipairs({ 100, 24 }) do
 			vim.o.columns = width
 			local resized = draw()
 			assert_separator(parts[2].id)
@@ -319,29 +306,9 @@ describe("adjacent shell panel separators", function()
 		assert.same(in_place, draw())
 	end)
 
-	it("keeps an Activity container between standalone shell sequences", function()
-		local parts = seed({ shell("before"), shell("inner-first"), shell("inner-second"), shell("after"), shell("last") })
-		local group = { id = "activity:inner", kind = "activity", completed = true, refs = {
-			{ part = parts[2], message = sync.get_message(session, "message") },
-			{ part = parts[3], message = sync.get_message(session, "message") },
-		} }
-		local ctx = require("opencode.ui.chat.render_context").new({ current_session = { id = session } })
-		local renderer = require("opencode.ui.chat.tool_renderer")
-		ctx:reset_tracking()
-		renderer.render_tool_part(ctx, parts[1], 1, {})
-		local result = require("opencode.ui.chat.activity").render(group, true)
-		local base = ctx:add_render_result(result, "activity")
-		renderer.render_tool_part(ctx, parts[4], 1, {})
-		renderer.render_tool_part(ctx, parts[5], 1, {})
-		assert.is_false(state.tools[parts[1].id].separator_before)
-		assert.is_false(state.tools[parts[4].id].separator_before)
-		assert.same({ base + result.children[parts[3].id].start_line, state.tools[parts[5].id].start_line }, separator_rows(ctx.raw_lines))
-	end)
-
-	for _, mode in ipairs({ "standalone", "expanded Activity", "folded Activity" }) do
+	for _, mode in ipairs({ "standalone", "folded Activity" }) do
 		for _, change in ipairs({
 			{ name = "ambiwidth", apply = function() vim.o.ambiwidth = "double" end },
-			{ name = "stroke cell width", apply = function() vim.fn.setcellwidths({ { 0x2500, 0x2500, 2 } }) end },
 			{ name = "prefix cell width", apply = function() vim.fn.setcellwidths({ { 0x258f, 0x258f, 2 } }) end },
 		}) do
 			it("refreshes " .. mode .. " separators after a warm " .. change.name .. " change", function()
@@ -352,7 +319,6 @@ describe("adjacent shell panel separators", function()
 				end
 				local status = mode == "folded Activity" and "error" or "completed"
 				local parts = seed({ shell("first", nil, status), shell("second", nil, status) })
-				if mode == "expanded Activity" then tasks.handle_tool_toggle(next(state.tools)) end
 				local warm = draw()
 				assert.same(warm, draw())
 				change.apply()

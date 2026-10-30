@@ -219,8 +219,10 @@ local function decorate_selection(view, text)
 		lines[#lines + 1] = { { line, highlight } }
 	end
 	local accept, cancel = selection_keys()
-	lines[#lines + 1] = { { ("OpenCode edit  %s accept  %s cancel"):format(
-		keymaps.label("completion", "accept", { accept = accept }), keymaps.label("popup", "cancel", { cancel = cancel })), "OpenCodeCompletionSpinner" } }
+	local status = keymaps.hint({ { status = "OpenCode edit" },
+		{ keymaps.label("completion", "accept", { accept = accept }), "accept" },
+		{ keymaps.label("popup", "cancel", { cancel = cancel }), "cancel" } }, { omit_disabled = true })
+	lines[#lines + 1] = { { status, "OpenCodeCompletionSpinner" } }
 	local ok, mark = pcall(vim.api.nvim_buf_set_extmark, snapshot.bufnr, namespace, snapshot.selection.end_line - 1, 0, {
 		id = view.mark, virt_lines = lines, priority = 200,
 	})

@@ -54,6 +54,13 @@ function M.apply(sync, event, hooks)
 				removed[#removed + 1] = messages[i].id
 			end
 		end
+		-- A boundary outside the loaded page (another client reverted an older
+		-- turn) still removes every later message. Native message IDs ascend.
+		if not boundary_index and type(data.to) == "string" then
+			for _, message in ipairs(messages) do
+				if not message.provisional and message.id > data.to then removed[#removed + 1] = message.id end
+			end
+		end
 		for _, id in ipairs(removed) do sync.handle_message_removed(sid, id) end
 		result.changed, result.reconcile, result.revert_to, result.revert_removed = #removed > 0, true, data.to, removed
 	elseif kind == "session.inbox.enqueued" then

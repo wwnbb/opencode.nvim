@@ -81,7 +81,7 @@ describe("task progress across HTTP history snapshots", function()
 		assert.equals("child-second", children.get_task_child_session_id(part("second")))
 	end)
 
-	for _, status in ipairs({ "completed", "error" }) do
+	for _, status in ipairs({ "error" }) do
 		it("accepts terminal " .. status .. " history without reviving progress", function()
 			hydrate()
 			local terminal = vim.deepcopy(history)

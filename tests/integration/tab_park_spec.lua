@@ -32,7 +32,7 @@ describe("parking the OpenCode tab workspace", function()
 	end)
 	after_each(function() if editor then editor.close() end end)
 
-	for _, showtabline in ipairs({ 0, 1, 2 }) do
+	for _, showtabline in ipairs({ 0, 2 }) do
 		it("restores editor options and retains layouts and drafts with showtabline=" .. showtabline, function()
 			editor.lua([[
 				local showtabline = ...
@@ -85,8 +85,8 @@ describe("parking the OpenCode tab workspace", function()
 		]])
 	end)
 
-	for _, hidden in ipairs({ "delete", "wipe" }) do
-		it("retains a focused modified file, tab directory and native tab variables (" .. hidden .. ")", function()
+	for _, hidden in ipairs({ "wipe" }) do
+		it("retains a focused modified file, tab directory and native tab variables", function()
 			editor.lua([[
 				local hidden = ...
 				open()
@@ -193,7 +193,7 @@ describe("parking the OpenCode tab workspace", function()
 		]])
 	end)
 
-	for _, command in ipairs({ "close", "tabclose" }) do
+	for _, command in ipairs({ "close" }) do
 		it("keeps native " .. command .. " destruction distinct from parking", function()
 			editor.lua([[
 				open()

@@ -2,7 +2,7 @@
 
 local M = {}
 
-local SPINNER_FRAMES = { "|", "/", "-", "\\" }
+local SPINNER_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 local FRAME_INTERVAL_MS = 120
 
 -- Get current frame text

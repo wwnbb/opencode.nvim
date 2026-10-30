@@ -43,12 +43,26 @@ function M.estimate(value)
 	return total
 end
 
-local function remove(entry)
+local function unlink(entry)
 	local pool = entry.pool
 	if entry.previous then entry.previous.next = entry.next else first = entry.next end
 	if entry.next then entry.next.previous = entry.previous else last = entry.previous end
 	if entry.pool_previous then entry.pool_previous.pool_next = entry.pool_next else pool.first = entry.pool_next end
 	if entry.pool_next then entry.pool_next.pool_previous = entry.pool_previous else pool.last = entry.pool_previous end
+end
+
+local function append(entry)
+	local pool = entry.pool
+	entry.previous, entry.next = last, nil
+	entry.pool_previous, entry.pool_next = pool.last, nil
+	if last then last.next = entry else first = entry end
+	if pool.last then pool.last.pool_next = entry else pool.first = entry end
+	last, pool.last = entry, entry
+end
+
+local function remove(entry)
+	local pool = entry.pool
+	unlink(entry)
 	pool.entries[entry.owner] = nil
 	pool.count, pool.bytes = pool.count - 1, pool.bytes - entry.bytes
 	count, bytes = count - 1, bytes - entry.bytes
@@ -72,9 +86,13 @@ end
 
 ---Values are private immutable snapshots. Callers copy any publicly mutable data.
 ---Owner and signature must be exact stable keys (usually strings or numbers).
+---A hit becomes the most recently used entry of its pool and the global budget.
 function Pool:get(owner, signature)
 	local entry = self.entries[owner]
-	if entry and entry.signature == signature then return entry.value end
+	if entry and entry.signature == signature then
+		if last ~= entry or self.last ~= entry then unlink(entry); append(entry) end
+		return entry.value
+	end
 end
 
 ---Replace this owner's old entry before admission. Oversized results are returned
@@ -88,11 +106,8 @@ function Pool:put(owner, signature, value, estimated_bytes)
 	if size > MAX_BYTES or self.max_entries < 1 then return value, false end
 	while self.count >= self.max_entries do remove(self.first) end
 	while bytes + size > MAX_BYTES do remove(first) end
-	local entry = { owner = owner, signature = signature, value = value, bytes = size, pool = self,
-		previous = last, pool_previous = self.last }
-	if last then last.next = entry else first = entry end
-	if self.last then self.last.pool_next = entry else self.first = entry end
-	last, self.last = entry, entry
+	local entry = { owner = owner, signature = signature, value = value, bytes = size, pool = self }
+	append(entry)
 	self.entries[owner] = entry
 	self.count, self.bytes = self.count + 1, self.bytes + size
 	count, bytes = count + 1, bytes + size

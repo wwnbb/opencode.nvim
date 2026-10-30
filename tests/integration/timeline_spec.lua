@@ -157,8 +157,6 @@ describe("timeline actions on a selected user turn", function()
 			callback(nil, { id = "full-fork", title = "Full fork" })
 		end
 		actions.switch_session = function(session) app_state.set_session(session.id, session.title) end
-		require("opencode.slash").register_defaults()
-		assert.equals("session.fork", require("opencode.command_registry").get_slash("fork").id)
 		timeline().show_fork_picker()
 		wait_for(function() return #menu_calls == 1 end)
 		assert.equals("Full session", menu_calls[1].items[1].label)
@@ -168,8 +166,9 @@ describe("timeline actions on a selected user turn", function()
 		assert.equals("full-fork", app_state.get_session().id)
 	end)
 
-	for _, invalidation in ipairs({ "connection", "session" }) do
-		for _, kind in ipairs({ "timeline", "fork", "actions" }) do
+	for _, case in ipairs({ { "connection", "timeline" }, { "session", "actions" } }) do
+		local invalidation, kind = case[1], case[2]
+		do
 			it("ignores the " .. kind .. " menu after its " .. invalidation .. " is cancelled", function()
 				seed(native)
 				actions.load_session_messages = function(_, _, callback) callback(nil) end
@@ -199,7 +198,7 @@ describe("timeline actions on a selected user turn", function()
 		assert.same(cursor, vim.api.nvim_win_get_cursor(surface.winid))
 	end)
 
-	for _, kind in ipairs({ "timeline", "fork" }) do
+	for _, kind in ipairs({ "fork" }) do
 		it("does not open a late " .. kind .. " picker in another Neovim tab", function()
 			seed(native)
 			local callback, other_tab

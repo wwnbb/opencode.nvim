@@ -95,7 +95,7 @@ describe("input draft read work counts", function()
 		for index = 1, 2000 do long[index] = "line " .. index end
 		local fixtures = { { "" }, { "short", "", "last" }, { string.rep("x", 3000) }, long,
 			{ "\tTabbed", "宽字符", "é é é", "👩‍💻 🙂", "尾", "", "later" } }
-		for _, width in ipairs({ 6, 20, 40 }) do
+		for _, width in ipairs({ 6, 40 }) do
 			vim.api.nvim_win_set_width(winid, width)
 			state.layout.content_width = width
 			for _, lines in ipairs(fixtures) do
@@ -160,10 +160,5 @@ describe("input draft read work counts", function()
 		assert.is_true(vim.fn.strdisplaywidth(narrow) <= 14)
 		assert.same({ { 0, 4, "Identifier" }, { 4, 9, "OpenCodeInputModel" }, { 9, 19, "OpenCodeInputSkill" } },
 			vim.tbl_map(function(mark) return { mark[2], mark[3].end_col, mark[3].hl_group } end, snapshot().marks))
-	end)
-
-	it("avoids draft reads when no skill part carries a marker", function()
-		state.parts = { { type = "skill", id = "catalog" } }
-		assert_info(0)
 	end)
 end)

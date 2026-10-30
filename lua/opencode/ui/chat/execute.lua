@@ -12,16 +12,13 @@ local list_style = cs.module(view, require("opencode.ui.chat.tool_style"))
 
 M.animation_line = 0
 
--- Execute reads as a compact transcript, with the chat's own background.
+-- The header row is a compact list header; the expanded calls use the shared frame.
 local PREFIX = ""
-local helpers = panel.create_panel({ prefix = PREFIX, blank_prefix = "", default_hl = "OpenCodeExecuteOutput" })
+local helpers = panel.create_panel({ prefix = PREFIX, blank_prefix = "", default_hl = list_style.output_hl })
 require("opencode.ui.highlights").register("opencode.ui.chat.execute", function()
-	helpers.set_hl("OpenCodeExecuteMuted", "Comment", "Normal", { bg = "NONE", bold = false, italic = false })
-	helpers.set_hl("OpenCodeExecuteOutput", "Normal", nil, { bg = "NONE", bold = false, italic = false })
-	helpers.set_hl("OpenCodeExecuteCall", "String", "Normal", { bg = "NONE", bold = false, italic = false })
-	helpers.set_hl("OpenCodeExecuteSuccess", "DiagnosticOk", "Normal", { bg = "NONE", bold = false, italic = false })
-	helpers.set_hl("OpenCodeExecuteRunning", "DiagnosticWarn", "Normal", { bg = "NONE", bold = false, italic = false })
-	helpers.set_hl("OpenCodeExecuteError", "DiagnosticError", "ErrorMsg", { bg = "NONE", bold = false, italic = false })
+	-- Call markers inside the frame keep its CursorLine background.
+	helpers.set_hl("OpenCodeExecuteSuccess", "DiagnosticOk", "Normal")
+	helpers.set_hl("OpenCodeExecuteRunning", "DiagnosticWarn", "Normal")
 end)
 
 function M.section_id(part_id, section)
@@ -72,11 +69,42 @@ function M.failed(part)
 	return tool_group.failed(part)
 end
 
+-- The recorded MCP calls in the shared frame. Hidden calls and the result stay
+-- in the inspector, which the calls section opens.
+local function append_calls(result, part, calls)
+	list_style.add_border(result)
+	local calls_start = #result.lines
+	local limit = 6
+	for i = 1, math.min(limit, #calls) do
+		local call = calls[i]
+		local symbol = call.status == "error" and "✗" or call.status == "completed" and "✓" or panel.anim_frame()
+		local _, _, rows = list_style.panel.add_line(result, "↳ " .. symbol .. " " .. clip(call.tool, body_width() - 9),
+			call.status == "error" and list_style.body_error_hl or list_style.output_hl)
+		if call.status ~= "error" then
+			helpers.highlight_text(result, rows, symbol, call.status == "completed" and "OpenCodeExecuteSuccess"
+				or "OpenCodeExecuteRunning")
+		end
+	end
+	if #calls > limit then
+		local hidden_failures = 0
+		for i = limit + 1, #calls do if calls[i].status == "error" then hidden_failures = hidden_failures + 1 end end
+		list_style.panel.add_line(result, panel.overflow_text(#calls - limit, "calls", { action = "confirm", verb = "inspect" }),
+			list_style.border_hl)
+		if hidden_failures > 0 then
+			list_style.panel.add_line(result, "✗ " .. hidden_failures .. " hidden failed calls", list_style.body_error_hl)
+		end
+	elseif #calls == 0 then
+		list_style.panel.add_line(result, "No tool calls recorded", list_style.border_hl)
+	end
+	if #calls > 0 then section(result, part, "calls", calls_start) end
+	list_style.add_border(result, true)
+	list_style.contain_background(result)
+end
+
 -- Like an Explore leaf, a folded invocation occupies one row. Opening it
 -- reveals the recorded MCP calls; their inspector holds the result and code.
 function M.render(part, expanded, opts)
 	if type(part) ~= "table" or part.tool ~= "execute" then return nil end
-	if expanded then return M.render_tool(part, true, opts) end
 	local ctx = panel.context(part)
 	local calls, failed_calls = calls_from(ctx.metadata), 0
 	for _, call in ipairs(calls) do
@@ -88,13 +116,14 @@ function M.render(part, expanded, opts)
 	name = text.strip_ansi(name):gsub("[%c]", " ")
 	local suffix = {}
 	if #calls > 1 then suffix[#suffix + 1] = "+" .. (#calls - 1) .. " more" end
-	if failed_calls > 0 then suffix[#suffix + 1] = failed_calls .. " failed" end
+	if failed_calls > 0 then suffix[#suffix + 1] = failed_calls .. " failed"
+	elseif failed then suffix[#suffix + 1] = "Failed" end
 	-- Execute records carry only the native start/end times.
 	local elapsed = not working and panel.duration(ctx.state.time, true) or nil
 	if elapsed then suffix[#suffix + 1] = elapsed end
 	-- Keep the status at the start and spinner at the end on narrow windows.
 	local header = panel.fit_header({
-		prefix = failed and " ✗ " or " → ", target = name,
+		prefix = expanded and " ↘ " or " → ", target = name,
 		suffix = #suffix > 0 and " · " .. table.concat(suffix, " · ") or "",
 		spinner = animated and " " .. panel.anim_frame() or "",
 		width = body_width(), truncate = clip, min_target = 1,
@@ -102,65 +131,11 @@ function M.render(part, expanded, opts)
 	local result = helpers.result()
 	result.children = {}
 	add_line(result, header, failed and list_style.error_hl or list_style.header_hl)
+	if expanded then append_calls(result, part, calls) end
 	return result
 end
 
-function M.render_tool(part, expanded, opts)
-	if type(part) ~= "table" or part.tool ~= "execute" then return nil end
-	local ctx = panel.context(part)
-	local working = M.is_working(part)
-	local animated = working and not (opts or {}).grouped
-	local failed = tool_group.latest_failed(part)
-	local calls = calls_from(ctx.metadata)
-	local failed_calls = 0
-	for _, call in ipairs(calls) do if call.status == "error" then failed_calls = failed_calls + 1 end end
-	local result = helpers.result()
-	result.children = {}
-	local status_icon = failed and "✗" or working and "○" or ctx.status == "completed" and "✓" or "○"
-	local header = panel.fold_prefix(expanded) .. status_icon .. " execute"
-	local metadata = {}
-	if type(ctx.metadata.toolCalls) == "table" then
-		metadata[#metadata + 1] = #calls .. (#calls == 1 and " tool" or " tools")
-	end
-	if failed_calls > 0 then metadata[#metadata + 1] = failed_calls .. " failed" end
-	local elapsed = not working and panel.duration(ctx.state.time, true) or nil
-	if elapsed then metadata[#metadata + 1] = elapsed end
-	if animated then metadata[#metadata + 1] = panel.anim_frame() end
-	local available = body_width() - vim.fn.strdisplaywidth(header) - 2
-	local right = table.concat(metadata, " · ")
-	if animated and available < vim.fn.strdisplaywidth(right) then right = panel.anim_frame() end
-	if available > 0 and right ~= "" then
-		right = clip(right, available)
-		header = header .. string.rep(" ", body_width() - vim.fn.strdisplaywidth(header .. right)) .. right
-	elseif animated then
-		header = clip(header, body_width() - 2) .. " " .. panel.anim_frame()
-	else
-		right = ""
-	end
-	local _, _, header_rows = add_line(result, header, "OpenCodeExecuteOutput")
-	if right ~= "" then helpers.highlight_text(result, header_rows, right, "OpenCodeExecuteMuted") end
-	helpers.highlight_text(result, header_rows, status_icon, failed and "OpenCodeExecuteError"
-		or working and "OpenCodeExecuteRunning" or "OpenCodeExecuteSuccess")
-
-	local calls_start = #result.lines
-	local limit = expanded and 6 or 2
-	for i = 1, math.min(limit, #calls) do
-		local call = calls[i]
-		local symbol = call.status == "error" and "✗" or call.status == "completed" and "✓" or working and "◐" or "○"
-		local hl = call.status == "error" and "OpenCodeExecuteError" or call.status == "running" and "OpenCodeExecuteRunning"
-			or "OpenCodeExecuteCall"
-		local _, _, rows = add_line(result, "  ↳ " .. symbol .. " " .. call.tool, hl)
-		if symbol == "✓" then helpers.highlight_text(result, rows, symbol, "OpenCodeExecuteSuccess") end
-	end
-	if #calls > limit then add_line(result, "  … " .. (#calls - limit) .. " more calls ↗", "OpenCodeExecuteMuted") end
-	local hidden_failures = 0
-	for i = limit + 1, #calls do if calls[i].status == "error" then hidden_failures = hidden_failures + 1 end end
-	if hidden_failures > 0 then
-		add_line(result, "✗ " .. hidden_failures .. " failed calls ↗", "OpenCodeExecuteError")
-	end
-	if #calls > 0 then section(result, part, "calls", calls_start) end
-	return result
-end
+M.render_tool = M.render
 
 return M
 

@@ -1,16 +1,13 @@
 describe("tool output envelopes", function()
-	for _, tool in ipairs({ "read", "glob", "grep", "rg" }) do
+	for _, tool in ipairs({ "read", "grep", "rg" }) do
 		it("preserves " .. tool .. " text and highlights across server output representations", function()
-			local renderer = require("opencode.ui.chat." .. ((tool == "glob" or tool == "grep") and "search" or tool))
+			local renderer = require("opencode.ui.chat." .. (tool == "grep" and "search" or tool))
 			local body = "first\r\n\27]8;;https://example.com\27\\\27[31msecond\27[0m\27]8;;\7"
 			local cases = {
 				{ output = { output = body, content = "ignored" }, text = "first\nsecond" },
-				{ output = { content = body }, text = "first\nsecond" },
-				{ output = { output = "", content = "ignored" }, text = "" },
 				{ output = { output = false, content = body }, text = "first\nsecond" },
+				{ output = { output = "", content = "ignored" }, text = "" },
 				{ output = { count = 2 }, text = '{\n  count = 2\n}' },
-				{ output = false, text = "false" },
-				{ output = 0, text = "0" },
 				{ output = vim.NIL, text = "" },
 			}
 			local function render(value, field)

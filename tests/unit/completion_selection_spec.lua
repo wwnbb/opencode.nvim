@@ -20,6 +20,8 @@ describe("completion Visual selection replacement", function()
 		vim.fn.setpos("'>", { 0, last[1], last[2], 0 })
 	end
 
+	local diagnostic_ns = vim.api.nvim_create_namespace("opencode_completion_selection_test")
+
 	local function data(prompt) return vim.json.decode(prompt:match("Context %(JSON%):\n(.*)$")) end
 
 	before_each(function()
@@ -35,7 +37,10 @@ describe("completion Visual selection replacement", function()
 		vim.o.selection = original_selection
 		vim.wo.virtualedit = original_virtualedit
 		vim.api.nvim_set_current_buf(original_buf)
-		for _, bufnr in ipairs(buffers) do vim.api.nvim_buf_delete(bufnr, { force = true }) end
+		for _, bufnr in ipairs(buffers) do
+			vim.diagnostic.reset(diagnostic_ns, bufnr)
+			vim.api.nvim_buf_delete(bufnr, { force = true })
+		end
 	end)
 
 	it("captures a reversed Unicode range and preserves unselected bytes", function()
@@ -197,5 +202,21 @@ describe("completion Visual selection replacement", function()
 		local result, err = selection.build(snap, opts, 'Use "é🙂"')
 		assert.is_nil(result)
 		assert.matches("full selection and instruction exceed", err, 1, true)
+	end)
+
+	it("includes diagnostics that overlap the selected lines", function()
+		local bufnr = buffer({ "local before = true", "call(old)", "call(older)", "return value" })
+		vim.diagnostic.set(diagnostic_ns, bufnr, {
+			{ lnum = 0, col = 0, severity = 1, message = "Before selection" },
+			{ lnum = 2, col = 5, end_lnum = 2, end_col = 10, severity = 2, message = "Undefined global `older`." },
+			{ lnum = 3, col = 0, severity = 1, message = "After selection" },
+		}, { virtual_text = false, signs = false, underline = false })
+		select("V", { 2, 1 }, { 3, 1 })
+		local snap = assert(selection.capture())
+		local prompt = assert(selection.build(snap, defaults.merge().completion, "Fix the lint"))
+		assert.is_truthy(prompt:find("diagnostics are the editor's linter/LSP messages", 1, true))
+		assert.same({ "Undefined global `older`." },
+			vim.tbl_map(function(item) return item.message end, data(prompt).diagnostics))
+		assert.equals(3, data(prompt).diagnostics[1].line)
 	end)
 end)

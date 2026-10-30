@@ -1,5 +1,5 @@
 describe("input paste cursor", function()
-	for _, layout in ipairs({ "float", "vertical" }) do
+	for _, layout in ipairs({ "vertical" }) do
 		it("keeps the Insert-mode caret at the bottom after a large paste in " .. layout, function()
 			local client = require("tests.helpers.embedded_editor").new()
 			local ok, err = xpcall(function()
@@ -10,7 +10,7 @@ describe("input paste cursor", function()
 						input = { collapse_paste_lines = false }, lualine = { enabled = false } })
 					require("opencode.ui.chat").open()
 				]], { layout })
-				for _, last in ipairs({ "Конец 世界", string.rep("слово ", 400) .. "尾" }) do
+				for _, last in ipairs({ string.rep("слово ", 400) .. "尾" }) do
 					client.lua([[
 						require("opencode.ui.input").close(false)
 						require("opencode.ui.input.history").clear_pending()

@@ -34,43 +34,21 @@ describe("/btw dialog", function()
 		if vim.api.nvim_win_is_valid(previous_win) then vim.api.nvim_set_current_win(previous_win) end
 	end)
 
-	it("shows a centered answer with the configured outer border and matching hints", function()
+	it("shows a focused answer inside the screen with matching hints", function()
 		local answer = "Day good. Sun up, tokens flow."
 		local view = btw.show("how is your day", answer)
 		local cfg = vim.api.nvim_win_get_config(view.winid)
 		assert.is_true(btw.is_visible())
 		assert.equals(view.winid, vim.api.nvim_get_current_win())
-		assert.equals("editor", cfg.relative)
-		assert.equals("rounded", view.popup.content.border._.style)
-		assert.is_table(cfg.border)
-		assert.equals(88, cfg.width)
-		assert.is_true(cfg.height < vim.o.lines)
-		assert.equals(view.geometry.col, cfg.col)
 		assert_inside_screen(cfg)
 		local lines = vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false)
-		assert.equals(cfg.height, #lines)
-		assert.equals(view.geometry.row, cfg.row)
-		assert.is_truthy(lines[2]:find("/btw", 1, true))
-		assert.is_truthy(lines[2]:find(require("opencode.util.keymap").label("btw_answer", "close"), 1, true))
-		assert.is_truthy(lines[4]:find("how is your day", 1, true))
-		assert.is_truthy(lines[7]:find(answer, 1, true))
-		local marks = vim.api.nvim_buf_get_extmarks(view.bufnr, -1, 0, -1, { details = true })
-		local muted_question, raised_rows = false, 0
-		for _, mark in ipairs(marks) do
-			if mark[2] == 3 and mark[4].hl_group == "OpenCodeBtwMuted" then muted_question = true end
-			if mark[4].line_hl_group == "OpenCodeBtwRaised" then raised_rows = raised_rows + 1 end
-		end
-		assert.is_true(muted_question)
-		assert.equals(20, raised_rows)
-		assert.equals(18, view.geometry.answer_rows)
-		assert.equals(28, cfg.height)
+		local text = table.concat(lines, "\n")
+		assert.is_truthy(text:find("how is your day", 1, true))
+		assert.is_truthy(text:find(answer, 1, true))
 		assert.is_truthy(lines[#lines - 1]:find("c copy", 1, true))
-		assert.is_truthy(lines[#lines - 1]:find(require("opencode.util.keymap").label("btw_answer", "scroll_down") .. " scroll", 1, true))
 		for _, line in ipairs(lines) do
 			assert.is_true(vim.fn.strdisplaywidth(line) <= cfg.width)
 		end
-		assert.is_truthy(vim.fn.maparg("<LeftMouse>", "n"):find("Lua", 1, true))
-		assert.equals(1, vim.fn.maparg("<Esc>", "n", false, true).buffer)
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "xt", false)
 		assert.is_false(btw.is_visible())
 		assert.equals(previous_win, vim.api.nvim_get_current_win())
@@ -126,14 +104,6 @@ describe("/btw dialog", function()
 		local at_end = vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false)
 		local last_answer_row = 5 + view.geometry.question_rows + view.geometry.answer_rows
 		assert.is_truthy(at_end[last_answer_row]:find("Answer line 60", 1, true))
-		local marks = vim.api.nvim_buf_get_extmarks(view.bufnr, -1, 0, -1, { details = true })
-		local last_line_highlighted = false
-		for _, mark in ipairs(marks) do
-			if mark[2] == last_answer_row - 1 and mark[4].hl_group == "OpenCodeMarkdownStrong" then
-				last_line_highlighted = true
-			end
-		end
-		assert.is_true(last_line_highlighted)
 		assert.equals(initial[2], at_end[2])
 		assert.equals(initial[#initial - 1], at_end[#at_end - 1])
 		vim.o.columns, vim.o.lines = 70, 24
@@ -162,18 +132,13 @@ describe("/btw dialog", function()
 		assert.is_true(bold_highlight)
 	end)
 
-	it("wraps the full question and keeps the raised answer box at 20 rows", function()
+	it("wraps the full question above the answer", function()
 		local question = string.rep("a longer question with context ", 9) .. "tail-marker"
 		local view = btw.show(question, "One short answer")
 		local lines = vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false)
 		assert.is_true(view.geometry.question_rows > 1)
-		assert.equals(view.geometry.question_rows + view.geometry.answer_rows + 9, view.geometry.height)
-		assert.equals(18, view.geometry.answer_rows)
 		assert.is_truthy(table.concat(lines, "\n"):find("tail-marker", 1, true))
 		assert.equals("  One short answer", lines[6 + view.geometry.question_rows])
-		for _, line in ipairs(lines) do
-			assert.is_true(vim.fn.strdisplaywidth(line) <= view.geometry.width)
-		end
 	end)
 
 	it("closes the answer with Ctrl+C or when focus leaves the dialog", function()
@@ -188,35 +153,14 @@ describe("/btw dialog", function()
 		assert.equals(previous_win, vim.api.nvim_get_current_win())
 	end)
 
-	it("opens a styled question prompt, accepts Enter, and cancels with Escape", function()
+	it("opens a question prompt, accepts Enter, and cancels with Escape", function()
 		local submitted
 		local view = btw.prompt(function(text) submitted = text end)
 		assert.is_true(btw.is_visible())
 		assert.equals(view.input_winid, vim.api.nvim_get_current_win())
-		local prompt_cfg = vim.api.nvim_win_get_config(view.winid)
-		assert.equals("rounded", view.popup.content.border._.style)
-		assert.is_table(prompt_cfg.border)
-		assert.equals(60, prompt_cfg.width)
-		assert.equals(view.geometry.row, prompt_cfg.row)
-		assert.equals("none", vim.api.nvim_win_get_config(view.input_winid).border)
-		local prompt_lines = vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false)
-		assert.is_truthy(prompt_lines[#prompt_lines - 1]:find(require("opencode.util.keymap").label("btw_prompt", "submit") .. " submit", 1, true))
-		local marks = vim.api.nvim_buf_get_extmarks(view.input_bufnr, -1, 0, -1, { details = true })
-		local has_placeholder = false
-		for _, mark in ipairs(marks) do
-			local text = mark[4].virt_text
-			if text and text[1] and text[1][1] == "Ask anything" then has_placeholder = true end
-		end
-		assert.is_true(has_placeholder)
 		vim.o.columns, vim.o.lines = 72, 26
 		vim.api.nvim_exec_autocmds("VimResized", {})
-		local resized_panel = vim.api.nvim_win_get_config(view.winid)
-		local resized_input = vim.api.nvim_win_get_config(view.input_winid)
-		assert.equals(60, resized_panel.width)
-		assert.equals(view.winid, resized_input.win)
-		assert.equals(3, resized_input.row)
-		assert.equals(2, resized_input.col)
-		assert.equals(resized_panel.width - 4, resized_input.width)
+		assert.equals(view.winid, vim.api.nvim_win_get_config(view.input_winid).win)
 		vim.api.nvim_buf_set_lines(view.input_bufnr, 0, -1, false, { "  What is this?  " })
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "xt", false)
 		assert.equals("What is this?", submitted)

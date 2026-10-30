@@ -7,6 +7,7 @@ function M.setup(events)
 	local state = require("opencode.state")
 	local util = require("opencode.events.util")
 	local client = require("opencode.client")
+	-- Finished request keys map to their session so that closing it can drop them.
 	local terminal, revision = {}, 0
 	local function key(kind, id) return kind .. ":" .. id end
 	local function relevant(sid)
@@ -45,7 +46,7 @@ function M.setup(events)
 					local id = item.permission_id
 					client.get_permission(sid, id, function(detail_err)
 						if current() and pg == permissions.get_generation() and detail_err and detail_err.status == 404 then
-							terminal[key("permission", id)] = true
+							terminal[key("permission", id)] = sid
 							if permissions.mark_unavailable(id) then changed("permission", id, sid, "unavailable") end
 						end
 					end)
@@ -65,11 +66,11 @@ function M.setup(events)
 						if not current() or fg ~= forms.get_generation() or terminal[key("form", id)] then return end
 						if not detail_err then
 							forms.apply_form_detail(detail)
-							if detail.state.status ~= "pending" then terminal[key("form", id)] = true end
+							if detail.state.status ~= "pending" then terminal[key("form", id)] = sid end
 							changed("question", id, sid, detail.state.status)
 						elseif detail_err.status == 404 then
 							forms.mark_rejected(id)
-							terminal[key("form", id)] = true
+							terminal[key("form", id)] = sid
 							changed("question", id, sid, "unavailable")
 						end
 					end)
@@ -89,7 +90,20 @@ function M.setup(events)
 		for _, info in ipairs(permissions.get_all_active()) do visit(info.session_id) end
 		for _, info in ipairs(forms.get_all_active()) do visit(info.session_id) end
 	end
-	for _, kind in ipairs({ "connected", "session.selected" }) do events.on(kind, recover_all) end
+	events.on("connected", recover_all)
+	-- Other trees stayed relevant, so SSE kept their requests current.
+	events.on("session.selected", function(data)
+		local sid = data and data.sessionID
+		if not sid then return end
+		for _, id in ipairs(require("opencode.sync").collect_session_tree(sid)) do recover(id) end
+	end)
+	events.on("session.closed", function(data)
+		local closed = {}
+		for _, id in ipairs(data.session_ids or { data.session_id }) do closed[id] = true end
+		for id, sid in pairs(terminal) do
+			if closed[sid] then terminal[id] = nil end
+		end
+	end)
 	events.on("interaction_reconcile", function(data) recover(data.session_id) end)
 	events.on("disconnected", function() revision = revision + 1 end)
 	events.on("server_interaction", function(event)
@@ -97,11 +111,11 @@ function M.setup(events)
 		if kind == "permission.asked" then add_permission(data, event.location, event.created)
 		elseif kind == "permission.replied" then
 			if not require("opencode.events.handlers.permission_flow.request").decode_reply(data) then return end
-			terminal[key("permission", data.requestID)] = true
+			if not data.sessionID or relevant(data.sessionID) then terminal[key("permission", data.requestID)] = data.sessionID or true end
 			require("opencode.events.handlers.permission_flow.lifecycle").handle_permission_replied(events, data, require("opencode.logger"))
 		elseif kind == "form.created" then add_form(data.form, event.location, event.created)
 		elseif kind == "form.replied" or kind == "form.cancelled" then
-			terminal[key("form", data.id)] = true
+			if not data.sessionID or relevant(data.sessionID) then terminal[key("form", data.id)] = data.sessionID or true end
 			if kind == "form.replied" then
 				if not forms.mark_answered(data.id, data.answer) then return end
 			elseif not forms.mark_rejected(data.id) then return end

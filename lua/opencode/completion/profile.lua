@@ -1,5 +1,6 @@
 -- Stateless feature model configuration. Nothing here changes the chat model.
 local M = {}
+local json = require("opencode.util.json")
 
 -- Only explicit catalog rejections are safe to retry before generation starts.
 function M.catalog_starting(err, model)
@@ -20,40 +21,11 @@ local function feature_name(kind)
 	return kind
 end
 
-local function is_object(value)
-	if type(value) ~= "table" then return false end
-	for key in pairs(value) do
-		if type(key) ~= "string" then return false end
-	end
-	return true
-end
+local is_object = json.is_object
 
 -- Stable serialization makes equivalent option maps share a fingerprint.
 -- It also rejects functions, cycles and non-finite numbers before startup.
-local function canonical(value, seen)
-	if value == vim.NIL then return "null" end
-	local kind = type(value)
-	if kind == "string" or kind == "boolean" then return vim.json.encode(value) end
-	if kind == "number" and value == value and value ~= math.huge and value ~= -math.huge then
-		return vim.json.encode(value)
-	end
-	if kind ~= "table" then error("Expected JSON value") end
-	seen = seen or {}
-	if seen[value] then error("Circular option value") end
-	seen[value] = true
-	local values = {}
-	if vim.islist(value) then
-		for _, item in ipairs(value) do values[#values + 1] = canonical(item, seen) end
-		seen[value] = nil
-		return "[" .. table.concat(values, ",") .. "]"
-	end
-	if not is_object(value) then error("Expected JSON object or array") end
-	for _, key in ipairs(vim.fn.sort(vim.tbl_keys(value))) do
-		values[#values + 1] = vim.json.encode(key) .. ":" .. canonical(value[key], seen)
-	end
-	seen[value] = nil
-	return "{" .. table.concat(values, ",") .. "}"
-end
+local canonical = json.encode
 
 local function nonempty(value)
 	return type(value) == "string" and value:match("%S") ~= nil

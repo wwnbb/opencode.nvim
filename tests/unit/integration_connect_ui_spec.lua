@@ -99,15 +99,11 @@ describe("integration connection method selection", function()
 		require("opencode.ui.palette.integration").connect("test", { directory = "/tmp" })
 		local view = { id = 42, status = "polling", message = "Open https://example.invalid/login\nCode: ABCD-1234" }
 		callback(view); callback(view)
-		assert.same({ "Authorization: polling", "", "Open https://example.invalid/login", "Code: ABCD-1234", "",
-			"O: open authorization URL   C: enter code   Z: close / cancel", "u: copy URL   U: copy authorization instructions / code" }, lines)
-		view.message = "Open https://example.invalid/login\nCode: ABCD-1234\nWaiting for approval"
-		callback(view)
-		assert.equals("Waiting for approval", lines[5])
+		assert.same({ "Authorization: polling", "", "Open https://example.invalid/login", "Code: ABCD-1234", "" }, vim.list_slice(lines, 1, 5))
+		assert.is_truthy(table.concat(lines, "\n"):find("O open authorization URL", 1, true))
 		view.status, view.message, view.error = "failed", "Login refused\nTry another account", "Authorization failed"
 		callback(view)
-		assert.same({ "Authorization: failed", "", "Login refused", "Try another account", "Authorization failed", "",
-			"O: open authorization URL   C: enter code   Z: close / cancel", "u: copy URL   U: copy authorization instructions / code" }, lines)
+		assert.same({ "Authorization: failed", "", "Login refused", "Try another account", "Authorization failed" }, vim.list_slice(lines, 1, 5))
 		local close_mapping
 		for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "n")) do
 			assert.not_equals("<Esc>", mapping.lhs)

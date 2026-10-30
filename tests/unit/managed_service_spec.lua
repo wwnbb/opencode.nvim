@@ -82,6 +82,22 @@ describe("native managed service registration", function()
 			assert.equals(1, #commands); assert.equals("Still not ready", results[1].err.message)
 			assert.is_false(attempt.verified); assert.equals(2, #configured)
 		end)
+		it("cancels an in-progress native service start and ignores its late result", function()
+			local finish, signals = nil, {}
+			vim.system = function(argv, _, callback)
+				commands[#commands + 1] = argv
+				finish = callback
+				return { kill = function(_, signal) signals[#signals + 1] = signal end }
+			end
+			local handle = managed.discover(attempt, { opts = function() return opts end, current = function() return true end },
+				function(err, config) results[#results + 1] = { err = err, config = config } end, true)
+			assert.equals("function", type(handle.cancel))
+			handle.cancel(); handle.cancel()
+			assert.same({ 15 }, signals)
+			write({ pid = 42, version = "2.0.11", url = "http://127.0.0.1:4096" })
+			finish({ code = 0 })
+			assert.equals(0, #health); assert.equals(0, #results)
+		end)
 		it("does not start the service when discovery may not start it", function()
 			discover(false)
 			assert.equals(0, #commands); assert.equals("service_unavailable", results[1].err.code)

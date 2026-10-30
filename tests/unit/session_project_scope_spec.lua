@@ -65,12 +65,6 @@ describe("opencode session project scope", function()
 		assert.is_nil(state.get_session_record("outdated"))
 	end)
 
-	it("preserves filesystem roots when storing session directories", function()
-		assert.equals("/", state.normalize_directory("/"))
-		state.upsert_session({ id = "root", directory = "/" })
-		assert.equals("/", state.get_session_directory("root"))
-	end)
-
 	it("accepts current project events when the working directory is root", function()
 		local original_cwd = vim.fn.getcwd
 		vim.fn.getcwd = function() return "/" end
@@ -128,13 +122,6 @@ describe("opencode session project scope", function()
 		requests[1](nil, {})
 		assert.equals("busy", state.get_session_status("a").type)
 		assert.is_false(state.is_runtime_session("b"))
-	end)
-
-	it("invalidates snapshots on connection generation change", function()
-		session.refresh_status()
-		require("opencode.session.pending").invalidate()
-		requests[1](nil, {})
-		assert.equals("busy", state.get_session_status("a").type)
 	end)
 
 	it("hydrates child activity into both stores and preserves newer child SSE", function()

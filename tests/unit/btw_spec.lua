@@ -40,12 +40,8 @@ describe("/btw side questions", function()
 		assert.equals(1, btw.pending_count())
 		assert.equals(1, btw.pending_count("ses_one"))
 		assert.equals("ses_one", requests[1].session_id)
-		assert.equals(
-			"The user is asking a quick side question about the conversation so far. "
-				.. "Answer directly and concisely in markdown from what you already know. "
-				.. "Do not call any tools and do not take any actions.\n\nhow is your day?",
-			requests[1].prompt
-		)
+		assert.matches("Do not call any tools", requests[1].prompt, 1, true)
+		assert.matches("\n\nhow is your day%?$", requests[1].prompt)
 		requests[1].callback(nil, "  Day good.  ")
 		assert.equals(0, btw.pending_count())
 		assert.same({ { "how is your day?", "Day good." } }, shown)

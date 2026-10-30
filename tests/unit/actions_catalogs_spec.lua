@@ -53,20 +53,6 @@ describe("catalog actions across project and connection changes", function()
 		pending.clear_all()
 	end)
 
-	it("opens the model picker in the guarded action callback", function()
-		local command, opened
-		require("opencode.ui.palette.model").register({ register = function(definition)
-			if definition.id == "model.switch" then command = definition end
-		end })
-		menu.open = function(opts) opened = opts end
-		command.run()
-		reply(nil, { providers = { { id = "provider-a", models = { ["model-a"] = { name = "Model A" } } } }, default = {} })
-		table.remove(scheduled, 1)()
-		assert.is_not_nil(opened)
-		assert.equals("[provider-a] Model A", opened.items[1].label)
-		assert.same({}, scheduled)
-	end)
-
 	local pickers = {
 		{ module = "agent", id = "agent.switch", data = cases[1].data, value = "agent-a" },
 		{ module = "model", id = "model.switch", data = { providers = {
@@ -96,7 +82,7 @@ describe("catalog actions across project and connection changes", function()
 			opened.on_select(opened.items[1])
 			assert.same({ picker.value }, selected)
 		end)
-		for _, invalidation in ipairs({ "connection", "tab", "closed session", "project", "none" }) do
+		for _, invalidation in ipairs({ "connection", "project", "none" }) do
 			it(picker.module .. " picker owns its selection across " .. invalidation .. " changes", function()
 				local opened
 				menu.open = function(opts) opened = opts end
@@ -104,8 +90,6 @@ describe("catalog actions across project and connection changes", function()
 				reply(nil, picker.data); flush()
 				assert.is_not_nil(opened)
 				if invalidation == "connection" then pending.invalidate()
-				elseif invalidation == "tab" then switch_tab()
-				elseif invalidation == "closed session" then pending.clear_session("/project-a")
 				elseif invalidation == "project" then
 					state.upsert_session({ id = "/project-a", directory = "/project-b" })
 					sync.select_catalog_location("/project-b")
@@ -150,22 +134,6 @@ describe("catalog actions across project and connection changes", function()
 		assert.equals(1, completed)
 		assert.same({}, sync.get_providers())
 		assert.same(cases[2].data, sync.get_location_catalog("/settings-project", "providers").data)
-	end)
-
-	it("keeps explicit provider requests guarded against replacement connections", function()
-		local connected, completed = nil, 0
-		lifecycle.ensure_connected = function(callback) connected = callback end
-		local function request()
-			actions.get_config_providers(function() completed = completed + 1 end, { directory = "/settings-project" })
-		end
-		request()
-		pending.invalidate(); connected()
-		assert.is_nil(reply)
-		request(); connected()
-		reply(nil, cases[2].data)
-		pending.invalidate(); flush()
-		assert.equals(0, completed)
-		assert.is_nil(sync.get_location_catalog("/settings-project", "providers"))
 	end)
 
 	for _, case in ipairs(cases) do

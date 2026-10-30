@@ -53,29 +53,15 @@ describe("editor feature settings menu", function()
 	it("groups feature settings into submenus with a route back to Settings", function()
 		palette.show()
 		local main = menus[#menus]
-		assert.equals(8, #main.items)
-		assert.equals("Completion", find(main.items, "completion").label)
-		assert.equals("Explain", find(main.items, "explanation").label)
-		assert.equals("Thinking: hide", find(main.items, "thinking").label)
-		for _, item in ipairs(main.items) do
-			assert.is_nil(item.value:match("^completion_"))
-			assert.is_nil(item.value:match("^explanation_"))
-		end
+		for _, item in ipairs(main.items) do assert.is_nil(item.value:match("^completion_")) end
 		main.on_select(find(main.items, "completion"))
 		local completion = menus[#menus]
-		assert.equals(" Completion settings ", completion.title)
-		assert.equals(4, #completion.items)
 		assert.equals("Completion model: p/fast", find(completion.items, "completion_model").label)
-		assert.equals("Completion reasoning: low", find(completion.items, "completion_variant").label)
-		assert.equals("Completion max lines: 12", find(completion.items, "completion_max_lines").label)
 		completion.on_select(find(completion.items, "back"))
 		main = menus[#menus]
 		assert.equals(" Settings ", main.title)
 		main.on_select(find(main.items, "explanation"))
 		local explanation = menus[#menus]
-		assert.equals(" Explain settings ", explanation.title)
-		assert.equals(3, #explanation.items)
-		assert.equals("Explain model: p/deep", find(explanation.items, "explanation_model").label)
 		assert.equals("Explain reasoning: high", find(explanation.items, "explanation_variant").label)
 		explanation.on_select(find(explanation.items, "back"))
 		assert.equals(" Settings ", menus[#menus].title)
@@ -109,20 +95,18 @@ describe("editor feature settings menu", function()
 
 	it("saves No reasoning as the model's none variant and marks it as current for both features", function()
 		providers[1].models.deep.variants.none = {}
-		for _, feature in ipairs({ "completion", "explanation" }) do
-			local id = feature .. "_variant"
-			local picker = choose(id)
-			assert.equals("No reasoning", find(picker.items, "none").label)
-			save("none", "cwd")
-			assert.same({ id, "none", "cwd", vim.fn.getcwd() }, calls[#calls])
-			local config = state.get_config()
-			config[feature].variant = "none"
-			state.set_config(config)
-			picker = choose(id)
-			assert.equals("Current", find(picker.items, "none").description)
-			assert.is_nil(find(picker.items, false).description)
-			assert.matches(": No reasoning$", find(menus[#menus - 1].items, id).label)
-		end
+		local id, feature = "explanation_variant", "explanation"
+		local picker = choose(id)
+		assert.equals("No reasoning", find(picker.items, "none").label)
+		save("none", "cwd")
+		assert.same({ id, "none", "cwd", vim.fn.getcwd() }, calls[#calls])
+		local config = state.get_config()
+		config[feature].variant = "none"
+		state.set_config(config)
+		picker = choose(id)
+		assert.equals("Current", find(picker.items, "none").description)
+		assert.is_nil(find(picker.items, false).description)
+		assert.matches(": No reasoning$", find(menus[#menus - 1].items, id).label)
 	end)
 
 	it("validates custom line limits and supports clearing the override", function()

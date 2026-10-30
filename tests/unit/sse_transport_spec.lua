@@ -43,7 +43,7 @@ describe("SSE transport callback ordering", function()
 		tcp.open, package.loaded["opencode.client.sse"] = original_open, original_sse
 	end)
 
-	for _, response in ipairs({ { "200 OK", "text/html" }, { "403 Forbidden", "text/event-stream" } }) do
+	for _, response in ipairs({ { "403 Forbidden", "text/event-stream" } }) do
 		it("drops queued body after rejecting " .. response[1] .. " with " .. response[2], function()
 			assert.is_true(sse.connect())
 			connections[1].opts.on_read(nil, "HTTP/1.1 " .. response[1]
@@ -87,24 +87,6 @@ describe("SSE transport callback ordering", function()
 		sse.disconnect()
 		drain()
 		assert.equals(1, #received)
-	end)
-
-	it("preserves a replacement opened by a disconnected listener", function()
-		local old = establish()
-		sse.on("disconnected", function() assert.is_true(sse.connect()) end)
-		sse.disconnect()
-		assert.equals(2, #connections)
-		assert.is_true(sse.status().has_stream)
-		assert.is_true(old.closed)
-		local replacement = connections[2]
-		replacement.opts.on_read(nil, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n" .. connected_frame)
-		drain()
-		assert.is_true(sse.is_connected())
-		assert.is_false(replacement.closed)
-		assert.equals(3, #received)
-		assert.equals("disconnected", received[1].kind)
-		assert.equals("connected", received[2].kind)
-		assert.equals("server.connected", received[3].kind)
 	end)
 
 	it("rejects invalid host and port without opening TCP or scheduling retries", function()

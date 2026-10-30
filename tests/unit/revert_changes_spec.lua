@@ -28,7 +28,7 @@ end
 
 describe("Revert Changes palette safety", function()
 	local root, old_menu_open, old_notify, old_remove, old_reply, modified_buf
-	local choices, prompts, notices, menu_calls
+	local choices, prompts, notices
 
 	local function tracked(id, name, before, after, kind, opts)
 		local path = root .. "/" .. name
@@ -51,10 +51,9 @@ describe("Revert Changes palette safety", function()
 		changes.clear()
 		edits.clear_all()
 		old_menu_open, old_notify, old_remove, old_reply = menu.open, vim.notify, os.remove, actions.reply_review
-		choices, prompts, notices, menu_calls = {}, {}, {}, {}
+		choices, prompts, notices = {}, {}, {}
 		menu.open = function(opts)
 			table.insert(prompts, opts.message or opts.title)
-			table.insert(menu_calls, opts)
 			local choice = table.remove(choices, 1)
 			if choice ~= nil then opts.on_select(choice) end
 		end
@@ -82,14 +81,11 @@ describe("Revert Changes palette safety", function()
 		assert.equals("pending", review.files[1].status)
 		assert.is_truthy(notices[#notices]:find("Preserved files changed since review", 1, true))
 
-		choose("Force overwrite changed files...", "Cancel")
+		choose("Force overwrite changed files…", "Cancel")
 		assert.equals("manual\n", read(path))
 		assert.is_truthy(prompts[#prompts]:find("Are you sure?", 1, true))
-		assert.same({ "Revert safely (keep later edits)", "Force overwrite changed files...", "Cancel" }, menu_calls[2].items)
-		assert.is_false(menu_calls[2].sort)
-		assert.same({ "Yes, overwrite or delete current files", "Cancel" }, menu_calls[3].items)
 
-		choose("Force overwrite changed files...", "Yes, overwrite or delete current files")
+		choose("Force overwrite changed files…", "Yes, overwrite or delete current files")
 		assert.equals("before\n", read(path))
 		assert.equals("rejected", review.files[1].status)
 		assert.equals(0, #changes.get_pending())
@@ -119,7 +115,7 @@ describe("Revert Changes palette safety", function()
 
 		os.remove = old_remove
 		write(second, "manual\n")
-		choose("Force overwrite changed files...", "Yes, overwrite or delete current files")
+		choose("Force overwrite changed files…", "Yes, overwrite or delete current files")
 		assert.is_nil(read(second))
 		assert.equals(0, #changes.get_pending())
 	end)
@@ -130,7 +126,7 @@ describe("Revert Changes palette safety", function()
 		modified_buf = vim.api.nvim_create_buf(true, false)
 		vim.api.nvim_buf_set_name(modified_buf, path)
 		vim.api.nvim_buf_set_lines(modified_buf, 0, -1, false, { "unsaved manual edit" })
-		choose("Force overwrite changed files...", "Yes, overwrite or delete current files")
+		choose("Force overwrite changed files…", "Yes, overwrite or delete current files")
 		assert.equals("proposal\n", read(path))
 		assert.is_truthy(notices[#notices]:find("unsaved buffer changes", 1, true))
 		vim.api.nvim_buf_delete(modified_buf, { force = true })
@@ -142,7 +138,7 @@ describe("Revert Changes palette safety", function()
 		assert(vim.uv.fs_symlink(target, path))
 		choose("Revert safely (keep later edits)")
 		assert.is_truthy(notices[#notices]:find("Path is now a link", 1, true))
-		choose("Force overwrite changed files...", "Yes, overwrite or delete current files")
+		choose("Force overwrite changed files…", "Yes, overwrite or delete current files")
 		assert.equals("link", vim.fn.getftype(path))
 		assert.equals("proposal\n", read(target))
 		assert.equals("pending", review.files[1].status)

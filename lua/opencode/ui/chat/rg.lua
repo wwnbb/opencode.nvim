@@ -8,25 +8,6 @@ local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 local text_util = require("opencode.util.text")
 local output_style = cs.module(view, require("opencode.ui.chat.tool_style"))
 
-local panel_helpers = tool_panel.create_panel({
-	prefix = "  ",
-	default_hl = "OpenCodeRgValue",
-})
-
-local function ensure_highlights()
-	-- Custom tool fields use plain text on the chat background, like the TUI.
-	for name, source in pairs({
-		OpenCodeRgLabel = "Comment",
-		OpenCodeRgValue = "Normal",
-		OpenCodeRgFailure = "DiagnosticError",
-	}) do
-		local hl = panel_helpers.get_hl(source)
-		vim.api.nvim_set_hl(0, name, { fg = hl.fg, italic = false })
-	end
-end
-
-require("opencode.ui.highlights").register("opencode.ui.chat.rg", ensure_highlights)
-
 ---@param value any
 ---@return string
 local function normalize_text(value)
@@ -73,44 +54,35 @@ end
 -- Align multiline values and wrapped rows after the field label. Raw panel
 -- rendering preserves ripgrep's indentation, context separators and blank lines.
 local function render_field(result, key, value, hl_group)
+	local panel = output_style.panel
 	local label = key .. ": "
 	local indent = string.rep(" ", #label)
 	for i, line in ipairs(vim.split(value, "\n", { plain = true })) do
-		local _, _, rows = panel_helpers.add_raw_line(result, line, hl_group, {
+		local _, _, rows = panel.add_raw_line(result, line, hl_group, {
 			body_prefix = i == 1 and label or indent,
 			continuation_prefix = indent,
 		})
 		if i == 1 then
-			panel_helpers.highlight_text(result, rows, label, "OpenCodeRgLabel")
+			panel.highlight_text(result, rows, label, output_style.border_hl)
 		end
 	end
 end
 
-local function render_header(result, args, status, has_error, expanded)
+local function render_header(result, args, has_error, expanded, spinner)
 	local summary = {}
 	for _, arg in ipairs(args) do
 		summary[#summary + 1] = arg.key .. "=" .. arg.value:gsub("\n", "\\n")
 	end
 	local icon = expanded and "○" or "●"
 	local header = icon .. " rg" .. (#summary > 0 and " [" .. table.concat(summary, ", ") .. "]" or "")
-	local header_hl = has_error and "OpenCodeRgFailure"
-		or (status == "completed" and "OpenCodeRgLabel" or "OpenCodeRgValue")
-	panel_helpers.add_line(result, header, header_hl, { prefix = " " })
-end
-
-local function render_output(result, body, has_error)
-	panel_helpers.add_line(result, "output:", "OpenCodeRgLabel")
-	output_style.add_border(result)
-	for _, line in ipairs(vim.split(body, "\n", { plain = true })) do
-		output_style.panel.add_raw_line(result, line, has_error and output_style.body_error_hl or nil)
-	end
-	output_style.add_border(result, true)
-	output_style.contain_background(result)
+	if spinner then header = header .. " " .. spinner end
+	cs.module(view, require("opencode.ui.chat.render")).add_panel_line(result, header,
+		has_error and output_style.error_hl or output_style.header_hl, { prefix = " " })
 end
 
 ---@param tool_part table
 ---@param expanded boolean
----@param opts? table { exploration?: boolean }
+---@param opts? table { exploration?: boolean, grouped?: boolean }
 ---@return table|nil result
 function M.render_tool(tool_part, expanded, opts)
 	if type(tool_part) ~= "table" or tool_part.tool ~= "rg" then
@@ -123,12 +95,19 @@ function M.render_tool(tool_part, expanded, opts)
 	local output_is_error = body:match("^ripgrep error:") ~= nil
 	local has_error = ctx.status == "error" or error_body ~= "" or output_is_error
 
-	local result = panel_helpers.result()
+	local result = { lines = {}, highlights = {} }
 	local args = arguments(ctx.input, ctx.metadata)
-	render_header(result, args, ctx.status, has_error, expanded)
-	-- The collapsed custom tool is only its summary. Opening it reveals all
-	-- fields, with the complete output aligned below the arguments.
-	if expanded then
+	-- Inside a group the group header carries the spinner.
+	local spinner = ctx.working and not has_error and not (opts or {}).grouped and tool_panel.anim_frame() or nil
+	render_header(result, args, has_error, expanded, spinner)
+	if not expanded then
+		-- A folded call shows what failed, like the other exploration rows.
+		if has_error then
+			output_style.add_error_lines(result, error_body ~= "" and error_body or body, "Tool failed")
+		end
+	else
+		-- Opening it reveals every field, then the complete output, inside the frame.
+		output_style.add_border(result)
 		for _, arg in ipairs(args) do
 			render_field(result, arg.key, arg.value)
 		end
@@ -136,14 +115,20 @@ function M.render_tool(tool_part, expanded, opts)
 			body = "No matches found."
 		end
 		if body ~= "" then
-			render_output(result, body, output_is_error)
+			if #args > 0 then output_style.panel.add_blank(result) end
+			for _, line in ipairs(vim.split(body, "\n", { plain = true })) do
+				output_style.panel.add_raw_line(result, line, output_is_error and output_style.body_error_hl or nil)
+			end
 		end
 		if error_body ~= "" then
-			render_field(result, "error", error_body, "OpenCodeRgFailure")
+			if #args > 0 or body ~= "" then output_style.panel.add_blank(result) end
+			render_field(result, "error", error_body, output_style.body_error_hl)
 		end
+		output_style.add_border(result, true)
+		output_style.contain_background(result)
 	end
 	if not (opts and opts.exploration) then
-		panel_helpers.add_separator(result)
+		result.lines[#result.lines + 1] = ""
 	end
 	return result
 end

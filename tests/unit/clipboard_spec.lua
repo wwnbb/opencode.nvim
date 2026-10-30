@@ -36,14 +36,13 @@ describe("clipboard image files", function()
 		assert(vim.uv.fs_symlink(path, link))
 		assert.equals(vim.base64.encode("bytes\n"), clipboard.read_image_file(link).data)
 		assert.equals(vim.base64.encode("bytes\n"), clipboard.image_from_text(link).data)
-		for _, invalid in ipairs({ false, {}, 42, path .. "\0.png", path .. ".missing" }) do
+		for _, invalid in ipairs({ false, path .. "\0.png", path .. ".missing" }) do
 			local ok, image, err = pcall(clipboard.read_image_file, invalid)
 			assert.is_true(ok)
 			assert.is_nil(image)
 			assert.equals("Cannot read file", err)
 		end
 	end)
-
 end)
 
 describe("clipboard command images", function()

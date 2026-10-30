@@ -32,6 +32,29 @@ M.panel = tool_panel.create_panel({
 	prefix = M.prefix, blank_prefix = "   │", default_hl = M.output_hl, border_hl = M.border_hl,
 })
 
+-- Sub-lines of a compact row (errors, loaded files, decisions) sit under its label.
+M.SUB_PREFIX = "     "
+
+---@param result table
+---@param text string
+---@param hl? string
+function M.add_sub_line(result, text, hl)
+	cs.module(view, require("opencode.ui.chat.render")).add_panel_line(result, text, hl or M.header_hl,
+		{ prefix = M.SUB_PREFIX })
+end
+
+---A folded row's error, one sub-line per line of the message.
+---@param result table
+---@param message any
+---@param fallback? string Shown when the message is empty
+function M.add_error_lines(result, message, fallback)
+	local body = vim.trim(type(message) == "string" and message or "")
+	if body == "" then body = fallback or "Tool failed" end
+	for _, line in ipairs(vim.split(body, "\n", { plain = true })) do
+		M.add_sub_line(result, line, M.error_hl)
+	end
+end
+
 function M.add_border(result, bottom)
 	local render = cs.module(view, require("opencode.ui.chat.render"))
 	local width = render.get_chat_text_width()

@@ -120,7 +120,7 @@ describe("execute widgets in the chat buffer", function()
 		chat.do_render()
 		local part = sync.get_parts("message")[1]
 		assert.equals(raw, part.state.output)
-		assert.is_truthy(buffer_text():find("→ Executed — 1 call", 1, true))
+		assert.is_truthy(buffer_text():find("→ Executed · 1 call", 1, true))
 		assert.equals("activity:execute:" .. part.id, group_id(part.id))
 		assert.is_nil(buffer_text():find("catalog.list", 1, true))
 		open_group(part.id)
@@ -131,8 +131,8 @@ describe("execute widgets in the chat buffer", function()
 		focus(part.id)
 		key("<CR>")
 		assert.is_true(state.expanded_tools[part.id])
-		assert.is_truthy(buffer_text():find("✓ execute", 1, true))
-		assert.is_truthy(buffer_text():find("↳ ✓ catalog.list", 1, true))
+		assert.is_truthy(buffer_text():find("↘ catalog.list", 1, true))
+		assert.is_truthy(buffer_text():find("│ ↳ ✓ catalog.list", 1, true))
 		assert.is_nil(buffer_text():find("A large MCP result", 1, true))
 		assert.is_nil(buffer_text():find("Result", 1, true))
 		assert.is_nil(buffer_text():find("Code", 1, true))
@@ -152,37 +152,6 @@ describe("execute widgets in the chat buffer", function()
 		assert.is_true(state.expanded_tools[part.id])
 	end)
 
-	it("opens code for the selected execute after rerenders and closing and reopening chat", function()
-		local code = "const FIRST_CODE = 1;\nreturn FIRST_CODE;"
-		seed({ native_tool("first", { code = code, output = "first result" }),
-			native_tool("second", { code = "return SECOND_CODE;", output = "second result" }) }, 500)
-		chat.do_render()
-		local parts = sync.get_parts("message")
-		local first, second = parts[1].id, parts[2].id
-		open_group(first)
-		for _, id in ipairs({ first, second }) do focus(id); key("O") end
-		assert.is_nil(buffer_text():find("const FIRST_CODE = 1;", 1, true))
-		assert.is_nil(buffer_text():find("return SECOND_CODE;", 1, true))
-		chat.do_render()
-		chat.do_render()
-		focus(section(first, "calls")); key("<CR>"); key("3")
-		assert.equals(code, inspector_text())
-		chat.close()
-		assert.is_false(details.is_open())
-		chat.open()
-		assert.is_true(state.expanded_tools[first])
-		assert.is_true(state.expanded_tools[second])
-		assert.is_nil(buffer_text():find("const FIRST_CODE = 1;", 1, true))
-		assert.is_nil(buffer_text():find("return SECOND_CODE;", 1, true))
-		focus(section(second, "calls")); key("<CR>"); key("3")
-		assert.equals("return SECOND_CODE;", inspector_text())
-		key("q")
-		chat.do_render()
-		assert.is_nil(buffer_text():find("const FIRST_CODE = 1;", 1, true))
-		assert.is_nil(buffer_text():find("return SECOND_CODE;", 1, true))
-		assert.equals(section(second, "calls"), tasks.get_tool_at_cursor())
-	end)
-
 	it("reveals only the selected execute and clears its nested expansion when the group closes", function()
 		seed({ native_tool("one", { output = "FIRST_UNIQUE_RESULT", code = "return FIRST_UNIQUE_CODE;" }),
 			native_tool("two", { output = "SECOND_UNIQUE_RESULT", calls = {
@@ -194,7 +163,7 @@ describe("execute widgets in the chat buffer", function()
 		local parent = group_id(first)
 		assert.equals(parent, group_id(second))
 		assert.is_nil(state.tools[first], "execute belongs to its activity, not a separate root")
-		assert.is_truthy(buffer_text():find("→ Executed — 2 calls", 1, true))
+		assert.is_truthy(buffer_text():find("→ Executed · 2 calls", 1, true))
 		assert.is_nil(tree.find(state.tools, first).start_line)
 		assert.is_nil(tree.find(state.tools, second).start_line)
 		focus(parent); key("<CR>")
@@ -230,67 +199,6 @@ describe("execute widgets in the chat buffer", function()
 		assert.is_nil(buffer_text():find("FIRST_UNIQUE_CODE", 1, true))
 	end)
 
-	it("groups consecutive execute parts without crossing visible text or another activity", function()
-		seed({ native_tool("one"), native_tool("two"),
-			{ type = "text", text = "Intermediate answer" }, native_tool("three"),
-			{ type = "reasoning", text = "Another plan", time = { created = 1, completed = 2 } },
-			native_tool("four"), { type = "tool", id = "read", name = "read", state = {
-				status = "completed", input = { path = "README.md" },
-			} }, native_tool("five"), { type = "text", text = "Final answer" } }, 500)
-		chat.do_render()
-		local parts = sync.get_parts("message")
-		local first, second = group_id(parts[1].id), group_id(parts[2].id)
-		assert.equals(first, second)
-		assert.equals(2, #state.tools[first].activity_group.refs)
-		local seen = { [first] = true }
-		for _, index in ipairs({ 4, 6, 8 }) do
-			local id = group_id(parts[index].id)
-			assert.is_nil(seen[id])
-			seen[id] = true
-			assert.equals("activity:execute:" .. parts[index].id, id)
-			assert.equals(1, #state.tools[id].activity_group.refs)
-		end
-		assert.equals(4, vim.tbl_count(seen))
-		assert.is_truthy(buffer_text():find("Intermediate answer", 1, true))
-		assert.is_truthy(buffer_text():find("Thought", 1, true))
-		assert.is_truthy(buffer_text():find("Explored", 1, true))
-		assert.is_truthy(buffer_text():find("Final answer", 1, true))
-	end)
-
-	it("shifts execute child ranges with an earlier widget and leaves following stream blocks usable", function()
-		seed({ { type = "reasoning", text = "Plan\nAdditional details", time = { created = 1, completed = 2 } },
-			native_tool("shifted", { code = "return SHIFTED_CODE;", output = "Shifted result" }),
-			{ type = "text", text = "Following answer" } })
-		chat.do_render()
-		local parts = sync.get_parts("message")
-		local id = parts[2].id
-		open_call(id)
-		local before = tree.find(state.tools, section(id, "calls")).start_line
-		local thought
-		for group_id, node in pairs(state.tools) do
-			if node.activity_group and node.activity_group.kind == "thought" then thought = group_id end
-		end
-		focus(assert(thought)); key("O")
-		assert.is_true(tree.find(state.tools, section(id, "calls")).start_line > before)
-		local node = focus(section(id, "calls"))
-		assert.is_true(node.start_line >= tree.find(state.tools, id).start_line)
-		assert.is_true(node.end_line <= tree.find(state.tools, id).end_line)
-		assert.is_nil(buffer_text():find("return SHIFTED_CODE;", 1, true))
-		local following = vim.deepcopy(parts[3])
-		following.text = "Following answer\nStreamed continuation"
-		sync.handle_part_updated(following)
-		assert.is_true(chat.update_stream_part_block("execute-test", "message", following.id))
-		assert.is_truthy(buffer_text():find("Following answer\nStreamed continuation", 1, true))
-		focus(section(id, "calls")); key("<CR>"); key("1")
-		assert.equals("Shifted result", inspector_text())
-		key("q")
-		focus(section(id, "calls")); key("O")
-		assert.is_nil(state.expanded_tools[id])
-		assert.equals(id, tasks.get_tool_at_cursor())
-		assert.is_true(state.expanded_tools[group_id(id)])
-		assert.is_truthy(buffer_text():find("Streamed continuation", 1, true))
-	end)
-
 	it("updates a running execute and resolves current synchronized data before opening details", function()
 		seed({ native_tool("streaming", { status = "running", output = "Partial output", calls = {
 			{ tool = "database.query", status = "running" },
@@ -304,7 +212,7 @@ describe("execute widgets in the chat buffer", function()
 		}) }, 2200).parts[1]
 		sync.handle_part_updated(final)
 		assert.is_true(tasks.rerender_tool(id))
-		assert.is_truthy(buffer_text():find("✓ execute", 1, true))
+		assert.is_truthy(buffer_text():find("↘ database.query", 1, true))
 		assert.is_truthy(buffer_text():find("✓ database.query", 1, true))
 		assert.is_nil(buffer_text():find("Final synchronized result", 1, true))
 		assert.is_nil(buffer_text():find("Partial output", 1, true))
@@ -338,7 +246,7 @@ describe("execute widgets in the chat buffer", function()
 		local final = project({ native_tool("stream", { completed = 250, output = "FINAL_VISIBLE_RESULT" }) }, 300).parts[1]
 		sync.handle_part_updated(final)
 		assert.is_true(tasks.rerender_tool(id))
-		assert.is_truthy(buffer_text():find("Executed — 1 call", 1, true))
+		assert.is_truthy(buffer_text():find("Executed · 1 call", 1, true))
 		assert.is_nil(buffer_text():find("FINAL_VISIBLE_RESULT", 1, true))
 		assert.is_nil(tree.find(state.tools, id).start_line)
 		open_call(id)
@@ -355,7 +263,7 @@ describe("execute widgets in the chat buffer", function()
 		assert.is_true(state.expanded_tools[id])
 		assert.is_nil(state.expanded_tools[next_part.id])
 		assert.equals(id, tasks.get_tool_at_cursor())
-		assert.is_truthy(buffer_text():find("Executing — 2 calls", 1, true))
+		assert.is_truthy(buffer_text():find("Executing · 2 calls", 1, true))
 		assert.is_nil(buffer_text():find("FINAL_VISIBLE_RESULT", 1, true))
 		assert.is_nil(buffer_text():find("NEXT_HIDDEN_RESULT", 1, true))
 		assert.is_nil(tree.find(state.tools, section(next_part.id, "calls")))

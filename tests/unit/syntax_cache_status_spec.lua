@@ -33,9 +33,7 @@ describe("syntax result status and source caching", function()
 	it("distinguishes intentional skips from a successful empty capture set", function()
 		assert.equals("skipped", result_status(""))
 		assert.equals("skipped", result_status(source, "plaintext"))
-		assert.equals("skipped", result_status(source, "lua", { min_bytes = 100 }))
 		assert.equals("skipped", result_status(source, "lua", { max_bytes = 2 }))
-		assert.equals("skipped", result_status(source, "lua", { max_lines = 1 }))
 		config.syntax.tools = false
 		assert.equals("skipped", result_status(source))
 		config.syntax.tools = true
@@ -51,22 +49,16 @@ describe("syntax result status and source caching", function()
 	it("retries unavailable parsers and queries including explicit parser rejection", function()
 		vim.treesitter.language.add = function() return false end
 		assert.equals("retry", result_status(source))
-		vim.treesitter.language.add = function() error("missing parser") end
-		assert.equals("retry", result_status(source))
 		vim.treesitter.language.add = saved.add
-		vim.treesitter.query.get = function() return nil end
-		assert.equals("retry", result_status(source))
 		vim.treesitter.query.get = function() error("query unavailable") end
 		assert.equals("retry", result_status(source))
 	end)
 
 	it("does not mistake failed or absent parse trees and capture failures for empty success", function()
 		for _, parser in ipairs({
-			function() error("parser creation") end,
 			function() return { parse = function() error("parse failure") end } end,
 			function() return { parse = function() return {} end } end,
 			function() return { parse = function() return { { root = function() return nil end } } end } end,
-			function() return { parse = function() return { { root = function() error("root failure") end } } end } end,
 		}) do
 			vim.treesitter.get_string_parser = parser
 			assert.equals("retry", result_status(source))

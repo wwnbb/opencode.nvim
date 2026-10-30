@@ -450,7 +450,7 @@ function M.model.parsed(opts)
 			return {
 				providerID = "",
 				modelID = "",
-				provider = "Loading...",
+				provider = "Loading…",
 				name = "",
 				reasoning = false,
 			}

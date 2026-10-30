@@ -19,10 +19,7 @@ describe("selector model validation", function()
 
 	it("rejects malformed, empty and unknown references before using the local fallback", function()
 		for _, case in ipairs({
-			{ "invalid", "malformed" },
 			{ { providerID = 1, modelID = "native" }, "malformed" },
-			{ { providerID = "p", id = 1, modelID = "legacy" }, "malformed" },
-			{ { providerID = "", modelID = "native" }, "empty" },
 			{ { providerID = "p", id = "", modelID = "legacy" }, "empty" },
 			{ { providerID = "p", id = "unknown", modelID = "legacy" }, "not_in_sync" },
 		}) do

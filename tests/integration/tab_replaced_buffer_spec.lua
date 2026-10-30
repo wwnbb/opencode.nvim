@@ -96,6 +96,57 @@ describe("reopening a replaced chat buffer", function()
 		assert.is_true(views.is_chat_buffer_displayed(first))
 	end)
 
+	local function assert_no_suspended_pane(layout)
+		for _, view in ipairs(views.all()) do
+			assert.is_false(view.suspended == true and view.workspace_id == layout.id, "a shown layout keeps a hidden pane")
+		end
+	end
+
+	local function reopen_from_picker()
+		require("opencode.session").switch_to({ id = "replacement-a", title = "A" }); settle()
+		local reopened = views.for_session("replacement-a")
+		assert.is_not_nil(reopened)
+		assert.is_true(views.is_chat_buffer_displayed(reopened))
+		assert.equals(views.workspace.tabpage, reopened.tabpage)
+		assert.equals(2, #vim.api.nvim_list_tabpages())
+	end
+
+	it("detaches a pane replaced before parking and reopens its session in the workspace", function()
+		local workspace = require("opencode.ui.chat.workspace")
+		local file = replace(first)
+		chat.toggle(); settle()
+		assert.is_true(workspace.is_parked())
+		chat.toggle(); settle()
+		assert_no_suspended_pane(workspace.current())
+		assert.equals(file, vim.api.nvim_get_current_buf())
+		assert.same({ "Unsaved replacement" }, vim.api.nvim_buf_get_lines(file, 0, -1, false))
+		assert.is_true(vim.bo[file].modified)
+		assert.is_nil(views.for_session("replacement-a"))
+		reopen_from_picker()
+	end)
+
+	it("detaches a pane replaced before switching layouts", function()
+		local workspace = require("opencode.ui.chat.workspace")
+		local original = workspace.current().id
+		app.upsert_session({ id = "replacement-b", title = "B" })
+		chat.create_layout(app.get_session_record("replacement-b")); settle()
+		workspace.select(original); settle()
+		local file = replace(first)
+		workspace.cycle(1); settle()
+		workspace.cycle(-1); settle()
+		assert.equals(original, workspace.current().id)
+		assert.equals(file, vim.api.nvim_get_current_buf())
+		assert_no_suspended_pane(workspace.current())
+		reopen_from_picker()
+	end)
+
+	it("closes the session of a replaced pane together with its layout", function()
+		local file = replace(first)
+		require("opencode.ui.chat.workspace").close_current(); settle()
+		assert.is_false(app.is_runtime_session("replacement-a"))
+		assert.same({ "Unsaved replacement" }, vim.api.nvim_buf_get_lines(file, 0, -1, false))
+	end)
+
 	it("keeps an execute detail page as the owned chat surface", function()
 		local details, popup = open_details()
 		local win, tab = first.winid, first.tabpage
@@ -138,8 +189,9 @@ describe("reopening a replaced chat buffer", function()
 		assert.equals("replacement-a", views.session(first).id)
 	end)
 
-	for _, kind in ipairs({ "details", "file" }) do
-		for _, mirror in ipairs({ false, true }) do
+	for _, case in ipairs({ { "details", true }, { "file", false } }) do
+		local kind, mirror = case[1], case[2]
+		do
 			it("closes the session with " .. (mirror and "x across mirrors" or "the global API") .. " while showing " .. kind, function()
 				if mirror then vim.cmd("vsplit"); settle() end
 				local windows = views.windows(first)

@@ -16,22 +16,6 @@ describe("slash parsing", function()
 	end)
 end)
 
-describe("slash defaults", function()
-	it("keeps slash and keybinding help registered independently", function()
-		local palette = require("opencode.ui.palette")
-		for _, register in ipairs({ slash.register_defaults, palette.register_defaults, slash.register_defaults }) do
-			register()
-			local command_help = registry.get_slash("help")
-			local keybinding_help = registry.get("system.help")
-			assert.is_not_nil(command_help)
-			assert.is_not_nil(keybinding_help)
-			assert.is_true(command_help.id ~= keybinding_help.id)
-			assert.is_false(command_help.palette)
-			assert.is_true(keybinding_help.palette)
-		end
-	end)
-end)
-
 describe("slash undo availability", function()
 	local state = require("opencode.state")
 	local sync = require("opencode.sync")

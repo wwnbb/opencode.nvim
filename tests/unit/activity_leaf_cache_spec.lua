@@ -134,7 +134,7 @@ describe("completed activity leaf cache", function()
 		assert.is_true(budget.bytes <= budget.max_bytes)
 	end)
 
-	it("separates grouped mode and rejects stale bodies after owner revision reuse", function()
+	it("separates grouped mode and rejects stale bodies after the owner is replaced", function()
 		local part = put("owner", nil, "execute")
 		group.render_leaf(part, true, { grouped = false })
 		group.render_leaf(part, true, { grouped = false })
@@ -148,7 +148,8 @@ describe("completed activity leaf cache", function()
 		part = vim.deepcopy(part)
 		part.state.metadata.toolCalls[1].tool = "replacement tool"
 		sync.handle_part_updated(part)
-		assert.equals(revision, sync.get_part_revision(mid, "owner"))
+		-- Revisions are never reused, so a replacement cannot alias the old body.
+		assert.is_true(sync.get_part_revision(mid, "owner") > revision)
 		local rendered = group.render_leaf(part, true, { grouped = true })
 		assert.equals(3, calls.owner)
 		assert.is_truthy(table.concat(rendered.lines, "\n"):find("replacement tool", 1, true))
@@ -241,12 +242,9 @@ describe("completed activity leaf cache", function()
 		for _, update in ipairs({
 			function() change("first", function(part) part.state.output = "return 1" end) end,
 			function() change("second", function(part) part.state.output = "local value = \"猫🙂é\"\n\treturn value" end) end,
-			function() expanded.first = false end,
-			function() width = 34 end,
 			function() ids = { "second", "first" } end,
 			function() change("second", function(part) part.state.status = "error"; part.state.error = "line one\nline two" end) end,
 			function() ids = { "second" }; sync.handle_part_removed(mid, "first") end,
-			function() vim.api.nvim_exec_autocmds("ColorScheme", {}) end,
 		}) do
 			update()
 			cold_equal(ids, true, expanded)

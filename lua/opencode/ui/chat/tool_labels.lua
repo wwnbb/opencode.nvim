@@ -1,37 +1,15 @@
 local cs = require("opencode.ui.chat.state")
 return cs.factory("tool_labels", function(view)
 -- Pure label/summary formatting for tool widgets.
--- Extracted from tasks.lua: tool icons, count/label helpers, and the
+-- Extracted from tasks.lua: count/label helpers, durations and the
 -- TUI-style one-line tool labels. No buffer access, no state mutation.
 
 local M = {}
 
 local render = cs.module(view, require("opencode.ui.chat.render"))
-local task_animation = cs.module(view, require("opencode.ui.chat.task_animation"))
-local tool_part_resolver = cs.module(view, require("opencode.ui.chat.tool_part"))
 local text_util = require("opencode.util.text")
-
--- ─── Tool icons & display helpers ────────────────────────────────────────────
-
-local TOOL_ICONS = {
-	bash = "$",
-	glob = "✱",
-	rg = "✱",
-	read = "→",
-	grep = "✱",
-	write = "←",
-	edit = "←",
-	webfetch = "%",
-	websearch = "◈",
-	task = "◉",
-	question = "→",
-	apply_patch = "%",
-	skill = "→",
-}
-
-local function get_tool_icon(tool_name)
-	return TOOL_ICONS[tool_name] or "⚙"
-end
+local tool_names = require("opencode.util.tool_names")
+local locale = require("opencode.util.locale")
 
 ---@param value any
 ---@return number|nil
@@ -58,15 +36,17 @@ function M.normalize_count(value)
 end
 
 ---@param count number
+---@param noun? "match"|"file"
 ---@return string
-local function format_match_count(count)
+local function format_match_count(count, noun)
+	if noun == "file" then return tostring(count) .. " " .. (count == 1 and "file" or "files") end
 	return tostring(count) .. " " .. (count == 1 and "match" or "matches")
 end
 
 ---@param count number
 ---@return string
 function M.format_toolcall_count(count)
-	return tostring(count) .. " " .. (count == 1 and "toolcall" or "toolcalls")
+	return tostring(count) .. " " .. (count == 1 and "tool call" or "tool calls")
 end
 
 ---@param metadata table
@@ -110,18 +90,19 @@ end
 ---@param max_len number
 ---@return string
 local function truncate_label(text, max_len)
-	return text_util.truncate(text, max_len, "...")
+	return text_util.truncate(text, max_len, "…")
 end
 
----Truncate a long path to its last 37 characters prefixed by "..." (max 40).
+---A path as rows show it, keeping its last 39 characters after "…" (max 40).
 ---@param path string
 ---@return string
 local function truncate_path_end(path)
+	path = text_util.normalize_path(path)
 	local length = vim.fn.strchars(path)
 	if length <= 40 then
 		return path
 	end
-	return "..." .. vim.fn.strcharpart(path, length - 37)
+	return "…" .. vim.fn.strcharpart(path, length - 39)
 end
 
 ---Resolve the ripgrep match count across known metadata key spellings.
@@ -165,47 +146,47 @@ function M.format_summary_item_label(item)
 	-- Prefer the server-supplied title while it describes visible activity.
 	local title = (item_status == "completed" or item_status == "running") and trim_string(item_state.title) or ""
 	if title and title ~= "" then
-		return render.format_title(tool_name) .. " " .. truncate_label(title, 52)
+		return tool_names.display_name(tool_name) .. " " .. truncate_label(title, 52)
 	end
 
 	-- Tool-specific fallback
 	if tool_name == "read" or tool_name == "write" or tool_name == "edit" then
 		local fp = input_table.path or input_table.filePath or input_table.file_path or ""
 		if fp ~= "" then
-			return render.format_title(tool_name) .. " " .. truncate_path_end(fp)
+			return tool_names.display_name(tool_name) .. " " .. truncate_path_end(fp)
 		end
 	elseif tool_name == "bash" then
 		local d = trim_string(input_table.description)
 		if d == "" then d = trim_string(input_table.command) end
 		if d ~= "" then
-			return "Bash " .. truncate_label(render.sanitize_buffer_line(d), 40)
+			return tool_names.display_name(tool_name) .. " " .. truncate_label(render.sanitize_buffer_line(d), 40)
 		end
 	elseif tool_name == "glob" then
 		local pat = input_table.pattern or ""
 		if pat ~= "" then
 			local count = M.normalize_count(metadata.count)
-			local suffix = count and (" (" .. format_match_count(count) .. ")") or ""
-			return "Glob " .. pat .. suffix
+			local suffix = count and (" (" .. format_match_count(count, "file") .. ")") or ""
+			return 'Glob "' .. pat .. '"' .. suffix
 		end
 	elseif tool_name == "grep" then
 		local pat = input_table.pattern or ""
 		if pat ~= "" then
 			local matches = M.normalize_count(metadata.matches)
 			local suffix = matches and (" (" .. format_match_count(matches) .. ")") or ""
-			return "Grep " .. pat .. suffix
+			return 'Grep "' .. pat .. '"' .. suffix
 		end
 	elseif tool_name == "rg" then
 		local pat = input_table.pattern or ""
 		if pat ~= "" then
 			local matches = rg_match_count(metadata)
 			local suffix = matches and (" (" .. format_match_count(matches) .. ")") or ""
-			return "Ripgrep " .. pat .. suffix
+			return 'Ripgrep "' .. pat .. '"' .. suffix
 		end
 	elseif tool_name == "task" then
 		local agent = input_table.subagent_type or ""
 		local d = input_table.description or ""
 		if agent ~= "" then
-			return render.format_title(agent) .. " Task" .. (d ~= "" and (" — " .. d) or "")
+			return render.format_title(agent) .. " Task" .. (d ~= "" and (" · " .. d) or "")
 		end
 	elseif tool_name == "skill" then
 		local name = get_skill_name(input, metadata)
@@ -214,8 +195,8 @@ function M.format_summary_item_label(item)
 		end
 	end
 
-	-- Generic: capitalised tool name
-	return render.format_title(tool_name)
+	-- Generic: the tool's display name
+	return tool_names.display_name(tool_name)
 end
 
 ---@param summary table[]
@@ -232,7 +213,7 @@ function M.find_current_summary_item(summary)
 			end
 
 			local label = trim_string(M.format_summary_item_label(item))
-			local generic = render.format_title(tostring(item and item.tool or "unknown"))
+			local generic = tool_names.display_name(tostring(item and item.tool or "unknown"))
 			if label ~= "" and label ~= generic then
 				return item
 			end
@@ -241,6 +222,7 @@ function M.find_current_summary_item(summary)
 	return nil
 end
 
+---Elapsed time of a task as every row shows it (locale.duration).
 ---@param state_time table|nil
 ---@return string|nil duration
 function M.format_state_duration(state_time)
@@ -253,114 +235,7 @@ function M.format_state_duration(state_time)
 	if not start_time or not end_time or end_time <= start_time then
 		return nil
 	end
-
-	local duration = (end_time - start_time) / 1000
-	if duration < 1 then
-		return string.format("%dms", math.floor(duration * 1000 + 0.5))
-	end
-	if duration < 10 then
-		return string.format("%.1fs", duration)
-	end
-	duration = math.floor(duration + 0.5)
-	if duration < 60 then
-		return string.format("%ds", duration)
-	end
-
-	local minutes = math.floor(duration / 60)
-	local seconds = duration % 60
-	return string.format("%dm%02ds", minutes, seconds)
-end
-
--- Format a single tool display line (matches TUI InlineTool style).
-function M.format_tool_line(tool_part)
-	tool_part = tool_part_resolver.resolve(tool_part)
-	local tool_name = tool_part.tool or "unknown"
-	local tool_status = tool_part.state and tool_part.state.status or "pending"
-	local icon = get_tool_icon(tool_name)
-	local input = tool_part.state and tool_part.state.input or {}
-	local metadata = render.get_tool_metadata(tool_part)
-
-	if tool_name == "glob" then
-		local pattern = input.pattern or ""
-		local count = M.normalize_count(metadata.count)
-		if tool_status == "completed" then
-			return string.format('%s Glob "%s"%s', icon, pattern, count and (" (" .. format_match_count(count) .. ")") or "")
-		end
-		return "~ Finding files..."
-	elseif tool_name == "grep" then
-		local pattern = input.pattern or ""
-		local matches = M.normalize_count(metadata.matches)
-		if tool_status == "completed" then
-			return string.format('%s Grep "%s"%s', icon, pattern, matches and (" (" .. format_match_count(matches) .. ")") or "")
-		end
-		return "~ Searching content..."
-	elseif tool_name == "rg" then
-		local pattern = input.pattern or ""
-		local matches = rg_match_count(metadata)
-		if tool_status == "completed" then
-			if matches then
-				return string.format('%s Ripgrep "%s" (%s)', icon, pattern, format_match_count(matches))
-			end
-			return string.format('%s Ripgrep "%s"', icon, pattern)
-		end
-		return "~ Searching content..."
-	elseif tool_name == "read" then
-		local filepath = input.path or input.filePath or input.file_path or ""
-		filepath = truncate_path_end(filepath)
-		if tool_status == "completed" then
-			return string.format("%s Read %s", icon, filepath)
-		end
-		return "~ Reading file..."
-	elseif tool_name == "write" then
-		local filepath = input.path or input.filePath or input.file_path or ""
-		filepath = truncate_path_end(filepath)
-		if tool_status == "completed" then
-			return string.format("%s Wrote %s", icon, filepath)
-		end
-		return "~ Preparing write..."
-	elseif tool_name == "edit" then
-		local filepath = input.path or input.filePath or input.file_path or ""
-		filepath = truncate_path_end(filepath)
-		if tool_status == "completed" then
-			return string.format("%s Edit %s", icon, filepath)
-		end
-		return "~ Preparing edit..."
-	elseif tool_name == "bash" then
-		local desc = input.description or "Shell"
-		if tool_status == "completed" then
-			return string.format("# %s", desc)
-		end
-		return "~ Writing command..."
-	elseif tool_name == "skill" then
-		local name = get_skill_name(input, metadata)
-		if tool_status == "completed" then
-			if name ~= "" then
-				return string.format('%s Skill "%s"', icon, name)
-			end
-			return string.format("%s Skill", icon)
-		end
-		if name ~= "" then
-			return string.format('~ Loading skill "%s"...', name)
-		end
-		return "~ Loading skill..."
-	elseif tool_name == "task" then
-		local subagent = input.subagent_type or "unknown"
-		local desc = input.description or ""
-		local agent_label = render.format_title(subagent)
-		if desc ~= "" and tool_status ~= "pending" then
-			local prefix = task_animation.get_task_status_icon(tool_status)
-			return string.format("%s %s Task – %s", prefix, agent_label, desc)
-		end
-		if task_animation.is_task_working(tool_status) then
-			return string.format("%s Delegating...", task_animation.get_task_anim_frame())
-		end
-		return string.format("%s %s Task", task_animation.get_task_status_icon(tool_status), agent_label)
-	else
-		if tool_status == "completed" then
-			return string.format("%s %s", icon, tool_name)
-		end
-		return string.format("~ %s...", tool_name)
-	end
+	return locale.duration(math.floor(end_time - start_time + 0.5))
 end
 
 return M

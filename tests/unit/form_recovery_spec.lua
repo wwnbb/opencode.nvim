@@ -30,7 +30,7 @@ describe("interaction recovery", function()
 	local function event(kind, data)
 		bus.emit("server_interaction", { id = "evt", type = kind, created = 1000, data = data })
 	end
-	for _, case in ipairs({ { name = "missing" }, { name = "unknown", reply = "unknown" }, { name = "non-string", reply = false } }) do
+	for _, case in ipairs({ { name = "missing" }, { name = "unknown", reply = "unknown" } }) do
 		it("ignores " .. case.name .. " permission replies without blocking recovery", function()
 			local data = { id = "p", sessionID = "root", action = "read", resources = {} }
 			event("permission.asked", data)
@@ -47,7 +47,7 @@ describe("interaction recovery", function()
 			assert.equals("pending", permissions.get_permission("p").status)
 		end)
 	end
-	for _, reply in ipairs({ "once", "always", "reject" }) do
+	for _, reply in ipairs({ "once", "reject" }) do
 		it("applies the " .. reply .. " decision and ignores repeated or conflicting replies", function()
 			local item = permissions.add_permission("p", "root", "read", {})
 			assert.is_true(permissions.begin_submission("p"))

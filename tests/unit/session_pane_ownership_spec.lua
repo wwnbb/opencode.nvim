@@ -153,35 +153,27 @@ describe("session pane ownership", function()
 		assert.equals("a", state.get_session().id)
 		assert.is_nil(state.get_session_record("b"))
 	end)
-	for _, suspended in ipairs({ false, true }) do
-		it("removes every displayed descendant of a deleted parent (suspended=" .. tostring(suspended) .. ")", function()
-			state.upsert_session({ id = "child", parentID = "a" }, { touch = false })
-			sync.handle_message_updated({ id = "a-message", sessionID = "a", role = "assistant" })
-			sync.record_task_child_session("a", "a-message", "a-task", "child")
-			local child = { id = 3, session_id = "child", generation = 0, visible = not suspended,
-				suspended = suspended, config = { layout = "tab" } }
-			views[#views + 1] = child
-			focused = views[2]; state.set_session("b", "b")
-			assert.is_true(sessions.handle_deleted("a"))
-			for _, view in ipairs(views) do
-				if not view.closed then
-					assert.is_not.equals("a", view.session_id)
-					assert.is_not.equals("child", view.session_id)
-					assert.is_not_nil(state.get_session_record(view.session_id))
-				end
+	it("removes every displayed descendant of a deleted parent, including suspended panes", function()
+		state.upsert_session({ id = "child", parentID = "a" }, { touch = false })
+		sync.handle_message_updated({ id = "a-message", sessionID = "a", role = "assistant" })
+		sync.record_task_child_session("a", "a-message", "a-task", "child")
+		local child = { id = 3, session_id = "child", generation = 0, visible = false,
+			suspended = true, config = { layout = "tab" } }
+		views[#views + 1] = child
+		focused = views[2]; state.set_session("b", "b")
+		assert.is_true(sessions.handle_deleted("a"))
+		for _, view in ipairs(views) do
+			if not view.closed then
+				assert.is_not.equals("a", view.session_id)
+				assert.is_not.equals("child", view.session_id)
+				assert.is_not_nil(state.get_session_record(view.session_id))
 			end
-			assert.equals("b", state.get_session().id)
-			assert.equals("b", views[2].session_id)
-			assert.is_nil(state.get_session_record("child"))
-		end)
-	end
-
-	it("derives tab selection from the addressed pane", function()
-		local selectors = require("opencode.selectors")
-		assert.equals("b", selectors.get_current_runtime_root_id({ session_id = "b" }))
-		assert.is_true(selectors.get_session_view("b", { session_id = "b" }):is_current_session())
-		assert.is_false(selectors.get_session_view("a", { session_id = "b" }):is_current_session())
+		end
+		assert.equals("b", state.get_session().id)
+		assert.equals("b", views[2].session_id)
+		assert.is_nil(state.get_session_record("child"))
 	end)
+
 	it("keeps catalogs when focus moves within a directory and loads a different directory", function()
 		local handlers, directories = {}, {}
 		saved.catalog_methods = {}

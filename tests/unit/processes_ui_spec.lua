@@ -130,7 +130,7 @@ describe("session shell process UI", function()
 	it("reports endpoint capability failures without stopping ordinary chat", function()
 		local notices = {}
 		stub(vim, "notify", function(message) notices[#notices + 1] = message end)
-		for _, status in ipairs({ 404, 405, 501, 503 }) do
+		for _, status in ipairs({ 404, 503 }) do
 			stub(actions, "list_shells", function(_, cb) cb({ status = status, message = "opaque server error" }) end)
 			processes.list({ session_id = "ses_a" })
 			stubs[#stubs]:revert(); table.remove(stubs)

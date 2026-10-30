@@ -108,7 +108,8 @@ local function show_status_popup(lines, highlights, ctx)
 		max_scroll = math.max(0, #body_lines - visible_count)
 		scroll_offset = math.max(0, math.min(scroll_offset, max_scroll))
 		local header = "    Status"
-		local close_hint = keymaps.label("status", "close") .. "    "
+		local close_hint = keymaps.hint({ keymaps.label("status", "close") })
+		close_hint = close_hint and (close_hint .. "    ") or ""
 		header = header .. string.rep(" ", math.max(1, actual_width - #header - #close_hint)) .. close_hint
 		local view, marks = {}, {}
 		for index = 1, actual_height do view[index] = "" end
@@ -127,11 +128,16 @@ local function show_status_popup(lines, highlights, ctx)
 			end
 		end
 		local footer_row = math.max(1, actual_height - 1)
-		view[footer_row] = "    " .. keymaps.label("status", "next"):gsub(" / .*", "") .. "/" .. keymaps.label("status", "previous"):gsub(" / .*", "")
-			.. ":scroll  " .. keymaps.label("status", "close"):gsub(" / .*", "") .. ":close"
-		marks[#marks + 1] = {
-			line = footer_row - 1, col = 4, end_col = #view[footer_row], hl_group = "OpenCodeStatusFooter",
-		}
+		local footer = keymaps.hint({
+			{ keymaps.label("status", "next") .. " / " .. keymaps.label("status", "previous"), "scroll" },
+			{ keymaps.label("status", "close"), "close" },
+		}, { omit_disabled = true })
+		if footer then
+			view[footer_row] = "    " .. footer
+			marks[#marks + 1] = {
+				line = footer_row - 1, col = 4, end_col = #view[footer_row], hl_group = "OpenCodeStatusFooter",
+			}
+		end
 		popup:render(view, marks)
 		vim.api.nvim_win_set_cursor(popup.winid, { math.min(4, actual_height), 0 })
 	end
@@ -360,7 +366,7 @@ function M.register(palette)
 			end
 
 			local safe_choice = "Revert safely (keep later edits)"
-			local force_choice = "Force overwrite changed files..."
+			local force_choice = "Force overwrite changed files…"
 			local force_confirm = "Yes, overwrite or delete current files"
 			local prompt = "Revert " .. #pending .. " pending changes?"
 			require("opencode.ui.menu").open({
@@ -462,7 +468,7 @@ function M.register(palette)
 							local source, status = plugin.source or {}, plugin.state or {}
 							local name = plugin.id or source.target or source.path or source.type or "unknown"
 							local version = source.version and (" @" .. source.version) or ""
-							add_line("• " .. name .. version .. " — " .. (status.status or "unknown"))
+							add_line("• " .. name .. version .. " · " .. (status.status or "unknown"))
 							if status.error then add_line("  " .. status.error, "DiagnosticError") end
 						end
 					end

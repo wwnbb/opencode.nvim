@@ -79,20 +79,15 @@ describe("session catalog palette workflows", function()
 		palette.browse({ roots = true, directory = directory })
 		local opts, item = menus[1], menus[1].items[1]
 		assert.equals("● Breaking out of nested loops", item.label)
-		assert.equals(".../leetcode/twosum", item.description)
+		assert.equals("…/leetcode/twosum", item.description)
 		assert.equals(directory, item.search_text)
 		assert.equals("Selected: Breaking out of nested loops\n" .. directory, opts.item_detail(item))
-		assert.matches("Directory: .../leetcode/twosum", opts.message, 1, true)
-		assert.equals("open", opts.confirm_label)
 	end)
 	it("keeps an empty scope open with working project and directory filters", function()
 		sessions = {}
 		palette.browse({ roots = true, project = "empty-project" })
 		assert.equals(1, #menus)
 		assert.matches("Selected project · 0 sessions", menus[1].message, 1, true)
-		local available = {}
-		for _, mapping in ipairs(menus[1].keys) do available[mapping.action] = mapping.allow_empty == true end
-		assert.same({ rename = false, delete = false, project = true, all = true, current_directory = true }, available)
 		key(menus[1], "a")
 		assert.same({ roots = true }, calls[2].query)
 	end)

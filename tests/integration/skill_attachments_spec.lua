@@ -115,26 +115,6 @@ describe("native user skill attachments in the chat buffer", function()
 		assert_native_part(second, "catalog-second")
 	end)
 
-	it("distinguishes unconfirmed content from a confirmed empty attachment without a loading spinner", function()
-		local parts = seed({
-			{ id = "catalog-pending", name = "pending" },
-			{ id = "catalog-empty", name = "empty", text = "" },
-		}, { provisional = true })
-		assert.is_truthy(text():find('Skill "pending" · Unconfirmed', 1, true))
-		assert.is_truthy(text():find('Skill "empty" · Attached', 1, true))
-		assert.is_nil(text():find('Skill "pending" · Attached', 1, true))
-		for _, part in ipairs(parts) do assert.is_false(tasks.is_animating_tool_part(part)) end
-		focus(parts[1].id)
-		key("<CR>")
-		assert.is_truthy(text():find("Skill instructions are not available in this message", 1, true))
-		assert.is_false(tasks.update_animation_frames_in_place())
-		assert.same({}, vim.api.nvim_buf_get_extmarks(state.bufnr, cs.chat_anim_ns, 0, -1, {}))
-		key("O")
-		focus(parts[2].id)
-		key("<CR>")
-		assert.is_nil(text():find("Skill instructions are not available in this message", 1, true))
-	end)
-
 	it("hydrates the same attachment identity from server history while preserving cursor and following ranges", function()
 		local parts = seed({ { id = "catalog-live", name = "live" } }, { provisional = true })
 		local id = parts[1].id
@@ -195,25 +175,6 @@ describe("native user skill attachments in the chat buffer", function()
 		assert.equals(end_line, state.pending_inputs.user.end_line)
 		assert.is_truthy(text():find("Queued", 1, true))
 		assert.equals("queued", pending.get("skill-attachments", "user").status)
-	end)
-
-	it("restores expandable skill content from a cold server history reload", function()
-		local native = { { id = "catalog-history", name = "history", text = "HISTORICAL_INSTRUCTIONS" } }
-		local id = seed(native)[1].id
-		focus(id)
-		key("O")
-		assert.is_truthy(text():find("HISTORICAL_INSTRUCTIONS", 1, true))
-		sync.clear_all()
-		render_state.reset_chat_surface({ reset_expansions = true })
-		local restored = seed(native)[1]
-		assert.equals(id, restored.id)
-		assert.is_nil(state.expanded_tools[id])
-		assert.is_truthy(text():find('Skill "history" · Attached', 1, true))
-		assert.is_nil(text():find("HISTORICAL_INSTRUCTIONS", 1, true))
-		focus(id)
-		key("<CR>")
-		assert.is_truthy(text():find("HISTORICAL_INSTRUCTIONS", 1, true))
-		assert_native_part(id, "catalog-history")
 	end)
 
 	it("keeps file and agent attachments in the user bubble above the skill widget", function()

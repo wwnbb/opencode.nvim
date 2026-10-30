@@ -30,8 +30,9 @@ local function notify_edit_action_error(label, err)
 	vim.notify("Failed to " .. label .. ": " .. (err or "unknown error"), vim.log.levels.ERROR)
 end
 
+-- Only the user's own review replies request renders here; show them without throttling.
 local function schedule_render()
-	render_coordinator.request({ kind = "edit" })
+	render_coordinator.request({ kind = "edit", immediate = true })
 end
 
 ---@param permission_id string

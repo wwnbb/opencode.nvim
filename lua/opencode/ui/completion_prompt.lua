@@ -1,4 +1,5 @@
--- Completion instructions use the composer surfaces without its session or draft state.
+-- Short instructions (completion, explanation follow-ups) use the composer
+-- surfaces without its session or draft state.
 local M = {}
 
 local popups = require("opencode.ui.input.popups")
@@ -7,44 +8,77 @@ local keymaps = require("opencode.util.keymap")
 local NuiLine = require("nui.line")
 local namespace = vim.api.nvim_create_namespace("OpenCodeCompletionPrompt")
 
-function M.open(opts)
-	local config = (require("opencode.state").get_config() or {}).input or {}
-	local state = { visible = true, config = {} }
-	local cursor = vim.api.nvim_win_get_cursor(opts.winid)
-	local anchor = vim.fn.screenpos(opts.winid, cursor[1], cursor[2] + 1)
-	local function placement()
-		local position = vim.fn.screenpos(opts.winid, cursor[1], cursor[2] + 1)
+-- A placement covers `height + 4` rows and `width + 2` columns from its outer
+-- corner: the input with its padding, then the info bar.
+local function surfaces(place)
+	local relative, zindex = place.relative or "editor", place.zindex or 80
+	return {
+		popup = { relative = relative, position = { row = place.row + 1, col = place.col + 1 },
+			size = { width = place.width, height = place.height }, zindex = zindex },
+		info = { relative = relative, position = { row = place.row + place.height + 2, col = place.col + 1 },
+			size = { width = place.width, height = 1 }, zindex = zindex },
+	}
+end
+
+-- Directly below the cursor in `winid`, or above it when there is more room there.
+local function at_cursor(winid)
+	local cursor = vim.api.nvim_win_get_cursor(winid)
+	local anchor = vim.fn.screenpos(winid, cursor[1], cursor[2] + 1)
+	return function(measure)
+		local position = vim.fn.screenpos(winid, cursor[1], cursor[2] + 1)
 		if position.row > 0 then anchor = position end
 		local screen_height = vim.o.lines - vim.o.cmdheight
-		local width = math.max(1, math.min(72, vim.o.columns - 2, vim.api.nvim_win_get_width(opts.winid) - 2))
-		local max_height = math.min(config.max_height or 20, math.max(1, screen_height - 4))
-		state.config.min_height = math.min(config.min_height or 1, max_height)
-		state.config.max_height = max_height
-		local height = state.bufnr and layout.measure_height(state, width) or state.config.min_height
+		local width = math.max(1, math.min(72, vim.o.columns - 2, vim.api.nvim_win_get_width(winid) - 2))
+		local height = measure(width, screen_height - 4)
 		local above = math.max(0, anchor.row - 1)
 		local below = math.max(0, screen_height - anchor.row)
 		local place_below = below >= height + 4 or below >= above
-		state.config.max_height = math.min(max_height, math.max(1, (place_below and below or above) - 4))
-		height = math.min(height, state.config.max_height)
-		-- The shared composer surfaces add four rows of padding and footer.
+		height = measure(width, (place_below and below or above) - 4)
 		local top = place_below and anchor.row or anchor.row - height - 5
-		top = math.max(0, math.min(top, screen_height - height - 4))
-		local col = math.max(1, math.min(anchor.col, vim.o.columns - width - 1))
 		return {
-			popup = { relative = "editor", position = { row = top + 1, col = col },
-				size = { width = width, height = height }, zindex = 80 },
-			info = { relative = "editor", position = { row = top + height + 2, col = col },
-				size = { width = width, height = 1 }, zindex = 80 },
+			row = math.max(0, math.min(top, screen_height - height - 4)),
+			col = math.max(0, math.min(anchor.col - 1, vim.o.columns - width - 2)),
+			width = width, height = height,
 		}
 	end
+end
+
+-- `placement(measure)` runs on every reflow and returns the outer `row`, `col`,
+-- `width` and `height` (from `measure`), with optional `relative` and `zindex`.
+-- Without it the prompt follows the cursor in `winid`.
+---@class OpenCodeComposerPromptOpts
+---@field winid integer Owner window: focus returns there, and closing it cancels the prompt
+---@field title string Info bar label before the model name
+---@field model? table
+---@field text? string Initial text, with the cursor at its end
+---@field placement? fun(measure: fun(width: integer, max_height: integer): integer): table
+---@field can_submit? fun(value: string): boolean Return false to keep the prompt open
+---@field on_submit fun(value: string)
+---@field on_cancel? fun(value: string)
+
+---@param opts OpenCodeComposerPromptOpts
+function M.open(opts)
+	local config = (require("opencode.state").get_config() or {}).input or {}
+	local state = { visible = true, config = {} }
+	local place = opts.placement or at_cursor(opts.winid)
+	local function measure(width, max_height)
+		max_height = math.max(1, math.min(config.max_height or 20, max_height))
+		state.config.min_height = math.min(config.min_height or 1, max_height)
+		state.config.max_height = max_height
+		return state.bufnr and layout.measure_height(state, width) or state.config.min_height
+	end
 	require("opencode.ui.input.info_bar").setup_highlights()
-	local frame = placement()
+	local frame = surfaces(place(measure))
 	state.layout = { current_height = frame.popup.size.height }
 	state.popup, state.info_popup = popups.mount(frame)
 	state.bufnr, state.winid = state.popup.bufnr, state.popup.winid
 	vim.b[state.bufnr].completion = false
 	local group = vim.api.nvim_create_augroup("OpenCodeCompletionPrompt_" .. state.bufnr, { clear = true })
 
+	local function text()
+		if not vim.api.nvim_buf_is_valid(state.bufnr) then return "" end
+		return table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n")
+	end
 	local function close(callback)
 		if not state.visible then return end
 		state.visible = false
@@ -68,11 +102,13 @@ function M.open(opts)
 	end
 	local function cancel()
 		if not state.visible then return end
-		close(opts.on_cancel)
+		local value = text()
+		close(opts.on_cancel and function() opts.on_cancel(value) end)
 	end
 	local function submit()
 		if not state.visible then return end
-		local value = table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n")
+		local value = text()
+		if opts.can_submit and not opts.can_submit(value) then return end
 		close(function() opts.on_submit(value) end)
 	end
 	local map, apply = keymaps.mapper("input", state.bufnr)
@@ -99,25 +135,35 @@ function M.open(opts)
 		vim.api.nvim_buf_clear_namespace(state.info_popup.bufnr, namespace, 0, -1)
 		line:render(state.info_popup.bufnr, namespace, 1)
 	end
-	footer()
+	local function update()
+		if not state.visible or not vim.api.nvim_win_is_valid(opts.winid) then return end
+		local previous_height = state.layout.current_height
+		local next_frame = surfaces(place(measure))
+		state.layout.current_height = next_frame.popup.size.height
+		if not vim.deep_equal(frame, next_frame) then
+			state.popup:update_layout(next_frame.popup)
+			state.info_popup:update_layout(next_frame.info)
+			frame = next_frame
+		end
+		layout.restore_view(state, previous_height)
+		footer()
+	end
 	local reflow_scheduled = false
 	local function reflow()
 		if reflow_scheduled then return end
 		reflow_scheduled = true
 		vim.schedule(function()
 			reflow_scheduled = false
-			if not state.visible or not vim.api.nvim_win_is_valid(opts.winid) then return end
-			local previous_height = state.layout.current_height
-			local next_frame = placement()
-			state.layout.current_height = next_frame.popup.size.height
-			if not vim.deep_equal(frame, next_frame) then
-				state.popup:update_layout(next_frame.popup)
-				state.info_popup:update_layout(next_frame.info)
-				frame = next_frame
-			end
-			layout.restore_view(state, previous_height)
-			footer()
+			update()
 		end)
+	end
+	if opts.text and opts.text ~= "" then
+		local lines = vim.split(opts.text, "\n", { plain = true })
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, lines)
+		vim.api.nvim_win_set_cursor(state.winid, { #lines, #lines[#lines] })
+		update()
+	else
+		footer()
 	end
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		group = group, buffer = state.bufnr, callback = reflow,

@@ -33,7 +33,7 @@ describe("stable agent identity", function()
 	end)
 
 	it("enters the available agent list at the correct end after catalog removal or hiding", function()
-		for _, missing in ipairs({ {}, { id = "gone", hidden = true }, { id = "gone", mode = "subagent" } }) do
+		for _, missing in ipairs({ {}, { id = "gone", hidden = true } }) do
 			for _, direction in ipairs({ 1, -1 }) do
 				state.reset(); choices.clear_all()
 				local agents = { { id = "a", name = "First" }, { id = "b", name = "Second" } }

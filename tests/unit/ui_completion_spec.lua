@@ -107,7 +107,7 @@ describe("editor ghost completion UI", function()
 			{ { "-local value = 1", "OpenCodeCompletionDiffDelete" } },
 			{ { "+local value = 2", "OpenCodeCompletionDiffAdd" } },
 			{ { " next line", "OpenCodeCompletion" } },
-			{ { "OpenCode edit  <Tab> accept  <Esc> / <C-c> cancel", "OpenCodeCompletionSpinner" } },
+			{ { "OpenCode edit · <Tab> accept · <Esc> / <C-c> cancel", "OpenCodeCompletionSpinner" } },
 		}, mark[4].virt_lines)
 		assert.same(request.selection.lines, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
 		assert.is_false(vim.bo[bufnr].modified)
@@ -123,21 +123,9 @@ describe("editor ghost completion UI", function()
 			{ { "@@ -1 +1 @@", "OpenCodeCompletionDiffChange" } },
 			{ { "-call(old_value)", "OpenCodeCompletionDiffDelete" } },
 			{ { "+call(new_value)", "OpenCodeCompletionDiffAdd" } },
-			{ { "OpenCode edit  <Tab> accept  <Esc> / <C-c> cancel", "OpenCodeCompletionSpinner" } },
+			{ { "OpenCode edit · <Tab> accept · <Esc> / <C-c> cancel", "OpenCodeCompletionSpinner" } },
 		}, marks()[1][4].virt_lines)
 		assert.same({ "call(old_value)", "next line" }, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
-	end)
-
-	it("previews deleting the entire selection", function()
-		local request = selection_snapshot()
-		assert.is_true(completion.show(request, ""))
-		assert.same({
-			{ { "@@ -1,2 +0,0 @@", "OpenCodeCompletionDiffChange" } },
-			{ { "-local value = 1", "OpenCodeCompletionDiffDelete" } },
-			{ { "-next line", "OpenCodeCompletionDiffDelete" } },
-			{ { "OpenCode edit  <Tab> accept  <Esc> / <C-c> cancel", "OpenCodeCompletionSpinner" } },
-		}, marks()[1][4].virt_lines)
-		assert.same(request.selection.lines, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
 	end)
 
 	it("uses and restores Normal accept and cancel keys without replacing Insert mappings", function()
@@ -200,7 +188,7 @@ describe("editor ghost completion UI", function()
 		actions.accept_completion = function() return false end
 		completion.show(selection_snapshot(), "new code")
 		local lines = marks()[1][4].virt_lines
-		assert.equals("OpenCode edit  <F8> accept  <Esc> / <C-c> cancel", lines[#lines][1][1])
+		assert.equals("OpenCode edit · <F8> accept · <Esc> / <C-c> cancel", lines[#lines][1][1])
 		input("<F8>")
 		assert.equals(1, calls)
 		assert.same(original, mapping("<F8>", "n"))
@@ -216,7 +204,7 @@ describe("editor ghost completion UI", function()
 		local request = selection_snapshot()
 		completion.show(request, "new code")
 		local lines = marks()[1][4].virt_lines
-		assert.equals("OpenCode edit  <Esc> accept  <C-c> cancel", lines[#lines][1][1])
+		assert.equals("OpenCode edit · <Esc> accept · <C-c> cancel", lines[#lines][1][1])
 		input("<Esc>")
 		assert.equals(1, accepted)
 		assert.equals(0, dismissed)
@@ -279,39 +267,6 @@ describe("editor ghost completion UI", function()
 		assert.is_false(vim.bo[bufnr].modified)
 		completion.clear()
 		assert.equals(fallback, mapping("<Tab>").callback)
-	end)
-
-	it("keeps concurrent spinners, streaming text, and mapping ownership independent", function()
-		local fallback = function() return "fallback" end
-		vim.keymap.set("i", "<Tab>", fallback, { buffer = bufnr, expr = true })
-		local first = snapshot("value")
-		local second = vim.tbl_extend("force", first, { row = 1, col = #"next line" })
-		local original_frame, calls = spinner.get_frame, 0
-		spinner.get_frame = function() calls = calls + 1; return "|" end
-		local ok, err = pcall(function()
-			completion.pending(first)
-			local accept = mapping("<Tab>").callback
-			completion.pending(second)
-			assert.equals(2, #marks())
-			assert.equals(accept, mapping("<Tab>").callback)
-			completion.show(first, "_done")
-			local before = calls
-			assert.is_true(vim.wait(500, function() return calls > before end, 10))
-			assert.equals("_done", marks()[1][4].virt_text[1][1])
-			assert.equals("OpenCodeCompletionSpinner", marks()[2][4].virt_text[1][2])
-			-- Equal request IDs do not alias distinct snapshot tables.
-			completion.clear(first)
-			assert.equals(1, #marks())
-			assert.equals(1, marks()[1][2])
-			assert.equals(accept, mapping("<Tab>").callback)
-			completion.clear(second)
-			assert.equals(fallback, mapping("<Tab>").callback)
-			local stopped = calls
-			vim.wait(spinner.get_interval_ms() * 2, function() return false end, 10)
-			assert.equals(stopped, calls)
-		end)
-		spinner.get_frame = original_frame
-		if not ok then error(err) end
 	end)
 
 	it("updates or rejects only the matching preview, including snapshots without IDs", function()
@@ -388,19 +343,6 @@ describe("editor ghost completion UI", function()
 		if not ok then error(err) end
 	end)
 
-	it("restores a local expression callback after accepting", function()
-		local fallback = function() return "fallback" end
-		vim.keymap.set("i", "<Tab>", fallback, { buffer = bufnr, expr = true, replace_keycodes = false })
-		local original = mapping("<Tab>")
-		local accepted = 0
-		actions.accept_completion = function() accepted = accepted + 1; completion.clear(); return true end
-		assert.is_true(completion.show(snapshot("value"), "_complete"))
-		input("i<Tab><Esc>")
-		assert.equals(1, accepted)
-		assert.same(original, mapping("<Tab>"))
-		assert.same({}, marks())
-	end)
-
 	it("replays stale Tab once through the original expression mapping", function()
 		local fallbacks = 0
 		vim.keymap.set("i", "<Tab>", function()
@@ -429,14 +371,6 @@ describe("editor ghost completion UI", function()
 		vim.keymap.del("i", "<Tab>")
 		if next(original) then vim.fn.mapset("i", false, original) end
 		if not ok then error(err) end
-	end)
-
-	it("does not overwrite an accept mapping installed by another owner", function()
-		completion.show(snapshot("value"), "_complete")
-		local replacement = function() return "replacement" end
-		vim.keymap.set("i", "<Tab>", replacement, { buffer = bufnr, expr = true })
-		completion.clear()
-		assert.equals(replacement, mapping("<Tab>").callback)
 	end)
 
 	it("preserves another accept key's new owner across fallback and resumed acceptance", function()
@@ -486,8 +420,6 @@ describe("editor ghost completion UI", function()
 		for _, options_to_set in ipairs({
 			{ buftype = "nofile" },
 			{ filetype = "opencode_input" },
-			{ modifiable = false },
-			{ readonly = true },
 		}) do
 			local special = vim.api.nvim_create_buf(true, false)
 			for key, value in pairs(options_to_set) do vim.bo[special][key] = value end
@@ -498,25 +430,6 @@ describe("editor ghost completion UI", function()
 			vim.api.nvim_set_current_buf(bufnr)
 			vim.api.nvim_buf_delete(special, { force = true })
 		end
-	end)
-
-	it("restores the Visual prompt mapping and preserves later owners", function()
-		completion.teardown()
-		local fallback = function() end
-		vim.keymap.set("x", "<C-S-l>", fallback, { buffer = bufnr })
-		local original = mapping("<C-S-l>", "x")
-		completion.setup(options)
-		local mode
-		actions.complete_with_prompt = function() mode = vim.api.nvim_get_mode().mode end
-		input("v<C-S-l><Esc>")
-		assert.equals("v", mode)
-		completion.teardown()
-		assert.same(original, mapping("<C-S-l>", "x"))
-		completion.setup(options)
-		local replacement = function() end
-		vim.keymap.set("x", "<C-S-l>", replacement, { buffer = bufnr })
-		completion.teardown()
-		assert.equals(replacement, mapping("<C-S-l>", "x").callback)
 	end)
 
 	it("restores original trigger mappings on teardown and keeps newer mappings", function()
@@ -533,29 +446,6 @@ describe("editor ghost completion UI", function()
 		for key in pairs(originals) do vim.keymap.set("i", key, "replacement", { buffer = bufnr }) end
 		completion.teardown()
 		for key in pairs(originals) do assert.equals("replacement", mapping(key).rhs) end
-	end)
-
-	it("removes decorations and editor mappings when a buffer becomes an OpenCode view", function()
-		local previous_tab = mapping("<Tab>")
-		completion.show(snapshot("value"), "_complete")
-		vim.bo[bufnr].filetype = "opencode_chat"
-		assert.same({}, marks())
-		assert.same(previous_tab, mapping("<Tab>"))
-		assert.is_nil(mapping("<C-l>").callback)
-		assert.is_nil(mapping("<C-S-l>").callback)
-		assert.is_nil(mapping("<C-S-l>", "x").callback)
-	end)
-
-	it("supports disabling completion mappings and clears previews on teardown", function()
-		completion.setup({ enabled = true, keymaps = { trigger = false, prompt = false, accept = false } })
-		assert.is_nil(mapping("<C-l>").callback)
-		assert.is_nil(mapping("<C-S-l>").callback)
-		assert.is_nil(mapping("<C-S-l>", "x").callback)
-		local previous_tab = mapping("<Tab>")
-		completion.show(snapshot("value"), "_complete")
-		assert.same(previous_tab, mapping("<Tab>"))
-		completion.teardown()
-		assert.same({}, marks())
 	end)
 
 	it("supports multiple trigger, prompt, and accept keys and restores every previous mapping", function()

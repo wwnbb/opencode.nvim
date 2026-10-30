@@ -23,7 +23,7 @@ lua/opencode/sync/task_children.lua  → Task-child indexing, provenance and own
 lua/opencode/actions.lua             → Internal action boundary (UI modules call this)
 lua/opencode/session.lua             → Action boundary for active-session and global-status mutations
 lua/opencode/session/*.lua           → Session submodules (attention, catalog, epoch, family, focus, lock, navigation, pending, selection, skills, status, tabs, view, views)
-lua/opencode/session/views.lua       → Core's only entry to the chat view registry (live views, root session); guarded by architecture_spec
+lua/opencode/session/views.lua       → Core's only entry to the chat view registry (live views, root session, workspace layouts); guarded by architecture_spec
 lua/opencode/selectors.lua           → Read-only derived state queries
 lua/opencode/local.lua               → Agent/model/variant selection (persistent)
 lua/opencode/settings.lua            → Local preferences; one file owner holds global and directory scopes
@@ -46,7 +46,7 @@ lua/opencode/review.lua              → Bundled diff review via the official pl
 lua/opencode/stats.lua               → Adapt native session statistics for the /stats view
 lua/opencode/vcs.lua                 → Pure VCS patch validation and paired-hunk projection
 lua/opencode/completion/init.lua     → Sessionless editor completion lifecycle, cancellation, acceptance
-lua/opencode/completion/context.lua  → Bounded context from current and related loaded buffers
+lua/opencode/completion/context.lua  → Bounded context from current and related loaded buffers, plus overlapping diagnostics
 lua/opencode/completion/profile.lua  → Model validation and managed-server variant overlay
 lua/opencode/completion/selection.lua → Exact, unsaved Visual ranges for instruction-driven replacement
 lua/opencode/explanation/init.lua    → One Visual selection, one streamed explanation, one temporary popup
@@ -176,7 +176,7 @@ lua/opencode/ui/vcs.lua              → Read-only VCS/turn patches, independent
 lua/opencode/ui/timeline.lua         → Timeline picker and actions for a historical user turn
 lua/opencode/ui/history_search.lua   → Prompt history search menu (grep/ripgrep)
 lua/opencode/ui/completion.lua       → Ghost text, spinner, and temporary acceptance mappings
-lua/opencode/ui/completion_prompt.lua → Completion instruction prompt on composer surfaces
+lua/opencode/ui/completion_prompt.lua → Short instruction prompt on composer surfaces (completion, explanation follow-ups)
 lua/opencode/ui/explanation.lua      → Temporary read-only view for a selection explanation
 lua/opencode/ui/btw.lua              → Temporary view for a completed /btw answer
 lua/opencode/ui/export.lua           → Session export workflow
@@ -204,8 +204,9 @@ lua/opencode/provider/auth.lua       → Provider integration attempt orchestrat
 lua/opencode/util/session.lua        → Session title helpers
 lua/opencode/util/cwd.lua            → Resolve the user's working directory for new sessions and scoped requests
 lua/opencode/util/path.lua           → Server path checks without resolving against the local cwd
-lua/opencode/util/locale.lua         → Duration/titlecase formatting
-lua/opencode/util/text.lua           → Text utilities
+lua/opencode/util/locale.lua         → Duration, compact number and titlecase formatting
+lua/opencode/util/text.lua           → Text utilities (normalize_path: the one path display rule)
+lua/opencode/util/tool_names.lua     → Display names for tool identifiers (one spelling per tool)
 lua/opencode/util/schedule.lua       → vim.schedule wrapper helpers
 lua/opencode/util/keymap.lua         → Temporary buffer mappings that restore the previous owner
 lua/opencode/util/memo.lua           → Shared budget for recomputable render/memo data
@@ -333,7 +334,9 @@ Neovim `:OpenCode*` commands remain entry points in `commands.lua`. Server custo
 
 - **Always use `render.add_panel_line()`** for tool/widget output blocks
 - **Always use `render.add_panel_raw_line()`** for pre-formatted text
-- **Prefix convention**: `"▏  "` for content, `"▏"` for blank lines
+- **Families**: every row is an interactive panel, a shell panel, a compact row or a container; `.opencode/skills/opencode-nvim-widgets/SKILL.md` ("Widget Families", "Shared Vocabulary") defines each layout
+- **Prefix convention**: panels use `"▏  "` for content and `"▏"` for blank lines; compact rows start at column 1 with 5-space sub-lines and a `"   │ "` box when expanded
+- **Vocabulary**: `" · "` between header parts, `…`, braille spinner, `locale.duration`, `locale.compact_number`, `text.normalize_path`, `tool_names.display_name`, `keymap.hint()` for every on-screen key hint
 - **Width**: Use `render.get_chat_text_width()` for line wrapping
 - **Highlights**: Use extmarks with `chat_hl_ns` namespace
 

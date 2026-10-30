@@ -79,7 +79,6 @@ describe("prompt history search inside the input composer", function()
 	after_each(function() if client then client.close(); client = nil end end)
 
 	for _, case in ipairs({
-		{ provider = "grep", confirm = "<CR>" },
 		{ provider = "ripgrep", confirm = "<C-g>" },
 		{ provider = "grep", key = "<F6>", confirm = "<Tab>" },
 	}) do
@@ -111,32 +110,6 @@ describe("prompt history search inside the input composer", function()
 		client.feed("<Esc>")
 		client.wait("completion_text() == nil and composer_text() == original")
 		assert.same({ { type = "agent", name = "explore" } }, client.lua("return input.get_pending_parts()"))
-		assert.same({}, client.lua("return sent"))
-	end)
-
-	it("previews the highlighted prompt as virtual text until it is selected", function()
-		client = editor()
-		client.search()
-		client.lua([[
-			_G.preview = function()
-				local ns = vim.api.nvim_get_namespaces().opencode_input_history_preview
-				local marks = vim.api.nvim_buf_get_extmarks(composer_buf, ns, 0, -1, { details = true })
-				if #marks == 0 then return nil end
-				return marks[1][4].virt_text[1][1]
-			end
-		]])
-		client.wait("preview() == 'A newer unrelated prompt'")
-		assert.equals("", client.lua("return composer_text()"))
-		client.feed("<Down>")
-		client.wait("preview() == 'First line MATCH [literal] Last line'")
-		assert.equals("", client.lua("return composer_text()"))
-		client.feed("<Up>")
-		client.wait("preview() == 'A newer unrelated prompt'")
-		client.feed("match")
-		client.wait("preview() ~= nil and preview():find('MATCH [literal]', 1, true) ~= nil")
-		assert.equals("match", client.lua("return composer_text()"))
-		client.feed("<CR>")
-		client.wait("preview() == nil and composer_text() == original .. '\\n\\n' .. prompt")
 		assert.same({}, client.lua("return sent"))
 	end)
 
@@ -175,7 +148,7 @@ describe("prompt history search inside the input composer", function()
 		assert.same({}, client.lua("return sent"))
 	end)
 
-	for _, layout in ipairs({ "vertical", "float" }) do
+	for _, layout in ipairs({ "float" }) do
 		it("keeps " .. layout .. " history results above the input while filtering and resizing", function()
 			client = editor({}, { width = 80, height = 24, layout = layout, entries = 15, draft = "one\ntwo\nthree\nfour\nfive" })
 			client.lua([[

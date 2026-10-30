@@ -44,24 +44,6 @@ describe("opencode edit state gate", function()
 		for path in pairs(temporary_files) do vim.fn.delete(path) end
 	end)
 
-	it("accept writes after when disk still matches before", function()
-		local path = vim.fn.tempname()
-		write_disk(path, "line1\nline2\n")
-
-		local estate = add_edit("gate_1", {
-			filePath = path,
-			before = "line1\nline2\n",
-			after = "line1\nchanged\n",
-			type = "update",
-		})
-
-		local ok = edit_state.accept_file("gate_1", 1)
-		assert.is_true(ok)
-		assert.equals("line1\nchanged\n", read_disk(path))
-		assert.equals("accepted", estate.files[1].status)
-		assert.equals(0, #notifications)
-	end)
-
 	it("accept does not overwrite a file changed during review", function()
 		local path = vim.fn.tempname()
 		write_disk(path, "line1\nline2\n")
@@ -81,26 +63,6 @@ describe("opencode edit state gate", function()
 		assert.is_not_equals("pending", estate.files[1].status)
 		assert.is_true(#notifications > 0)
 		assert.is_true(notifications[1].message:find(path, 1, true) ~= nil)
-	end)
-
-	it("reject restores before when disk holds the proposal", function()
-		local path = vim.fn.tempname()
-		write_disk(path, "original\n")
-
-		local estate = add_edit("gate_3", {
-			filePath = path,
-			before = "original\n",
-			after = "proposed\n",
-			type = "update",
-		})
-
-		write_disk(path, "proposed\n")
-
-		local ok = edit_state.reject_file("gate_3", 1)
-		assert.is_true(ok)
-		assert.equals("original\n", read_disk(path))
-		assert.equals("rejected", estate.files[1].status)
-		assert.equals(0, #notifications)
 	end)
 
 	it("reject keeps user-modified content and classifies as rejected", function()

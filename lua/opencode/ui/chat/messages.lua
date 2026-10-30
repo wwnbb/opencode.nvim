@@ -49,7 +49,7 @@ function M.clear()
 	state.local_notices = {}
 	state.full_history_sessions = {}
 	render_state.reset_chat_surface({ reset_expansions = true })
-	state.last_render_time = 0
+	state.last_render_time, state.render_durations = 0, {}
 	state.render_scheduled = false
 
 	chat_tasks.stop_task_animation_timer()
@@ -72,7 +72,7 @@ function M.clear_session_view(session_id)
 	end, state.local_notices or {})
 
 	render_state.reset_chat_surface({ reset_expansions = true })
-	state.last_render_time = 0
+	state.last_render_time, state.render_durations = 0, {}
 	state.render_scheduled = false
 
 	schedule_render({ force = true })

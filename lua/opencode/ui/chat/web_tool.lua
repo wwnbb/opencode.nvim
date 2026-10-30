@@ -10,9 +10,10 @@ local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
 local style = cs.module(view, require("opencode.ui.chat.tool_style"))
 local panel = style.panel
 
+local tool_names = require("opencode.util.tool_names")
 local definitions = {
-	webfetch = { name = "WebFetch", active = "Fetching", completed = "Fetched", target = "url", waiting = "Waiting for URL" },
-	websearch = { name = "WebSearch", active = "Searching", completed = "Searched", target = "query", waiting = "Waiting for query" },
+	webfetch = { name = tool_names.display_name("webfetch"), target = "url", waiting = "Waiting for URL" },
+	websearch = { name = tool_names.display_name("websearch"), target = "query", waiting = "Waiting for query" },
 }
 
 local function stringify(value)
@@ -37,7 +38,8 @@ local function shorten(value, width)
 	return text_util.truncate(value, width, "…")
 end
 
-local function status_label(ctx, definition, failed, error_body)
+-- A status word only when the call did not simply complete.
+local function status_label(ctx, failed, error_body)
 	if failed then
 		-- Both Effect's native StatusCode error and older webfetch errors.
 		local code = error_body:match("non 2xx status code %((%d%d%d)%s")
@@ -49,12 +51,12 @@ local function status_label(ctx, definition, failed, error_body)
 		end
 		return "Failed"
 	end
-	if ctx.working then return ctx.status == "pending" and "Pending" or definition.active end
-	return definition.completed
+	if ctx.working then return ctx.status == "pending" and "Pending" or "Running" end
+	return nil
 end
 
 local function add_header(result, definition, target, label, ctx, expanded, grouped, failed)
-	local suffix = " · " .. label
+	local suffix = label and (" · " .. label) or ""
 	local elapsed = not ctx.working and tool_panel.duration(ctx.state.time) or nil
 	local header = tool_panel.fit_header({
 		prefix = (expanded and "↘ " or "→ ") .. definition.name .. " ",
@@ -98,10 +100,14 @@ function M.render(part, expanded, opts)
 	local format = part.tool == "webfetch" and type(input.format) == "string" and input.format or "markdown"
 	local error_body = ctx.error ~= false and text_util.trim_edge_newlines(text(ctx.error)) or ""
 	local failed = tool_group.failed(part)
-	local label = status_label(ctx, definition, failed, error_body)
+	local label = status_label(ctx, failed, error_body)
 	local result = panel.result()
 	add_header(result, definition, target, label, ctx, expanded, (opts or {}).grouped, failed)
-	if not expanded then return result end
+	if not expanded then
+		-- The header already names the failure; a sub-line adds only a different message.
+		if failed and error_body ~= "" and error_body ~= label then style.add_error_lines(result, error_body) end
+		return result
+	end
 
 	style.add_border(result)
 	add_request(result, part, target, input, format)
@@ -118,7 +124,7 @@ function M.render(part, expanded, opts)
 		if body ~= "" then panel.add_blank(result) end
 		tool_panel.add_raw_body(result, error_body, { panel = panel, prefix = style.prefix, hl_group = style.body_error_hl })
 	elseif body == "" then
-		panel.add_line(result, not ctx.working and not failed and "Empty response" or label,
+		panel.add_line(result, not ctx.working and not failed and "Empty response" or label or "",
 			failed and style.body_error_hl or style.border_hl)
 	end
 	style.add_border(result, true)

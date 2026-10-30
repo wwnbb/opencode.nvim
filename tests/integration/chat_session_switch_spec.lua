@@ -28,25 +28,14 @@ describe("chat session switch reset", function()
 		app.reset(); sync.clear_all()
 	end)
 
-	it("keeps the stack prepared by family navigation on the default view", function()
-		view.session_stack = { { id = "switch-root", name = "switch-root", runtime = true } }
-		actions.set_view_session(view, "switch-mid", "switch-mid", { reason = "family_navigation", preserve_cache = true })
-		settle()
-		assert.equals("switch-mid", app.get_session().id)
-		assert.same({ { id = "switch-root", name = "switch-root", runtime = true } }, view.session_stack)
-	end)
-
-	it("keeps the stack prepared by child navigation on the default view", function()
-		view.session_stack = { { id = "switch-root", name = "switch-root", runtime = true } }
-		actions.set_view_session(view, "switch-mid", "switch-mid", { reason = "child_navigation", preserve_cache = true })
-		settle()
-		assert.same({ { id = "switch-root", name = "switch-root", runtime = true } }, view.session_stack)
-	end)
-
-	it("clears the stack for an ordinary switch on the default view", function()
-		view.session_stack = { { id = "switch-root", name = "switch-root", runtime = true } }
-		actions.set_view_session(view, "switch-mid", "switch-mid", { reason = "session_switch" })
-		settle()
-		assert.same({}, view.session_stack)
-	end)
+	for _, case in ipairs({ { "family_navigation", true }, { "child_navigation", true }, { "session_switch", false } }) do
+		it((case[2] and "keeps" or "clears") .. " the default view's stack for " .. case[1], function()
+			local stack = { { id = "switch-root", name = "switch-root", runtime = true } }
+			view.session_stack = vim.deepcopy(stack)
+			actions.set_view_session(view, "switch-mid", "switch-mid", { reason = case[1], preserve_cache = case[2] })
+			settle()
+			assert.equals("switch-mid", app.get_session().id)
+			assert.same(case[2] and stack or {}, view.session_stack)
+		end)
+	end
 end)

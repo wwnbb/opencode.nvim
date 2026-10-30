@@ -121,13 +121,20 @@ local function suspend(save_tree, preserve_external_input)
 			if err then error(err, 0) end
 		end
 	end
+	-- A pane whose window now shows a file (:edit, <C-o>) leaves the layout as
+	-- focus_view would detach it; the snapshot keeps the file. A member missing
+	-- from the snapshot would otherwise stay suspended in a shown layout.
+	for _, view in ipairs(members(active)) do chat().for_view(view).detach_replaced_window() end
 	if save_tree ~= false and not active.incomplete then save_layout(active) end
 	local keep
 	-- Reuse a normal pane: even a valid layout may have no room for an extra anchor.
+	-- The next layout replaces its buffer, so prefer one without 'winfixbuf'; a
+	-- layout whose only pane is locked still refuses the switch with E1513.
 	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(cs.workspace.tabpage)) do
-		if vim.api.nvim_win_get_config(win).relative == "" and vim.fn.getwininfo(win)[1].loclist == 0 then
+		if vim.api.nvim_win_get_config(win).relative == "" and vim.fn.getwininfo(win)[1].loclist == 0
+			and (not keep or vim.wo[keep].winfixbuf) then
 			keep = win
-			break
+			if not vim.wo[win].winfixbuf then break end
 		end
 	end
 	assert(keep, "Could not retain a workspace anchor")
@@ -163,6 +170,15 @@ local function preserve_buffer(win, run)
 	end)
 	if vim.api.nvim_buf_is_valid(buf) then vim.bo[buf].bufhidden = hidden end
 	if not ok then error(err, 0) end
+end
+
+---Delete the empty buffer `tabnew` leaves behind once its window shows another one.
+function M.discard_placeholder(buf)
+	if buf and vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf) == "" and vim.bo[buf].buftype == ""
+		and not vim.bo[buf].modified and #vim.fn.win_findbuf(buf) == 0
+		and vim.api.nvim_buf_line_count(buf) == 1 and vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == "" then
+		pcall(vim.api.nvim_buf_delete, buf, {})
+	end
 end
 
 local function restore_directory(tree, win)
@@ -296,10 +312,16 @@ local function show(layout)
 	layout.incomplete = nil
 end
 
+-- Window hops while switching (tabnew, anchor swaps, per-pane focus) must not
+-- become the editor source for @this and automatic context.
+local function quietly(run)
+	return function() return require("opencode.context").preserve_source(run) end
+end
+
 local function with_switching(run)
 	local switching = cs.workspace.switching
 	cs.workspace.switching = true
-	local ok, err = xpcall(run, debug.traceback)
+	local ok, err = xpcall(quietly(run), debug.traceback)
 	cs.workspace.switching = switching
 	if not ok then error(err, 0) end
 end
@@ -308,13 +330,13 @@ local function transition(run)
 	local previous = active
 	local switching = cs.workspace.switching
 	cs.workspace.switching = true
-	local ok, err = xpcall(run, debug.traceback)
+	local ok, err = xpcall(quietly(run), debug.traceback)
 	if not ok and previous and (active ~= previous or previous.incomplete) then
-		local restored, restore_error = xpcall(function()
+		local restored, restore_error = xpcall(quietly(function()
 			-- A partial restore must never replace either saved layout tree.
 			suspend(false)
 			show(previous)
-		end, debug.traceback)
+		end), debug.traceback)
 		if not restored then err = err .. "\nCould not restore previous layout: " .. restore_error end
 	end
 	cs.workspace.switching = switching
@@ -403,6 +425,7 @@ function M.resume()
 	end
 	local editor = vim.api.nvim_get_current_win()
 	cs.workspace.return_winid = editor
+	local placeholder
 	local ok, err = pcall(with_switching, function()
 		local previous = vim.api.nvim_list_tabpages()
 		local created, create_error = pcall(vim.cmd, "tabnew")
@@ -410,6 +433,7 @@ function M.resume()
 		if #added == 1 then
 			cs.workspace.tabpage = added[1]
 			cs.workspace.anchor = vim.api.nvim_tabpage_get_win(added[1])
+			placeholder = vim.api.nvim_win_get_buf(cs.workspace.anchor)
 			parked = false
 		end
 		if not created then error(create_error, 0) end
@@ -420,6 +444,7 @@ function M.resume()
 		bar().update()
 		show(active)
 	end)
+	M.discard_placeholder(placeholder)
 	if not ok then
 		local tab = cs.workspace.tabpage
 		local restored, restore_error = pcall(with_switching, function()
@@ -643,7 +668,12 @@ function M.close_current()
 	end
 	local ids = closing.closing_ids or {}
 	closing.closing_ids = ids
+	local function root_id(view)
+		local root = (view.session_stack or {})[1]
+		return root and root.id or cs.session(view).id
+	end
 	local ok, err = pcall(with_switching, function()
+		local before = members(closing)
 		-- Prepare the replacement while the closing views can still be restored intact.
 		if not parked then
 			local prepared, prepare_error = transition(function()
@@ -652,9 +682,13 @@ function M.close_current()
 			end)
 			if not prepared then error(prepare_error, 0) end
 		end
+		-- suspend() detached any pane whose window showed a file; it closes with its layout.
+		for _, view in ipairs(before) do
+			local id = view.workspace_id ~= closing.id and root_id(view)
+			if id then ids[id] = true end
+		end
 		for _, view in ipairs(members(closing)) do
-			local root = (view.session_stack or {})[1]
-			local id = root and root.id or cs.session(view).id
+			local id = root_id(view)
 			chat().retire_view(view)
 			if id then ids[id] = true end
 		end

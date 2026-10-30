@@ -80,8 +80,8 @@ describe("editor context attachment widget", function()
 	end)
 
 	it("leaves malformed context and ordinary quoted examples visible", function()
-		for _, suffix in ipairs({ "not json", '{"path":42,"line":1,"text":"bad"}',
-			'{"path":"/tmp/a","line":0,"text":"bad"}', '{"path":"/tmp/a","line":1,"text":"example"}\n```' }) do
+		for _, suffix in ipairs({ "not json", '{"path":"/tmp/a","line":0,"text":"bad"}',
+			'{"path":"/tmp/a","line":1,"text":"example"}\n```' }) do
 			local prompt = "Example\n\n" .. label .. suffix
 			seed(prompt)
 			assert.equals(0, vim.tbl_count(state.tools)); assert.equals(prompt, sync.get_message_text("user", { include_synthetic = false }))

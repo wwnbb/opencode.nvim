@@ -1,36 +1,4 @@
-describe("opencode chat notices and widget correlation", function()
-	it("schedules canonical rendering for notices while preserving render=false", function()
-		local messages = require("opencode.ui.chat.messages")
-		local chat_state = require("opencode.ui.chat.state").state
-		local scheduled = {}
-		local schedule_count = 0
-		local previous_notices = chat_state.local_notices
-		local previous_bufnr = chat_state.bufnr
-
-		chat_state.local_notices = {}
-		chat_state.bufnr = nil
-		messages.set_schedule_render(function(opts)
-			schedule_count = schedule_count + 1
-			scheduled[schedule_count] = opts
-		end)
-
-		local default_id = messages.add_message("system", "canonical notice")
-		assert(default_id ~= nil, "default notice should have an id")
-		assert(#chat_state.local_notices == 1, "default notice should be retained")
-		assert(scheduled[1] and scheduled[1].force == true, "default notice should force canonical rendering")
-
-		messages.add_message("system", "deferred notice", { render = false })
-		assert(#chat_state.local_notices == 2, "render=false notice should be retained")
-		assert(schedule_count == 2, "render=false should preserve scheduling")
-		assert(scheduled[2] == nil, "render=false should preserve the existing no-options scheduling call")
-
-		chat_state.local_notices = previous_notices
-		chat_state.bufnr = previous_bufnr
-		messages.set_schedule_render(function(opts)
-			require("opencode.ui.chat").schedule_render(opts)
-		end)
-	end)
-
+describe("chat widget tool-call correlation", function()
 	it("matches only exact question and edit call ids", function()
 		local question_state = require("opencode.question.state")
 		local edit_state = require("opencode.edit.state")

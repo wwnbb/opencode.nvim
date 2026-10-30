@@ -306,7 +306,10 @@ local function render_skill(name, parsed, metadata, expanded, opts)
 	local working, failed, error_body = opts.working, opts.failed, opts.error_body or ""
 	local result = panel.result()
 	add_header(result, name, expanded, opts)
-	if not expanded then return result end
+	if not expanded then
+		if failed then style.add_error_lines(result, error_body, "Skill failed") end
+		return result
+	end
 
 	style.add_border(result)
 	add_details(result, name, parsed, metadata, opts.source_only)

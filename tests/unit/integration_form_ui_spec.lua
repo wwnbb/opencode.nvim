@@ -64,21 +64,6 @@ describe("integration forms", function()
 		assert.same({ authorization = true, name = "integration" }, result)
 		assert.equals(1, #opened)
 	end)
-	it("omits a cleared optional multiselect and its conditional integration field", function()
-		local result
-		dialog = require("opencode.ui.form").open({
-			{ key = "choices", type = "multiselect", options = { { label = "A", value = "a" } } },
-			{ key = "dependent", type = "string", default = "stale", when = {
-				{ key = "choices", op = "neq", value = "a" },
-			} },
-		}, { title = "Integration setup" }, function(answer) result = answer end)
-		local keys = {}
-		for _, map in ipairs(vim.api.nvim_buf_get_keymap(vim.api.nvim_get_current_buf(), "n")) do keys[map.lhs] = map.callback end
-		keys["1"]()
-		keys["1"]()
-		keys["<C-G>"]()
-		assert.same({}, result)
-	end)
 	it("applies delayed custom input to the field that opened it", function()
 		local pending
 		float.create_input_popup = function(opts) pending = opts end

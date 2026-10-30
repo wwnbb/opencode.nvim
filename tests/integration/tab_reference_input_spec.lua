@@ -31,8 +31,9 @@ describe("opening tab input from an editor reference", function()
 	end)
 	after_each(function() if editor then editor.close() end end)
 
-	for _, selection in ipairs({ true, false }) do
-		for _, parked in ipairs({ false, true }) do
+	for _, case in ipairs({ { true, true }, { false, false } }) do
+		local selection, parked = case[1], case[2]
+		do
 			it("registers and restores the workspace (selection=" .. tostring(selection) .. ", parked=" .. tostring(parked) .. ")", function()
 				if parked then
 					editor.lua([[

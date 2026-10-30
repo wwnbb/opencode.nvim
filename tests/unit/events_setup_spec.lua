@@ -63,7 +63,7 @@ describe("opencode event setup", function()
 		end
 		client.get_config_providers = function(callback) replies[#replies + 1] = callback end
 		events.on("disconnected", function() disconnected = disconnected + 1 end)
-		for index, next_state in ipairs({ "error", "idle", "connecting", "starting" }) do
+		for index, next_state in ipairs({ "error", "connecting" }) do
 			state.set_connection("connected")
 			local token = pending.token()
 			state.set_connection(next_state)

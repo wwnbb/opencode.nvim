@@ -13,7 +13,8 @@ M.HEADER_WIDTH = 50
 ---@field file_ranges table[]|nil
 ---@field option_count number|nil Question widgets: options in the current question
 ---@field custom_interactive_line number|nil Question widgets: custom-answer row
----@field attached boolean|nil Permission widgets: a status line continuing the tool row above
+---@field attached boolean|nil Permission widgets: continues the panel of the tool row above
+---@field selected_line number|nil Row of the selected option or file; focus lands there
 
 ---@param icon string
 ---@param title string
@@ -114,15 +115,15 @@ function M.append_options(result, labels, selected, marker, style)
 	return option_lines, option_end_lines
 end
 
----The "<numbers> select" and "<prev> / <next> move" hint parts for chat widgets.
+---The "<numbers> select" and "<prev> / <next> move" key hint items for chat widgets.
 ---@param option_count integer
 ---@param keys? table Chat keymap configuration
----@return string select_part
----@return string move_part
+---@return OpenCodeKeyHintItem select_item
+---@return OpenCodeKeyHintItem move_item
 function M.selection_hint(option_count, keys)
 	local keymaps = require("opencode.util.keymap")
-	return keymaps.number_labels("chat", 1, option_count, keys) .. " select",
-		keymaps.label("chat", "widget_prev", keys) .. " / " .. keymaps.label("chat", "widget_next", keys) .. " move"
+	return { keymaps.number_labels("chat", 1, option_count, keys), "select" },
+		{ keymaps.label("chat", "widget_prev", keys) .. " / " .. keymaps.label("chat", "widget_next", keys), "move" }
 end
 
 ---@param opts? table
@@ -164,6 +165,9 @@ function M.get_focus_offset(meta)
 		return nil
 	end
 
+	if type(meta.selected_line) == "number" then
+		return meta.selected_line
+	end
 	if type(meta.first_interactive_line) ~= "number" then
 		return nil
 	end

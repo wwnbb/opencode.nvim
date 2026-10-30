@@ -81,7 +81,6 @@ M.clear_animation_extmarks = widget_support.clear_animation_extmarks
 
 -- ─── Tool labels (facade — implementation in tool_labels.lua) ────────────────
 
-M.format_tool_line = tool_labels.format_tool_line
 
 -- ─── Child session resolution (facade — implementation in task_children.lua) ──
 
@@ -151,24 +150,32 @@ local function scope_task_nodes(nodes, prefix, toggle_id)
 	return scoped
 end
 
+local TASK_MUTED_HL, TASK_TEXT_HL, TASK_ERROR_HL = "OpenCodeTaskMuted", "OpenCodeTaskText", "OpenCodeTaskError"
+require("opencode.ui.highlights").register("opencode.ui.chat.tasks", function()
+	vim.api.nvim_set_hl(0, TASK_MUTED_HL, { default = true, link = "Comment" })
+	vim.api.nvim_set_hl(0, TASK_TEXT_HL, { default = true, link = "Normal" })
+	vim.api.nvim_set_hl(0, TASK_ERROR_HL, { default = true, link = "DiagnosticError" })
+end)
+
 -- Render a task tool part as a compact TUI-style subagent summary.
 --
 -- Layout (collapsed, running):
---   ⠋ Explore Task — Inventory user commands
---     ↳ Grep nvim_create_user_command
+--   ⠋ Explore Task · Inventory user commands
+--     ↳ Grep "nvim_create_user_command" · 1 tool call
 --
 -- Layout (collapsed, completed):
---   ✓ Explore Task — Inventory user commands
---     └ 1 toolcall · 1.2s
+--   ✓ Explore Task · Inventory user commands
+--     ↳ 1 tool call · 1.2s
 --
 -- Layout (expanded, after O):
---   ✓ Explore Task — Inventory user commands
---     └ 1 toolcall · 1.2s
+--   ✓ Explore Task · Inventory user commands
+--     ↳ 1 tool call · 1.2s
 --
 --     >> <first line of child user message>
 --
---     ↳ Grep nvim_create_user_command
+--     ↳ Grep "nvim_create_user_command"
 --
+-- Every task ends with one blank row, like the other rows.
 function M.render_task_tool(tool_part, expanded)
 	tool_part = M.resolve_tool_part(tool_part)
 	if type(tool_part) ~= "table" then
@@ -252,7 +259,7 @@ function M.render_task_tool(tool_part, expanded)
 		add_spans_line({
 			{ text = icon .. " ", hl_group = icon_hl },
 			{ text = agent_label, hl_group = agent_hl },
-			{ text = " Task – " .. desc, hl_group = "Comment" },
+			{ text = " Task · " .. desc, hl_group = TASK_MUTED_HL },
 		})
 	end
 
@@ -260,26 +267,27 @@ function M.render_task_tool(tool_part, expanded)
 		local first = label:match("^%S+") or label
 		local rest = label:sub(#first + 1)
 		add_spans_line({
-			{ text = "  ↳ ", hl_group = "Comment" },
-			{ text = first, hl_group = "Normal" },
-			{ text = rest, hl_group = "Normal" },
-			{ text = suffix or "", hl_group = "Comment" },
+			{ text = "  ↳ ", hl_group = TASK_MUTED_HL },
+			{ text = first, hl_group = TASK_TEXT_HL },
+			{ text = rest, hl_group = TASK_TEXT_HL },
+			{ text = suffix or "", hl_group = TASK_MUTED_HL },
 		})
 	end
 
 	-- Still-initialising: no input yet
 	if desc == "" then
-		local line = working and (task_frame .. " Delegating...")
+		local line = working and (task_frame .. " Delegating…")
 			or (task_animation.get_task_status_icon(tool_status) .. " " .. agent_label .. " Task")
-		add_line(line, tool_status == "error" and "DiagnosticError" or "Comment")
+		add_line(line, tool_status == "error" and TASK_ERROR_HL or TASK_MUTED_HL)
+		add_line("", nil)
 		return result
 	end
 
-	local line_hl = "Comment"
+	local line_hl = TASK_MUTED_HL
 	local task_icon = task_animation.get_task_status_icon(tool_status)
 	local agent_hl = render.get_agent_hl(subagent)
 	if tool_status == "error" then
-		line_hl = "DiagnosticError"
+		line_hl = TASK_ERROR_HL
 	end
 
 	add_task_header(task_icon, line_hl, agent_hl)
@@ -287,7 +295,7 @@ function M.render_task_tool(tool_part, expanded)
 	if tool_status == "error" then
 		local err = tool_part.state and tool_part.state.error or nil
 		if err then
-			add_line("  ✗ " .. tostring(err), "DiagnosticError")
+			add_line("  ✗ " .. tostring(err), TASK_ERROR_HL)
 		end
 	elseif working and count > 0 then
 		local current_item = tool_labels.find_current_summary_item(summary)
@@ -297,11 +305,11 @@ function M.render_task_tool(tool_part, expanded)
 		if current_item then
 			add_task_detail(tool_labels.format_summary_item_label(current_item), " · " .. tool_labels.format_toolcall_count(count))
 		else
-			add_line("  ↳ " .. tool_labels.format_toolcall_count(count), "Comment")
+			add_line("  ↳ " .. tool_labels.format_toolcall_count(count), TASK_MUTED_HL)
 		end
 	elseif completed and count > 0 then
 		local suffix = duration and (" · " .. duration) or ""
-		add_line("  └ " .. tool_labels.format_toolcall_count(count) .. suffix, "Comment")
+		add_line("  ↳ " .. tool_labels.format_toolcall_count(count) .. suffix, TASK_MUTED_HL)
 	end
 
 	if expanded then
@@ -312,13 +320,13 @@ function M.render_task_tool(tool_part, expanded)
 				if pl == "" then
 					add_line("", nil)
 				elseif i == 1 then
-					add_line("  >> " .. pl, "Comment")
+					add_line("  >> " .. pl, TASK_MUTED_HL)
 				else
-					add_line("     " .. pl, "Comment")
+					add_line("     " .. pl, TASK_MUTED_HL)
 				end
 			end
 		else
-			add_line("  (task prompt not yet loaded)", "Comment")
+			add_line("  (task prompt not yet loaded)", TASK_MUTED_HL)
 		end
 
 		if #summary > 0 then
@@ -327,7 +335,7 @@ function M.render_task_tool(tool_part, expanded)
 				local item_state = item.state or {}
 				local item_status = item_state.status or "pending"
 				local prefix = item_status == "running" and (task_frame .. " ") or ""
-				local item_hl = item_status == "error" and "DiagnosticError" or "Comment"
+				local item_hl = item_status == "error" and TASK_ERROR_HL or TASK_MUTED_HL
 				local id = tool_part.id .. ":child:" .. tostring(item.id or index)
 				local part = M.resolve_tool_part(item)
 				local rendered = { lines = {}, highlights = {} }
@@ -343,10 +351,7 @@ function M.render_task_tool(tool_part, expanded)
 		end
 	end
 
-	if #result_lines > 1 then
-		add_line("", nil)
-	end
-
+	add_line("", nil)
 	return result
 end
 

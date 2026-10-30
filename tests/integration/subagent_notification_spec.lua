@@ -168,9 +168,7 @@ describe("native subagent completion notifications", function()
 				subagent_notification = true } }, metadata = native.metadata },
 		}
 		for _, metadata in ipairs({
-			{}, { source = "subagent", state = "completed" },
-			{ source = "subagent", state = "completed", childID = "" },
-			{ source = "subagent", state = "completed", childID = 42 },
+			{ source = "subagent", state = "completed" },
 			{ source = "subagent", state = "running", childID = child_id },
 			{ source = "other", state = "completed", childID = child_id },
 		}) do

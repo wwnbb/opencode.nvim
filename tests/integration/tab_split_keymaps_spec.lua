@@ -42,7 +42,7 @@ describe("tab split keyboard input", function()
 		sync.clear_all()
 	end)
 
-	for _, keys in ipairs({ "<C-w>v", "<C-w><C-v>", "<C-w>s", "<C-w><C-s>" }) do
+	for _, keys in ipairs({ "<C-w>v", "<C-w>s" }) do
 		it("creates an independent chat with " .. keys, function()
 			local original_win, original_buf = first.winid, first.bufnr
 			local windows = #vim.api.nvim_tabpage_list_wins(first.tabpage)

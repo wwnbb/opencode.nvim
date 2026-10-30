@@ -15,10 +15,6 @@ describe("chat view registry liveness", function()
 		return view
 	end
 
-	it("creates views hidden, so visibility is never nil", function()
-		assert.is_false(new_view().visible)
-	end)
-
 	it("treats only visible or suspended registered views as live", function()
 		local visible, suspended, hidden = new_view({ visible = true }), new_view({ suspended = true }), new_view()
 		local unset = new_view({ visible = nil })

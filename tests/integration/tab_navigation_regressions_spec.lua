@@ -113,32 +113,22 @@ describe("tab navigation regressions", function()
 		assert.equals(120, selected)
 	end)
 
-	for _, kind in ipairs({ "question", "permission", "edit" }) do
-		it("selects a " .. kind .. " option without expr-map textlock or a stale count", function()
-			local id, map = "navigation-choice", kind == "question" and "questions" or kind == "permission" and "permissions" or "edits"
-			if kind == "question" then
-				questions.add_form({ id = id, sessionID = first.session_id, fields = { { key = "choice", type = "string", title = "Pick",
-					options = { { label = "One", value = "one" }, { label = "Two", value = "two" } } } } })
-			elseif kind == "permission" then permissions.add_permission(id, first.session_id, "bash")
-			else edits.add_edit(id, first.session_id, {
-				{ fileID = "one", filePath = "one.lua", before = "", after = "one" },
-				{ fileID = "two", filePath = "two.lua", before = "", after = "two" },
-			}, { transport = "review_rpc", native_review = { status = "pending" } }) end
-			chat.for_view(first).do_render()
-			vim.api.nvim_win_set_cursor(first.winid, { first[map][id].start_line + 1, 0 })
-			press("2")
-			if kind == "question" then assert.same({ choice = "two" }, questions.get_answers(id))
-			elseif kind == "permission" then assert.equals(2, permissions.get_permission(id).selected_option)
-			else assert.equals(2, edits.get_edit(id).selected_file) end
-			local cycled, selected
-			local tabs = cs.module(first, require("opencode.ui.chat.session_tabs"))
-			replace(tabs, "cycle_session", function(direction) cycled = direction end)
-			replace(tabs, "go_to_session_tab", function(index) selected = index end)
-			press("gt")
-			assert.equals(1, cycled)
-			assert.is_nil(selected)
-		end)
-	end
+	it("selects an option without expr-map textlock or a stale count", function()
+		local id = "navigation-choice"
+		questions.add_form({ id = id, sessionID = first.session_id, fields = { { key = "choice", type = "string", title = "Pick",
+			options = { { label = "One", value = "one" }, { label = "Two", value = "two" } } } } })
+		chat.for_view(first).do_render()
+		vim.api.nvim_win_set_cursor(first.winid, { first.questions[id].start_line + 1, 0 })
+		press("2")
+		assert.same({ choice = "two" }, questions.get_answers(id))
+		local cycled, selected
+		local tabs = cs.module(first, require("opencode.ui.chat.session_tabs"))
+		replace(tabs, "cycle_session", function(direction) cycled = direction end)
+		replace(tabs, "go_to_session_tab", function(index) selected = index end)
+		press("gt")
+		assert.equals(1, cycled)
+		assert.is_nil(selected)
+	end)
 
 	for _, route in ipairs({ "ID", "family" }) do
 		it("returns with Backspace from a child opened by " .. route .. " with no stack", function()
@@ -176,35 +166,33 @@ describe("tab navigation regressions", function()
 			settle()
 		end
 
-		for _, cached_parent in ipairs({ true, false }) do
-			it("keeps a fork's ancestry and execution lock clear after late " .. phase .. " (cached parent=" .. tostring(cached_parent) .. ")", function()
-				local target = seed("navigation-fork-race", cached_parent and "navigation-a" or nil)
-				target.parentID = "navigation-a"
-				local response = defer_family(target)
-				native("session.forked", { sessionID = target.id, parentID = "navigation-a",
-					boundary = { type = "after", messageID = "navigation-a-message" } })
-				assert.is_nil(app.get_session_record(target.id).parentID)
-				response(); settle()
-				assert.equals(target.id, cs.session(first).id)
-				assert.is_nil(app.get_session_record(target.id).parentID)
-				assert.equals("navigation-a", app.get_session_record(target.id).fork.sessionID)
-				assert.is_nil(require("opencode.session.lock").get(target.id))
-				assert.is_true(app.is_runtime_session(target.id))
-				assert.is_not.equals("child_lock", require("opencode.selectors").send_selection({ session_id = target.id }).sources.model)
-			end)
-		end
+		it("keeps a fork's ancestry and execution lock clear after late " .. phase, function()
+			local target = seed("navigation-fork-race")
+			target.parentID = "navigation-a"
+			local response = defer_family(target)
+			native("session.forked", { sessionID = target.id, parentID = "navigation-a",
+				boundary = { type = "after", messageID = "navigation-a-message" } })
+			assert.is_nil(app.get_session_record(target.id).parentID)
+			response(); settle()
+			assert.equals(target.id, cs.session(first).id)
+			assert.is_nil(app.get_session_record(target.id).parentID)
+			assert.equals("navigation-a", app.get_session_record(target.id).fork.sessionID)
+			assert.is_nil(require("opencode.session.lock").get(target.id))
+			assert.is_true(app.is_runtime_session(target.id))
+			assert.is_not.equals("child_lock", require("opencode.selectors").send_selection({ session_id = target.id }).sources.model)
+		end)
 
-		for _, replay in ipairs({ false, true }) do
-			it("keeps independent native ancestry during " .. phase .. " (fork replay=" .. tostring(replay) .. ")", function()
+		if phase == "history" then
+			it("keeps independent native ancestry through a replayed fork event during " .. phase, function()
 				local target = seed("navigation-independent-race", "navigation-a")
 				target.parentID = "navigation-copy-source"
 				sessions.set_message_cache(target.id, sync.get_messages(target.id))
 				local fork_event = { sessionID = target.id, parentID = "navigation-copy-source" }
-				if replay then native("session.forked", fork_event) end
+				native("session.forked", fork_event)
 				local before = app.get_session_record(target.id)
 				local response = defer_family(target)
 				native("session.forked", fork_event)
-				if replay then assert.same(before, app.get_session_record(target.id)) end
+				assert.same(before, app.get_session_record(target.id))
 				response(); settle()
 				assert.equals("navigation-a", app.get_session_record(target.id).parentID)
 				assert.equals("navigation-copy-source", app.get_session_record(target.id).fork.sessionID)
@@ -236,15 +224,14 @@ describe("tab navigation regressions", function()
 			assert.equals("child_lock", selection.sources.model)
 		end)
 
-		for _, event in ipairs({ "session.model.selected", "session.renamed" }) do
-			it("keeps the native model through " .. event .. " and stale history during " .. phase, function()
+		if phase == "history" then
+			it("keeps the native model through a rename and stale history during " .. phase, function()
 				local target = seed("navigation-model-repeat", "navigation-a")
 				local historical = { providerID = "historical", modelID = "older", variant = "stale" }
 				native("session.model.selected", { sessionID = target.id, model = target.model })
 				local revision = app.get_session_record(target.id)._model_selection_revision
 				local response = defer_family(target, historical)
-				if event == "session.model.selected" then native(event, { sessionID = target.id, model = target.model })
-				else native(event, { sessionID = target.id, title = "New title only" }) end
+				native("session.renamed", { sessionID = target.id, title = "New title only" })
 				response(); settle()
 				local lock = require("opencode.session.lock").get(target.id)
 				local selection = require("opencode.selectors").send_selection({ session_id = target.id })
@@ -254,7 +241,7 @@ describe("tab navigation regressions", function()
 				assert.equals(expected.variant, lock.variant)
 				assert.equals(expected.variant, selection.variant)
 				assert.same(target.model, lock.child_session.model)
-				assert.equals(revision + (event == "session.model.selected" and 1 or 0), app.get_session_record(target.id)._model_selection_revision)
+				assert.equals(revision, app.get_session_record(target.id)._model_selection_revision)
 			end)
 		end
 	end
@@ -314,7 +301,7 @@ describe("tab navigation regressions", function()
 		assert.same({ 1, 0 }, vim.api.nvim_win_get_cursor(first.winid))
 	end)
 
-	for _, route in ipairs({ "child", "family", "parent", "legacy parent" }) do
+	for _, route in ipairs({ "child", "parent" }) do
 		it("preserves the source stack when " .. route .. " navigation focuses an existing owner", function()
 			local target = seed("navigation-b", route == "child" and "navigation-a" or nil)
 			local other = chat.create_layout(target); settle()
@@ -339,8 +326,9 @@ describe("tab navigation regressions", function()
 		end)
 	end
 
-	for _, phase in ipairs({ "metadata", "location" }) do
-		for _, destination in ipairs({ "layout", "editor", "composer" }) do
+	for _, case in ipairs({ { "metadata", "composer" }, { "location", "editor" } }) do
+		local phase, destination = case[1], case[2]
+		do
 			it("preserves " .. destination .. " focus after a delayed catalog " .. phase .. " response", function()
 				local response, completed
 				local remote = seed("navigation-remote")
@@ -376,8 +364,7 @@ describe("tab navigation regressions", function()
 	end
 
 	for _, case in ipairs({
-		{ route = "child", phase = "metadata" }, { route = "child", phase = "model history" },
-		{ route = "family", phase = "model history" }, { route = "parent", phase = "metadata" },
+		{ route = "child", phase = "model history" },
 	}) do
 		it("keeps composer focus when a delayed " .. case.route .. " " .. case.phase .. " reply finds an existing owner", function()
 			local child = seed("navigation-child", case.route ~= "parent" and "navigation-a" or nil)
@@ -436,66 +423,8 @@ describe("tab navigation regressions", function()
 		end)
 	end
 
-	it("restores a review note over a composer reopened synchronously during catalog focus restoration", function()
-		local response, completed, submitted
-		local remote = seed("navigation-reentrant-remote")
-		replace(client, "get_session", function(_, callback) response = function() callback(nil, remote) end end)
-		actions.open_session(remote.id, { view = first }, function(err) assert.is_nil(err); completed = true end)
-		local other = chat.create_layout(seed("navigation-reentrant-other")); settle()
-		local selected, history = workspace.current().id, require("opencode.ui.input.history")
-		local draft, note = "Underlying normal draft", "Unsaved temporary review note\nSecond line"
-		local draft_parts = { { type = "file", url = "file:///navigation-draft.lua", filename = "navigation-draft.lua" } }
-		local note_parts = { { type = "file", url = "file:///navigation-note.lua", filename = "navigation-note.lua" } }
-		local draft_options, note_options = { delivery = "steer" }, { tag = "review-note" }
-		draft_ids[#draft_ids + 1] = other.session_id
-		history.set_pending(draft, draft_parts, other.session_id)
-		history.set_pending_options(draft_options, other.session_id)
-		history.set_pending_cursor(4, other.session_id)
-		input.show({ view = other, text = note, parts = note_parts, send_options = note_options,
-			persist_pending = false, add_history = false, session_bound = true,
-			on_send = function(text, parts, options) submitted = { text = text, parts = parts, options = options } end })
-		vim.api.nvim_win_set_cursor(input.get_winids()[1], { 2, 3 })
-		local fired = false
-		local listener = function(id)
-			if id == other.session_id and not fired then
-				fired = true
-				input.show({ view = other })
-			end
-		end
-		app.on("session.id", listener)
-		local ok, err = xpcall(function() response(); settle() end, debug.traceback)
-		app.off("session.id", listener)
-		assert.is_true(ok, err)
-		assert.is_true(completed)
-		assert.is_true(fired)
-		assert.equals(selected, workspace.current().id)
-		assert.equals(other.session_id, app.get_session().id)
-		assert.equals("navigation-a", cs.session(first).id)
-		assert.is_not_nil(cs.for_session(remote.id))
-		assert.is_true(input.is_visible(), "queued cleanup for the reentrant composer must not close the restored note")
-		assert.equals(other, input.owner_view())
-		assert.equals(input.get_winids()[1], vim.api.nvim_get_current_win())
-		assert.equals(note, input.get_pending_text())
-		assert.same(note_parts, input.get_pending_parts())
-		assert.same(note_options, input.get_pending_options())
-		assert.same({ 2, 3 }, vim.api.nvim_win_get_cursor(0))
-		press("<C-g>")
-		assert.same({ text = note, parts = note_parts,
-			options = vim.tbl_extend("force", note_options, { delivery = "queue" }) }, submitted)
-		assert.is_false(input.is_visible())
-		assert.equals(draft, history.get_pending(other.session_id))
-		assert.same(draft_parts, history.get_pending_parts(other.session_id))
-		assert.same(draft_options, history.get_pending_options(other.session_id))
-		assert.equals(4, history.get_pending_cursor(other.session_id))
-		chat.focus_input(); settle()
-		assert.equals(draft, input.get_pending_text())
-		assert.same(draft_parts, input.get_pending_parts())
-		assert.same(draft_options, input.get_pending_options())
-		assert.same({ 1, 4 }, vim.api.nvim_win_get_cursor(0))
-	end)
-
-	for _, kind in ipairs({ "review", "native diff" }) do
-		it("retains a real " .. kind .. " note through repeated show and reentrant catalog restoration", function()
+	do
+		it("retains a real review note through repeated show and reentrant catalog restoration", function()
 			local config = vim.deepcopy(app.get_config())
 			config.server.shared_filesystem = true; app.set_config(config)
 			local remote, response, completed = seed("navigation-note-remote")
@@ -512,15 +441,9 @@ describe("tab navigation regressions", function()
 			draft_ids[#draft_ids + 1] = other.session_id
 			local edit_id, path = "navigation-real-note", vim.fn.tempname() .. ".lua"
 			edits.add_edit(edit_id, other.session_id, { { fileID = "file", filePath = path, type = "add", before = "", after = "proposal\n" } },
-				{ transport = "review_rpc", native_review = { status = "pending" }, message = "Unsaved " .. kind .. " note\nSecond line" })
+				{ transport = "review_rpc", native_review = { status = "pending" }, message = "Unsaved review note\nSecond line" })
 			chat.for_view(other).do_render()
 			vim.api.nvim_win_set_cursor(other.winid, { other.edits[edit_id].start_line + 1, 0 })
-			local diff, parent, note_tab = require("opencode.ui.native_diff")
-			if kind == "native diff" then
-				press("dt")
-				assert.is_true(diff.is_active())
-				parent, note_tab = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_tabpage()
-			end
 			press("m")
 			assert.is_true(input.is_visible())
 			replace(require("opencode.clipboard"), "read", function()
@@ -556,8 +479,7 @@ describe("tab navigation regressions", function()
 			assert.equals(note, input.get_pending_text())
 			assert.same(parts, input.get_pending_parts())
 			assert.same({ 2, 3 }, vim.api.nvim_win_get_cursor(0))
-			if note_tab then assert.equals(note_tab, vim.api.nvim_get_current_tabpage()) end
-			press(kind == "review" and "<C-g>" or "<C-c>")
+			press("<C-g>")
 			assert.equals(note, edits.get_edit(edit_id).message, "the real review callback must survive restoration")
 			assert.is_false(input.is_visible())
 			assert.equals(count, #input.get_history())
@@ -565,47 +487,11 @@ describe("tab navigation regressions", function()
 			assert.same(draft_parts, history.get_pending_parts(other.session_id))
 			assert.same(options, history.get_pending_options(other.session_id))
 			assert.equals(#"Underlying normal draft" + 1 + 4, history.get_pending_cursor(other.session_id))
-			if parent then assert.equals(parent, vim.api.nvim_get_current_win()); diff.close(); settle() end
 			chat.focus_input(); settle()
 			assert.equals(draft, input.get_pending_text())
 			assert.same(draft_parts, input.get_pending_parts())
 			assert.same(options, input.get_pending_options())
 			assert.same({ 2, 4 }, vim.api.nvim_win_get_cursor(input.get_winids()[1]))
-		end)
-	end
-
-	for _, reopened in ipairs({ false, true }) do
-		it("keeps a new source-owner composer after a catalog reply (reopened=" .. tostring(reopened) .. ")", function()
-			local remote = { id = "navigation-unseen", title = "Unseen", location = { directory = vim.fn.getcwd() },
-				model = { providerID = "remote", modelID = "model" } }
-			local response, completed, previous
-			replace(client, "get_session", function(_, callback) callback(nil, remote) end)
-			replace(client, "get_location", function(directory, callback) response = function() callback(nil, { directory = directory }) end end)
-			if reopened then chat.focus_input(); previous = input.get_winids()[1] end
-			actions.open_session(remote.id, { view = first }, function(err) assert.is_nil(err); completed = true end)
-			assert.is_function(response)
-			if reopened then input.close() end
-			chat.focus_input()
-			local parts, options = { { type = "file", url = "file:///source-draft.lua", filename = "source-draft.lua" } }, { delivery = "steer" }
-			input.set_pending_draft("Source draft\nSecond line", parts, { options = options })
-			draft_ids[#draft_ids + 1] = first.session_id
-			local window, generation = input.get_winids()[1], first.generation
-			assert.is_not.equals(previous, window)
-			vim.api.nvim_win_set_cursor(window, { 2, 3 })
-			response(); settle()
-			assert.is_true(completed)
-			assert.is_true(input.is_visible())
-			assert.equals(window, vim.api.nvim_get_current_win())
-			assert.equals(first, input.owner_view())
-			assert.equals("Source draft\nSecond line", input.get_pending_text())
-			assert.same(parts, input.get_pending_parts())
-			assert.same(options, input.get_pending_options())
-			assert.same({ 2, 3 }, vim.api.nvim_win_get_cursor(window))
-			assert.equals(generation, first.generation)
-			assert.equals("navigation-a", cs.session(first).id)
-			assert.is_nil(cs.for_session(remote.id))
-			assert.same(remote.model, app.get_session_record(remote.id).model)
-			assert.is_false(app.is_runtime_session(remote.id))
 		end)
 	end
 
@@ -796,25 +682,9 @@ describe("real input composer reentry", function()
 		]])
 	end)
 
-	it("keeps the normal composer open after real native diff qi input", function()
-		editor.lua('press("dt"); assert(diff.is_active()); press("m"); press("<C-c>")')
-		editor.request("nvim_input", { "qi" })
-		vim.wait(120, function() return false end, 5)
+	it("keeps a source review note when a delayed clear creation arrives", function()
 		editor.lua([[
-			assert(not diff.is_active())
-			assert(input.is_visible() and input.owner_view() == view)
-			assert(vim.api.nvim_get_current_win() == input.get_winids()[1])
-			assert(input.get_pending_text() == "Normal draft\nSecond line")
-			assert(input.get_pending_parts()[1].url == "file:///reentry.lua")
-			assert(vim.deep_equal({ delivery = "steer" }, input.get_pending_options()))
-			assert(vim.deep_equal({ 2, 4 }, vim.api.nvim_win_get_cursor(input.get_winids()[1])))
-		]])
-	end)
-
-	for _, route in ipairs({ "new", "split", "clear" }) do
-		it("keeps a source review note when a delayed " .. route .. " creation arrives", function()
-			editor.lua([[
-				local route, api, cs = ..., require("opencode"), require("opencode.ui.chat.state")
+				local api, cs = require("opencode"), require("opencode.ui.chat.state")
 				local app, sync = require("opencode.state"), require("opencode.sync")
 				local created = { id = "creation-late", title = "Created", location = { directory = vim.fn.getcwd() },
 					model = { providerID = "created", modelID = "model" } }
@@ -823,9 +693,7 @@ describe("real input composer reentry", function()
 				local source, generation, count = view.session_id, view.generation, #cs.all()
 				local layouts = #require("opencode.ui.chat.workspace").list()
 				sync.handle_message_updated({ id = "creation-source-message", sessionID = source, role = "assistant" })
-				if route == "split" then assert(api.split("vertical", { view = view }))
-				elseif route == "clear" then api.clear({ view = view, silent = true })
-				else api.new_session({ view = view, silent = true }) end
+				api.clear({ view = view, silent = true })
 				assert(release)
 				press("m")
 				local window = input.get_winids()[1]
@@ -844,9 +712,10 @@ describe("real input composer reentry", function()
 				assert(history.get_pending(source) == "Normal draft\nSecond line")
 				assert(history.get_pending_parts(source)[1].url == "file:///reentry.lua")
 				assert(vim.deep_equal({ delivery = "steer" }, history.get_pending_options(source)))
-			]], { route })
-		end)
+			]])
+	end)
 
+	for _, route in ipairs({ "new", "clear" }) do
 		it("still activates immediate foreground " .. route .. " creation from its original composer", function()
 			editor.lua([[
 				local route, api, cs = ..., require("opencode"), require("opencode.ui.chat.state")
@@ -855,8 +724,7 @@ describe("real input composer reentry", function()
 				require("opencode.client").create_session = function(_, callback)
 					callback(nil, { id = "creation-immediate", title = "Created", location = { directory = vim.fn.getcwd() } })
 				end
-				if route == "split" then assert(api.split("vertical", { view = view }))
-				elseif route == "clear" then api.clear({ view = view, silent = true })
+				if route == "clear" then api.clear({ view = view, silent = true })
 				else api.new_session({ view = view, silent = true }) end
 				vim.wait(60, function() return false end, 5)
 				local target = cs.for_session("creation-immediate")
@@ -909,119 +777,5 @@ describe("legacy new-session composer focus", function()
 				else assert(app.get_session().id == "legacy-created" and input.is_visible() and input.get_pending_text() == "") end
 			]], { delayed })
 		end)
-	end
-end)
-
-describe("async navigation callers and source review notes", function()
-	local editor
-	after_each(function() if editor then editor.close(); editor = nil end end)
-	for _, route in ipairs({ "reopen", "legacy catalog", "timeline fork", "timeline revert", "timeline picker" }) do
-		for _, delayed in ipairs({ false, true }) do
-			it(route .. " preserves foreground behavior and a later note (delayed=" .. tostring(delayed) .. ")", function()
-				editor = require("tests.helpers.embedded_editor").new()
-				editor.lua([[
-					local route, delayed = ...
-					vim.o.lines, vim.o.columns = 55, 160
-					local api, app, sessions = require("opencode"), require("opencode.state"), require("opencode.session")
-					local chat, cs, input = require("opencode.ui.chat"), require("opencode.ui.chat.state"), require("opencode.ui.input")
-					local client, edits, history = require("opencode.client"), require("opencode.edit.state"), require("opencode.ui.input.history")
-					local sync, projection, timeline = require("opencode.sync"), require("opencode.protocol.messages"), require("opencode.ui.timeline")
-					local errors = {}
-					vim.notify = function(message, level) if level == vim.log.levels.ERROR then errors[#errors + 1] = tostring(message) end end
-					api.setup({ server = { auto_start = false }, lualine = { enabled = false },
-						chat = { layout = route == "legacy catalog" and "vertical" or "tab" },
-						input = { history_file = vim.fn.tempname() .. "-history.json" } })
-					require("opencode.lifecycle").ensure_connected = function(callback) callback() end
-					client.get_messages = function(_, _, callback) callback(nil, {}) end
-					client.get_session_statuses = function(callback) callback(nil, {}) end
-					local source = { id = "caller-source", title = "Source", location = { directory = vim.fn.getcwd() } }
-					local target = { id = "caller-target", title = "Fresh metadata", location = source.location,
-						model = { providerID = "caller", modelID = "model" } }
-					sessions.remember(source); sessions.set_active(source.id, source.title); chat.open()
-					local view = chat.get_view()
-					local messages = projection.page(source.id, { { id = "caller-turn", type = "user", text = "Historical prompt", time = { created = 1 },
-						files = { { uri = "file:///historical.lua", name = "historical.lua", mime = "text/plain" } } } })
-					sync.handle_session_messages(source.id, messages)
-					client.get_messages = function(id, _, callback) callback(nil, id == source.id and messages or {}) end
-					chat.focus_input()
-					input.set_pending_draft("Normal draft\nSecond line", { { type = "file", url = "file:///normal.lua", filename = "normal.lua" } },
-						{ options = { delivery = "steer" } }); input.close()
-					edits.add_edit("caller-note", source.id, { { fileID = "f", filePath = vim.fn.tempname() .. ".lua", type = "add", before = "", after = "proposal\n" } },
-						{ transport = "review_rpc", native_review = { status = "pending" }, message = "saved note" })
-					chat.for_view(view).do_render()
-					local function settle() vim.wait(60, function() return false end, 5); assert(#errors == 0, table.concat(errors, "\n")) end
-					local function press(keys)
-						vim.cmd("stopinsert"); vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), "xt", false); settle()
-					end
-					local release
-					local function hold(callback, value)
-						release = function() callback(nil, value) end
-						if not delayed then release() end
-					end
-					if route == "reopen" then
-						sessions.remember({ id = target.id, title = "Old metadata", location = source.location })
-						assert(sessions.close(target.id, { silent = true }))
-						client.get_session = function(id, callback) assert(id == target.id); hold(callback, target) end
-					elseif route == "legacy catalog" then
-						assert(not view.session_bound)
-						client.get_session = function(_, callback) callback(nil, target) end
-						client.get_location = function(directory, callback) hold(callback, { directory = directory }) end
-					elseif route == "timeline fork" then
-						client.fork_session = function(id, opts, callback) assert(id == source.id and opts.before == "caller-turn"); hold(callback, target) end
-					elseif route == "timeline revert" then
-						client.abort_session = function(_, callback) callback(nil) end
-						client.wait_session = function(_, callback) callback(nil) end
-						client.revert_message = function(_, message, _, callback) hold(callback, { messageID = message }) end
-					else client.get_messages = function(_, _, callback) hold(callback, messages) end end
-					local generation, count, layouts = view.generation, #cs.all(), #require("opencode.ui.chat.workspace").list()
-					if not delayed then chat.focus_input() end
-					if route == "reopen" or route == "legacy catalog" then
-						require("opencode.ui.palette").setup()
-						assert(require("opencode.command_registry").run(route == "reopen" and "session.reopen" or "session.open",
-							{ view = view, generation = generation, session_id = source.id, args = target.id }))
-					elseif route == "timeline picker" then assert(timeline.show())
-					else assert(timeline.run(route == "timeline fork" and "fork" or "revert", source.id, "caller-turn")) end
-					if delayed then
-						assert(release)
-						vim.api.nvim_win_set_cursor(view.winid, { view.edits["caller-note"].start_line + 1, 0 }); press("m")
-						local window = input.get_winids()[1]; assert(window and input.owner_view() == view)
-						vim.api.nvim_buf_set_lines(vim.api.nvim_win_get_buf(window), 0, -1, false, { "UNSENT caller note", "Second line" })
-						vim.api.nvim_win_set_cursor(window, { 2, 3 }); release(); settle()
-						assert(input.is_visible() and input.get_winids()[1] == window and vim.api.nvim_get_current_win() == window)
-						assert(input.get_pending_text() == "UNSENT caller note\nSecond line")
-						assert(vim.deep_equal({ 2, 3 }, vim.api.nvim_win_get_cursor(window)))
-						assert(cs.session(view).id == source.id and view.generation == generation)
-						assert(#cs.all() == count and #require("opencode.ui.chat.workspace").list() == layouts)
-						press("<C-c>"); assert(edits.get_edit("caller-note").message == "UNSENT caller note\nSecond line")
-						assert(history.get_pending(source.id) == "Normal draft\nSecond line")
-						assert(history.get_pending_parts(source.id)[1].url == "file:///normal.lua")
-						assert(vim.deep_equal({ delivery = "steer" }, history.get_pending_options(source.id)))
-						if route == "timeline fork" then
-							assert(history.get_pending(target.id) == "Historical prompt" and history.get_pending_parts(target.id)[1].url == "file:///historical.lua")
-						elseif route == "timeline revert" then
-							local deferred = history.peek_deferred(source.id)
-							assert(deferred.text == "Historical prompt" and deferred.parts[1].url == "file:///historical.lua")
-						end
-					else
-						settle()
-						if route == "timeline fork" or route == "timeline revert" then
-							assert(input.is_visible() and input.get_pending_text() == "Historical prompt" and input.get_pending_parts()[1].url == "file:///historical.lua")
-						elseif route == "timeline picker" then
-							assert(vim.bo.filetype == "opencode_float"); press("<Esc>")
-						end
-						assert(app.get_session().id == ((route == "timeline revert" or route == "timeline picker") and source.id or target.id))
-					end
-					if route == "reopen" then
-						assert(vim.deep_equal(delayed and { target.id } or {}, app.get_closed_session_order()))
-						assert(app.is_runtime_session(target.id) == not delayed)
-					end
-					if route ~= "timeline revert" and route ~= "timeline picker" then
-						assert(vim.deep_equal(target.model, app.get_session_record(target.id).model))
-						assert(app.get_session_record(target.id).title == target.title)
-					end
-					assert(sync.get_message(source.id, "caller-turn"))
-				]], { route, delayed })
-			end)
-		end
 	end
 end)

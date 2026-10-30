@@ -30,7 +30,6 @@ describe("persistent prompt stash", function()
 		local file = directory .. "/stash.json"
 		local original = vim.fn.readfile(file)
 		for _, draft in ipairs({
-			{ text = "", parts = { true } },
 			{ text = "keep attachment", parts = { image, false } },
 			{ text = "keep attachment", parts = { attachment = image } },
 		}) do

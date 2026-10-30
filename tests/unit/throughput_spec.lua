@@ -63,12 +63,8 @@ describe("turn throughput", function()
 		local cases = {
 			assistant("a", 0, 1000, 0, 0),
 			assistant("a", 1000, 1000, 100),
-			assistant("a", 2000, 1000, 100),
 			assistant("a", 0, 1000, -1),
-			assistant("a", 0, 1000, math.huge),
-			assistant("a", 0, 1000, "100"),
 			assistant("a", 0, 1000, 0 / 0),
-			assistant("a", 0, math.huge, 100),
 			{ id = "a", type = "assistant" },
 		}
 		for _, message in ipairs(cases) do

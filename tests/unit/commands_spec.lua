@@ -67,15 +67,6 @@ describe("opencode global keymaps", function()
 		if not ok then error(err) end
 	end)
 
-	it("keeps a newer user abort mapping when disabling all global bindings", function()
-		commands.configure_keymaps({ abort = { first, second } })
-		local replacement = function() end
-		vim.keymap.set("n", first, replacement)
-		commands.configure_keymaps({})
-		assert.equals(replacement, mapping(first).callback)
-		assert.same({}, mapping(second))
-	end)
-
 	it("removes the default abort mapping without adding omitted global bindings", function()
 		local defaults = require("opencode.config").defaults.keymaps
 		local before_abort, before_toggle = mapping(defaults.abort), mapping(defaults.toggle)

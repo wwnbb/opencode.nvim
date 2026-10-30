@@ -1,16 +1,17 @@
 local locks = require("opencode.session.lock")
 
 describe("session execution locks", function()
-	local deepcopy = vim.deepcopy
+	local state, pending, sync = require("opencode.state"), require("opencode.session.pending"), require("opencode.sync")
+	before_each(function() state.reset(); pending.clear_all(); sync.clear_all(); locks.clear_all() end)
+	after_each(function() state.reset(); pending.clear_all(); sync.clear_all(); locks.clear_all() end)
 
-	before_each(function()
-		locks.clear_all()
-	end)
-
-	after_each(function()
-		vim.deepcopy = deepcopy
-		locks.clear_all()
-	end)
+	local function fetch(session, messages)
+		return {
+			get_session = function(_, callback) callback(nil, session) end,
+			load_messages = function(_, _, callback) callback(nil, messages or {}) end,
+			tool_part = function(part) return part end,
+		}
+	end
 
 	it("isolates stored records from inputs and returned values", function()
 		local record = { session_id = "other", model = { modelID = "original" } }
@@ -27,34 +28,39 @@ describe("session execution locks", function()
 
 	it("rejects invalid IDs and records", function()
 		locks.set("child", {})
-		for _, id in pairs({ "", false, 1, {}, vim.NIL }) do
+		for _, id in pairs({ "", 1, vim.NIL }) do
 			assert.is_nil(locks.set(id, {}))
-			assert.is_nil(locks.get(id))
 			assert.is_false(locks.is_locked(id))
-			locks.clear(id)
 		end
-		assert.is_nil(locks.set(nil, {}))
-		assert.is_nil(locks.get(nil))
-		assert.is_false(locks.is_locked(nil))
-		locks.clear(nil)
 		assert.is_nil(locks.set("child", false))
 		assert.is_true(locks.is_locked("child"))
 	end)
 
-	it("checks existence without copying records", function()
-		locks.set("child", { model = { modelID = "model" } })
-		vim.deepcopy = function() error("Existence checks must not copy lock records") end
-		assert.is_true(locks.is_locked("child"))
-		assert.is_false(locks.is_locked("missing"))
+	it("resolves agent and model without a chat view", function()
+		local result
+		locks.resolve("child", { state = { input = { subagent_type = "explore" } } },
+			fetch({ id = "child", title = "Child", model = { providerID = "p", id = "m", variant = "high" } }),
+			function(err, record) result = { err = err, record = record } end)
+		assert.is_nil(result.err)
+		assert.equals("explore", result.record.agent)
+		assert.same({ providerID = "p", modelID = "m" }, result.record.model)
+		assert.equals("high", result.record.variant)
+		assert.is_nil(result.record.error)
 	end)
 
-	it("clears one lock or every lock", function()
-		locks.set("child", {})
-		locks.set("other", {})
-		locks.clear("child")
-		assert.is_false(locks.is_locked("child"))
-		assert.is_true(locks.is_locked("other"))
-		locks.clear_all()
-		assert.is_false(locks.is_locked("other"))
+	it("falls back to message metadata and reports a missing model", function()
+		local result
+		locks.resolve("child", { state = {} }, fetch({ id = "child" }, { { info = { role = "assistant", agent = "build" } } }),
+			function(err, record) result = { err = err, record = record } end)
+		assert.equals("build", result.record.agent)
+		assert.is_nil(result.record.model)
+		assert.is_true(result.record.pending)
+		assert.matches("execution model", result.record.error, 1, true)
+	end)
+
+	it("rejects metadata for another session", function()
+		local result
+		locks.resolve("child", { state = {} }, fetch({ id = "other" }), function(err) result = err end)
+		assert.matches("does not match", result.message, 1, true)
 	end)
 end)

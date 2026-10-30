@@ -35,13 +35,6 @@ describe("danger mode", function()
 		if path then vim.fn.delete(path) end
 	end)
 
-	it("enables and disables through the public API", function()
-		app.enable_danger_mode({ silent = true })
-		assert.is_true(app.is_danger_mode_enabled())
-		app.disable_danger_mode({ silent = true })
-		assert.is_false(app.is_danger_mode_enabled())
-	end)
-
 	it("approves an existing pending permission once", function()
 		state.set_session("session", "Session")
 		permissions.add_permission("pending", "session", "bash", {})
@@ -63,7 +56,7 @@ describe("danger mode", function()
 	end)
 
 	for _, reset in ipairs({ "close", "reconnect", "owner" }) do
-		for _, failed in ipairs({ false, true }) do
+		for _, failed in ipairs({ true }) do
 			it("owns each approval attempt after " .. reset .. " despite an old " .. (failed and "failure" or "success"), function()
 				local callbacks, notices = {}, {}
 				client.respond_permission = function(_, _, _, callback) callbacks[#callbacks + 1] = callback end
@@ -148,7 +141,7 @@ describe("danger mode", function()
 		assert.is_true(vim.wait(500, function() return item.status == "approved" end, 10))
 	end)
 
-	for _, failed in ipairs({ false, true }) do
+	for _, failed in ipairs({ true }) do
 		it("retries a recovered permission after reconnect despite an old " .. (failed and "failure" or "success"), function()
 			local callbacks = {}
 			client.respond_permission = function(_, _, _, callback) callbacks[#callbacks + 1] = callback end

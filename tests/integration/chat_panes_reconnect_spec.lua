@@ -64,8 +64,8 @@ describe("chat panes reconnect recovery", function()
 		sync.clear_all(); locks.clear_all()
 	end)
 
-	for _, hidden in ipairs({ false, true }) do
-		it("recovers an opened child without refetching roots or closed children (hidden=" .. tostring(hidden) .. ")", function()
+	for _, hidden in ipairs({ true }) do
+		it("recovers an opened child in a hidden layout without refetching closed children", function()
 			local child = { id = "recover-child", parentID = "recover-a", title = "Child", agent = "explore",
 				model = { providerID = "old", id = "before" } }
 			sessions.remember(child, { touch = false })

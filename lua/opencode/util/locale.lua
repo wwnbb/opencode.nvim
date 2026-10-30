@@ -13,6 +13,27 @@ function M.titlecase(str)
 	return result
 end
 
+---A count in compact form, the one spelling every view uses: "950", "1.2K", "12K", "1.5M".
+---@param value number|nil
+---@return string
+function M.compact_number(value)
+	local number = math.max(0, math.floor((tonumber(value) or 0) + 0.5))
+	if number < 1000 then return tostring(number) end
+	local units = { { 1e12, "T" }, { 1e9, "B" }, { 1e6, "M" }, { 1e3, "K" } }
+	for index, unit in ipairs(units) do
+		if number >= unit[1] then
+			local amount = tonumber(string.format("%.1f", number / unit[1]))
+			-- 999.95K rounds up to the next unit.
+			if amount >= 1000 and index > 1 then
+				unit = units[index - 1]
+				amount = tonumber(string.format("%.1f", number / unit[1]))
+			end
+			return (tostring(amount):gsub("%.0$", "")) .. unit[2]
+		end
+	end
+	return tostring(number)
+end
+
 ---Format duration in milliseconds to human readable string
 ---@param ms number Duration in milliseconds
 ---@return string

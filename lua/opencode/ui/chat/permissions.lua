@@ -15,8 +15,9 @@ local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
 local events = require("opencode.events")
 
+-- Only the user's own replies request renders here; show them without throttling.
 local function schedule_render()
-	render_coordinator.request({ kind = "permission" })
+	render_coordinator.request({ kind = "permission", immediate = true })
 end
 
 ---Render options for a rendered permission, keeping the tool row it was drawn under.

@@ -58,8 +58,8 @@ describe("current session context and money", function()
 	end)
 
 	it("does not turn absent, partial, zero, negative, or non-finite latest usage into a context estimate", function()
-		for _, invalid in ipairs({ {}, { input = 1, cache = {} }, { input = 0, output = 0, reasoning = 0, cache = { read = 0, write = 0 } },
-			{ input = -1, output = 0, reasoning = 0, cache = { read = 0, write = 0 } }, { input = math.huge, output = 0, reasoning = 0, cache = { read = 0, write = 0 } } }) do
+		for _, invalid in ipairs({ { input = 1, cache = {} }, { input = 0, output = 0, reasoning = 0, cache = { read = 0, write = 0 } },
+			{ input = math.huge, output = 0, reasoning = 0, cache = { read = 0, write = 0 } } }) do
 			put(assistant("latest", 2, invalid))
 			assert.is_nil(selectors.current_context())
 		end

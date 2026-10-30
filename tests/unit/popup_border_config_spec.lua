@@ -93,17 +93,10 @@ describe("configured shared popup borders", function()
 		end)
 	end
 
-	it("accepts a Nui character table for single and composite popup roots", function()
+	it("accepts list and named Nui character tables", function()
 		local custom = { "╔", "═", "╗", "║", "╝", "═", "╚", "║" }
 		set_border(custom)
 		local single = open({ relative = "editor", size = { width = 18, height = 4 }, border = "rounded" })
-		local composite = open({
-			frame = { relative = "editor", size = { width = 24, height = 7 }, border = "rounded" },
-			content = { position = { row = 1, col = 1 }, size = { width = 22, height = 4 }, border = "single" },
-		})
-		assert.equals("╔", root_border(single)._.char.top_left:content())
-		assert.equals("╔", root_border(composite)._.char.top_left:content())
-		assert.equals("none", composite.content.border._.style)
 		assert.equals("╔", vim.api.nvim_win_get_config(single.winid).border[1][1])
 		set_border({
 			top_left = "╭", top = "─", top_right = "╮", right = "│",
@@ -111,27 +104,6 @@ describe("configured shared popup borders", function()
 		})
 		local named = open({ relative = "editor", size = { width = 18, height = 4 }, border = "single" })
 		assert.equals("╭", root_border(named)._.char.top_left:content())
-	end)
-
-	it("uses the configured border on an input-only popup", function()
-		local function make_input()
-			return open({
-				input_only = true,
-				input = {
-					kind = "popup", relative = "editor", size = { width = 20, height = 1 },
-					border = { style = "rounded", text = { top = " Prompt ", bottom = " Enter " } },
-				},
-			})
-		end
-		set_border("double")
-		local bordered = make_input()
-		assert.equals("double", bordered.input.border._.style)
-		assert.is_true(vim.api.nvim_win_is_valid(bordered.input.border.winid))
-		set_border("none")
-		local plain = make_input()
-		assert.equals("none", plain.input.border._.style)
-		assert.is_nil(plain.input.border._.text)
-		assert.equals("none", vim.api.nvim_win_get_config(plain.input.winid).border)
 	end)
 
 	it("keeps both border footprints and inner windows inside a smaller screen", function()

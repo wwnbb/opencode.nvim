@@ -690,14 +690,17 @@ function M.switch_to(session, opts)
 		return
 	end
 	local current = view and views.session(view) or state.get_session()
-	if current.id == session.id then
+	-- A closed tab-layout pane keeps its session only as a reopening hint; while
+	-- the workspace exists, choosing that session opens it in a layout again.
+	local reopen = tab_view(view) and view_adapter.has_layouts() and not view_adapter.is_live(view)
+	if current.id == session.id and not reopen then
 		if opts.notify then
 			local title = session_util.displayTitle(session.title or session.name) or session.id
 			vim.notify("Already on session: " .. title, vim.log.levels.INFO)
 		end
 		return
 	end
-	if tab_view(view) and view.workspace_id then
+	if tab_view(view) and (view.workspace_id or reopen) then
 		view = require("opencode.ui.chat").create_layout(session)
 	end
 

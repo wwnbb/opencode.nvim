@@ -1,6 +1,5 @@
 describe("palette context guard", function()
 	local palette_context = require("opencode.ui.palette.context")
-	local palette = require("opencode.ui.palette")
 	local app, views, pending = require("opencode.state"), require("opencode.ui.chat.state"), require("opencode.session.pending")
 	local created
 
@@ -20,11 +19,6 @@ describe("palette context guard", function()
 	after_each(function()
 		for _, value in ipairs(created) do views.remove(value) end
 		pending.clear_all(); app.reset()
-	end)
-
-	it("keeps palette.capture_context and palette.context_valid as adapters", function()
-		assert.equals(palette_context.capture, palette.capture_context)
-		assert.equals(palette_context.valid, palette.context_valid)
 	end)
 
 	it("checks only the pending token by default and scopes it to session_token", function()

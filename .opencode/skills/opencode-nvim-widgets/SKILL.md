@@ -108,14 +108,48 @@ local function add_panel_blank(result)
 end
 ```
 
+## Widget Families
+
+Every chat row belongs to exactly one family. Match the family, not a neighbour.
+
+1. **Interactive panels** (question, permission, edit review): `"▏  "` rows on the
+   CursorLine background (`panel.set_hl`), `"▏"` blank rows. Layout: blank,
+   header, blank, body, blank, numbered options (`widget_base.append_options`,
+   `❯ n. label`, marker highlighted), blank, error line if any, key hint, blank,
+   then the plain `""` separator. Header: `# <Kind>[ <state>][ for <Tool>| <subject>][ (<status>)]`;
+   only the subject or tool name takes the title highlight. Status suffixes are
+   lowercase and parenthesized: `(submitting)`, `(cancelled)`, `(once)`, `(review)`.
+   Focus lands on the selected option.
+2. **Shell panels** (bash): the same `"▏  "` panel; adjacent shell panels share a
+   `─` divider instead of a blank row.
+3. **Compact rows** (every other tool row): header at column 1,
+   `" <icon> <Label>[ · <detail>][ · <Status>][ · <duration>][ <spinner>]"`.
+   The icon is the tool's kind icon (`→`/`↘` read, fetch, search the web, skill,
+   execute; `●`/`○` grep, glob, rg), otherwise the fold marker `▸`/`▾`
+   (`tool_panel.fold_prefix`). Sub-lines (errors, loaded files, decisions) are
+   indented 5 spaces. The expanded body goes in the `tool_style` box (`"   │ "`,
+   `┌`/`└`). The row ends with one plain `""` row. Status words are title case
+   and appear only when the call did not simply complete: `Pending`, `Running`,
+   `Failed`, `Cancelled`.
+4. **Containers** (tool groups, activity, tasks): header at column 0,
+   `"<icon> <Label> · <counts>[ · N failed][ · <duration>]"`; children at column 1.
+
+## Shared Vocabulary
+
+- Separator between header parts: `" · "` (never `—`, `–`, ` - ` or double spaces).
+- Ellipsis: `…`. Pending text: `~ <Action>…` with the spinner.
+- Spinner: the braille frames of `task_animation`, drawn in the row's own highlight.
+- Durations: `locale.duration` (`15.0s`, `1m 2s`, `1h 1m`).
+- Counts of tool invocations: `N tool calls` (`1 tool call`). Exit codes: `· exit N`.
+- Paths: `util/text.normalize_path` (relative to the working directory, else `~`).
+- Tool names: `util/tool_names.display_name`.
+- Key hints: `util/keymap.hint()` with `omit_disabled = true`; it follows
+  `key_hints.enabled`. Fold hints: `tool_panel.overflow_text`.
+
 Layout rules:
 
-- Start with a blank panel row, then one concise header, then content.
-- Use `# <Verb> <target>` for readable/completed states.
-- Use `~ <action>...` for incomplete states.
-- Add a trailing plain blank separator only when the surrounding widget type already does so, as read and edit do.
-- Normalize paths with `vim.fn.fnamemodify(path, ":~:.")`.
-- Keep details in the body, not the header.
+- Keep details in the body or sub-lines, not the header.
+- Never show raw identifiers (`neovim_edit`, `external_directory`) to the reader.
 
 ## Collapse And Overflow
 
@@ -123,7 +157,7 @@ Use `MAX_COLLAPSED_OUTPUT_LINES = 10` unless the surrounding widget has a strong
 
 - Add a fold marker only when there is hidden content or the widget is expanded.
 - Keep collapsed and expanded headers semantically stable.
-- Add `... (N more lines, press O to expand)` when collapsed content is hidden.
+- Add `tool_panel.overflow_text(n)` ("… (N more lines, press O to expand)") when collapsed content is hidden.
 - Make the collapsed view answer "what happened?" without requiring expansion.
 
 ## Highlights And Syntax
@@ -155,17 +189,7 @@ For code/output:
 
 ## Status And Animation
 
-Use `status == "pending" or status == "running"` as the working predicate. Existing widgets use `state.task_anim_frame`:
-
-```lua
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
-local FRAMES = { "|", "/", "-", "\\" }
-
-local function get_anim_frame()
-	return FRAMES[state.task_anim_frame] or FRAMES[1]
-end
-```
+Use `status == "pending" or status == "running"` as the working predicate. Draw the spinner with `tool_panel.anim_frame()`, which uses the shared braille frames.
 
 Show animation only while working. Use error highlights when `status == "error"`, an error body exists, or an exit code is non-zero.
 
@@ -187,7 +211,7 @@ Regular tool renderers should not manage cursor behavior. For interactive widget
 - Prefer quiet symbols and compact labels over explanatory copy.
 - Use custom groups named `OpenCode<Tool><Role>` with sources such as `Comment`, `Normal`, `String`, `Title`, `Special`, `DiagnosticError`, and diff groups.
 - Inherit cursor-line background through `panel.set_hl`.
-- Do not add decorative boxes, nested panels, large headings, or marketing-style copy.
+- Do not add decorative boxes beyond the `tool_style` expansion box, nested panels, large headings, or marketing-style copy.
 - Do not add visible instructions except terse action hints that map to existing keys, such as overflow text.
 - Keep output faithful. Strip transport noise such as echoed commands only when a widget has a known pattern; never hide actual errors.
 - For file changes, show path, status, and stats first; use inline diff only on demand.

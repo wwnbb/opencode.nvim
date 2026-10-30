@@ -96,6 +96,7 @@ end
 ---@field scope? string Syntax scope (for example "assistant_markdown")
 ---@field mode? string "source" renders the text literally
 ---@field highlight_code? OpenCodeCodeHighlighter
+---@field streaming? boolean The source is still growing at its end
 
 ---@param content string|nil
 ---@param opts? OpenCodeMarkdownRenderOpts
@@ -112,6 +113,9 @@ function M.render(content, opts, render)
 	local width = math.max(1, opts.width or render.get_chat_text_width())
 	local scope = opts.scope or "assistant_markdown"
 	local inline_context = inline.new_context()
+	-- While streaming, only blocks reaching the end of the source still change.
+	local tail_byte = opts.streaming and #source - 1 or math.huge
+	local function is_tail(node) return select(3, node:end_()) >= tail_byte end
 	local retry, references = false, {}
 	local function add(text_value, spans, prefix)
 		prefix = prefix or ""
@@ -157,11 +161,11 @@ function M.render(content, opts, render)
 			result[#result + 1] = NuiLine()
 		end
 	end
-	local function prose(value, base, prefix, language)
+	local function prose(value, base, prefix, language, tail)
 		local chunks, unavailable
 		do
 			local cacheable
-			chunks, unavailable, cacheable = inline.parse(value, base or ((prefix or ""):find("│", 1, true) and "OpenCodeMarkdownQuote" or nil), language, inline_context)
+			chunks, unavailable, cacheable = inline.parse(value, base or ((prefix or ""):find("│", 1, true) and "OpenCodeMarkdownQuote" or nil), language, inline_context, tail)
 			unavailable = unavailable or cacheable == false
 		end
 		retry = retry or unavailable
@@ -193,11 +197,12 @@ function M.render(content, opts, render)
 			vim.list_extend(result._opencode_highlights, syntax.project_highlights(captures, source_lines, rows))
 		end
 	end
-	local function table_block(node, prefix)
+	local function table_block(node, prefix, tail)
 		local data, widths = {}, {}
 		-- Marked's splitCells accepts empty/short rows which the block grammar
 		-- can report as ERROR nodes. Split the original rows, not named cells.
-		for row_index, raw in ipairs(vim.split(container_text(node, source):gsub("\n+$", ""), "\n", { plain = true })) do
+		local raw_rows = vim.split(container_text(node, source):gsub("\n+$", ""), "\n", { plain = true })
+		for row_index, raw in ipairs(raw_rows) do
 			if row_index ~= 2 then
 				local cells, values, cursor, escaped = {}, {}, 1, false
 				raw = vim.trim(raw)
@@ -212,7 +217,8 @@ function M.render(content, opts, render)
 					local chunks, unavailable
 					do
 						local cacheable
-						chunks, unavailable, cacheable = inline.table(vim.trim(cell), references, inline_context)
+						chunks, unavailable, cacheable = inline.table(vim.trim(cell), references, inline_context,
+							tail and row_index == #raw_rows)
 						unavailable = unavailable or cacheable == false
 					end
 					retry = retry or unavailable
@@ -227,7 +233,7 @@ function M.render(content, opts, render)
 		end
 		if #widths == 0 then return end
 		-- OpenTUI leaves header-only tables as Markdown until a data row arrives.
-		if #data == 1 then prose(text(node, source):gsub("\n+$", ""), nil, prefix); return end
+		if #data == 1 then prose(text(node, source):gsub("\n+$", ""), nil, prefix, nil, tail); return end
 		fit_columns(widths, width - vim.fn.strdisplaywidth(prefix or "") - #widths - 1)
 		local function border(left, middle, right)
 			local pieces = {}
@@ -322,10 +328,11 @@ function M.render(content, opts, render)
 	end
 	visit = function(node, prefix, in_list)
 		local kind = node:type()
-		if kind == "paragraph" then prose(inline_content(node), nil, prefix)
+		local tail = is_tail(node)
+		if kind == "paragraph" then prose(inline_content(node), nil, prefix, nil, tail)
 		elseif kind == "atx_heading" or kind == "setext_heading" then
 			local raw = container_text(node, source)
-			prose(in_list and raw or raw:gsub("\n+$", ""), nil, prefix, "markdown")
+			prose(in_list and raw or raw:gsub("\n+$", ""), nil, prefix, "markdown", tail)
 		elseif kind == "fenced_code_block" then
 			local fence = code_blocks.parse(container_text(node, source))[1]
 			if fence then
@@ -341,11 +348,11 @@ function M.render(content, opts, render)
 		elseif kind == "thematic_break" then
 			local value = string.rep("─", math.max(1, width - vim.fn.strdisplaywidth(prefix or "")))
 			add(value, { { line = 0, col_start = 0, col_end = #value, hl_group = "OpenCodeMarkdownBorder" } }, prefix)
-		elseif kind == "pipe_table" then table_block(node, prefix)
+		elseif kind == "pipe_table" then table_block(node, prefix, tail)
 		elseif kind == "block_quote" then
 			-- OpenTUI uses a single CodeRenderable here, not nested Markdown.
 			local raw = text(node, source):gsub("^ *> ?", ""):gsub("\n *> ?", "\n"):gsub("\n$", "")
-			prose(raw, "OpenCodeMarkdownQuote", (prefix or "") .. "│ ", "markdown")
+			prose(raw, "OpenCodeMarkdownQuote", (prefix or "") .. "│ ", "markdown", tail)
 		elseif kind == "list" then
 			local items = children(node, "list_item")
 			local start, marker_width, ordered = 1, 1, false
@@ -381,7 +388,7 @@ function M.render(content, opts, render)
 				if i < #items and text(item, source):match("\n[ \t]*\n$") then blank() end
 			end
 		else
-			prose(container_text(node, source):gsub("\n+$", ""), nil, prefix, "markdown")
+			prose(container_text(node, source):gsub("\n+$", ""), nil, prefix, "markdown", tail)
 		end
 	end
 	blocks(trees[1]:root(), "")

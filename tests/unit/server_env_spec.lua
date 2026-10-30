@@ -22,6 +22,41 @@ describe("server process environment", function()
 		assert.equals("/nvm/bin:/bun/bin:/volta/bin:/usr/bin", env.PATH)
 	end)
 
+	it("keeps multi-line values in NUL-separated env output and skips startup noise", function()
+		local output = "welcome\nbanner A=1\nPATH=/bin\0MULTI=one\nINJECTED=two\0EMPTY=\0not a pair\0"
+		assert.same({ PATH = "/bin", MULTI = "one\nINJECTED=two", EMPTY = "" }, server_env.parse_env_output(output))
+	end)
+
+	describe("login shell capture", function()
+		local original_system
+		before_each(function() original_system = vim.system end)
+		after_each(function() vim.system = original_system end)
+
+		it("waits with a deadline, parses NUL output and caches it", function()
+			local calls = {}
+			vim.system = function(cmd, opts)
+				calls[#calls + 1] = { cmd = cmd, opts = opts }
+				return { wait = function(_, timeout)
+					calls[#calls].timeout = timeout
+					return { code = 0, stdout = "A=1\nB=2\0C=3\0" }
+				end }
+			end
+			assert.same({ A = "1\nB=2", C = "3" }, server_env.load_shell_env({}))
+			assert.same({ A = "1\nB=2", C = "3" }, server_env.load_shell_env({}))
+			assert.equals(1, #calls)
+			assert.equals("env -0 || env", calls[1].cmd[3])
+			assert.is_true(calls[1].timeout > 0 and calls[1].timeout <= 10000)
+		end)
+
+		it("falls back to an empty environment when the shell times out", function()
+			vim.system = function()
+				return { wait = function() return { code = 124, signal = 9, stdout = "PARTIAL=1\0" } end }
+			end
+			assert.same({}, server_env.load_shell_env({}))
+			assert.same({}, server_env.load_shell_env({}))
+		end)
+	end)
+
 	it("builds string-only server env with credentials and drops JSON null values", function()
 		local env = server_env.build({ use_shell_env = false, config_dir = "/cfg",
 			env = { OPENCODE_NVIM_TEST_VALUE = 42, OPENCODE_NVIM_TEST_REMOVED = vim.NIL } }, { username = "opencode", password = "test-secret" })

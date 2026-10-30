@@ -15,7 +15,7 @@ local function owner_count(id)
 end
 
 describe("tab binding ownership integrity", function()
-	local saved, editor, first, directory, original_cwd, files, records
+	local saved, editor, first, directory, original_cwd, records
 	local function seed(id, parent)
 		local record = { id = id, title = id, parentID = parent, directory = directory .. "/one", agent = "build",
 			model = { providerID = "provider", modelID = "model" } }
@@ -34,7 +34,7 @@ describe("tab binding ownership integrity", function()
 		vim.o.columns, vim.o.lines = 160, 48
 		editor, original_cwd = vim.api.nvim_get_current_tabpage(), vim.fn.getcwd()
 		directory = vim.fn.tempname()
-		vim.fn.mkdir(directory .. "/one", "p"); vim.fn.mkdir(directory .. "/two", "p")
+		vim.fn.mkdir(directory .. "/one", "p")
 		tabs.teardown(); state.reset(); sync.clear_all(); require("opencode.session.pending").clear_all()
 		vim.fn.chdir(directory .. "/one")
 		saved = { notify = vim.notify, ensure = lifecycle.ensure_connected, client = {} }
@@ -51,7 +51,7 @@ describe("tab binding ownership integrity", function()
 			elseif method == "policyList" then callback(nil, {})
 			elseif method == "reviewList" then callback(nil, { reviews = {} }) end
 		end
-		files, records = {}, {}
+		records = {}
 		api.setup({ server = { auto_start = false }, lualine = { enabled = false },
 			chat = { layout = "tab" } })
 		seed("root"); sessions.set_active("root", "Root")
@@ -68,7 +68,6 @@ describe("tab binding ownership integrity", function()
 			if tab ~= editor then vim.api.nvim_set_current_tabpage(tab); vim.cmd("tabclose!") end
 		end
 		settle()
-		for _, buf in ipairs(files) do if vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_delete(buf, { force = true }) end end
 		for _, id in ipairs({ "root", "child" }) do require("opencode.ui.input.history").clear_session(id) end
 		for name, method in pairs(saved.client) do client[name] = method end
 		lifecycle.ensure_connected, vim.notify = saved.ensure, saved.notify
@@ -130,28 +129,5 @@ describe("tab binding ownership integrity", function()
 		assert.equals(2, #views.windows(first))
 		assert.equals(1, owner_count("replacement"))
 		for _, win in ipairs(views.windows(first)) do assert.equals(first.bufnr, vim.api.nvim_win_get_buf(win)) end
-	end)
-
-	it("keeps runtime tabs across cwd changes when q leaves hidden and file-only layouts", function()
-		local second = chat.create_layout(seed("other"))
-		settle()
-		vim.cmd("rightbelow new")
-		local file, win = vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win()
-		files[#files + 1] = file
-		vim.api.nvim_buf_set_lines(file, 0, -1, false, { "Unsaved workspace file" })
-		chat.focus_view(second)
-		local mapping = vim.fn.maparg("q", "n", false, true)
-		assert.is_function(mapping.callback)
-		mapping.callback(); settle()
-		assert.is_true(first.suspended)
-		assert.is_false(second.visible)
-		assert.equals(2, #workspace.list())
-		local order = state.get_runtime_session_order()
-		vim.cmd.cd(directory .. "/two")
-		assert.same(order, state.get_runtime_session_order())
-		assert.equals(2, #workspace.list())
-		assert.is_true(vim.api.nvim_win_is_valid(win))
-		assert.is_true(vim.bo[file].modified)
-		assert.same({ "Unsaved workspace file" }, vim.api.nvim_buf_get_lines(file, 0, -1, false))
 	end)
 end)

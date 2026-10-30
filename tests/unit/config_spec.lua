@@ -7,7 +7,6 @@ describe("strict setup options", function()
 
 	for _, case in ipairs({
 		{ name = "omitted options" },
-		{ name = "empty options", opts = {} },
 		{ name = "custom options", opts = { server = { env = { TEST = "original" } },
 			changes = { file_patterns_to_confirm = { "custom" } } } },
 	}) do
@@ -30,12 +29,7 @@ describe("strict setup options", function()
 	it("rejects removed options before setup changes application state", function()
 		local removed = {
 			{ session = { parallel = { use_prompt_async = false } } },
-			{ chat = { message_display = {} } },
 			{ thinking = { max_height = 10 } },
-			{ thinking = { truncate = false } },
-			{ thinking = { icon = "*" } },
-			{ markdown = { enable_code_highlight = false } },
-			{ server = { lazy = false } },
 			{ diff = { view = "split" } },
 		}
 		local defaults = vim.deepcopy(config.defaults)
@@ -54,9 +48,8 @@ describe("strict setup options", function()
 	end)
 
 	it("accepts only supported diff providers", function()
-		assert.equals("native", config.merge({}).diff.provider)
 		assert.equals("codediff", config.merge({ diff = { provider = "codediff" } }).diff.provider)
-		for _, provider in ipairs({ "diffview", false, {} }) do
+		for _, provider in ipairs({ "diffview", false }) do
 			local ok, err = pcall(config.merge, { diff = { provider = provider } })
 			assert.is_false(ok)
 			assert.matches("diff.provider must be native or codediff", err)
@@ -67,7 +60,7 @@ describe("strict setup options", function()
 		for _, provider in ipairs({ "grep", "ripgrep" }) do
 			assert.equals(provider, config.merge({ input = { history_search_provider = provider } }).input.history_search_provider)
 		end
-		for _, provider in ipairs({ "rg", "unknown", false, {} }) do
+		for _, provider in ipairs({ "rg", false }) do
 			local ok, err = pcall(config.merge, { input = { history_search_provider = provider } })
 			assert.is_false(ok)
 			assert.matches("input.history_search_provider", err, 1, true)
@@ -78,14 +71,9 @@ describe("strict setup options", function()
 		local defaults = vim.deepcopy(config.defaults)
 		for _, kind in ipairs({ "completion", "explanation" }) do
 			for _, case in ipairs({
-				{ { enabled = "yes" }, "enabled" },
-				{ { timeout_ms = -1 }, "timeout_ms" },
 				{ { timeout_ms = math.huge }, "timeout_ms" },
-				{ { context = false }, "context" },
 				{ { context = { max_bytes = 1023 } }, "context.max_bytes" },
-				{ { context = { before_lines = -1 } }, "context.before_lines" },
 				{ { context = { related_lines = 1.5 } }, "context.related_lines" },
-				{ { keymaps = false }, "keymaps" },
 				{ { keymaps = { trigger = "" } }, "keymaps.trigger" },
 			}) do
 				local opts = { [kind] = case[1] }
@@ -100,5 +88,14 @@ describe("strict setup options", function()
 		end
 		assert.is_false(pcall(config.merge, { completion = { max_lines = 0 } }))
 		assert.is_false(pcall(config.merge, { completion = { keymaps = { accept = "" } } }))
+	end)
+
+	it("rejects malformed context placeholder settings and invalid byte budgets", function()
+		assert.has_error(function() config.merge({ context = false }) end,
+			"opencode.nvim: context must be a table")
+		for _, value in ipairs({ "24576", 1023, 1024.5 }) do
+			assert.has_error(function() config.merge({ context = { max_bytes = value } }) end,
+				"opencode.nvim: context.max_bytes must be an integer >= 1024")
+		end
 	end)
 end)

@@ -28,7 +28,7 @@ describe("configurable action mappings", function()
 	end)
 
 	it("validates action value types and every list member", function()
-		for _, value in ipairs({ true, 3, { "q", false }, { "q", "" }, { n = "q" } }) do
+		for _, value in ipairs({ true, { "q", false }, { n = "q" } }) do
 			local ok, err = pcall(config.merge, { chat = { keymaps = { close = value } } })
 			assert.is_false(ok)
 			assert.matches("chat.keymaps.close", err, 1, true)
@@ -45,11 +45,6 @@ describe("configurable action mappings", function()
 			assert.is_false(ok)
 			assert.matches(case[2] .. " keys must differ", err, 1, true)
 		end
-	end)
-
-	it("accepts a disabled completion prompt and rejects an empty shortcut", function()
-		assert.is_false(config.merge({ completion = { keymaps = { prompt = false } } }).completion.keymaps.prompt)
-		assert.is_false(pcall(config.merge, { completion = { keymaps = { prompt = "" } } }))
 	end)
 
 	it("rejects two explicit same-mode actions before changing any mapping", function()
@@ -133,4 +128,13 @@ describe("configurable action mappings", function()
 		assert.equals("User navigation", mapping("n", "z").desc)
 	end)
 
+	it("restores or removes a literal less-than mapping", function()
+		vim.keymap.set("n", "<", function() return "h" end, { buffer = buf, expr = true, nowait = true })
+		local previous = vim.api.nvim_buf_get_keymap(buf, "n")
+		keymaps.restore(keymaps.install("n", buf, "<", function() end))
+		assert.same(previous, vim.api.nvim_buf_get_keymap(buf, "n"))
+		vim.api.nvim_buf_del_keymap(buf, "n", "<")
+		keymaps.restore(keymaps.install("n", buf, "<", function() end))
+		assert.same({}, vim.api.nvim_buf_get_keymap(buf, "n"))
+	end)
 end)

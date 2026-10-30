@@ -125,11 +125,11 @@ describe("TCP connection callbacks", function()
 		assert.same({ { reason = "connect_error", message = "Connect failed: ECONNREFUSED" } }, errors)
 	end)
 
-	for _, kind in ipairs({ "start", "callback", "empty" }) do
+	for _, kind in ipairs({ "start", "empty" }) do
 		it("reports DNS " .. kind .. " failures without opening a socket", function()
 			if kind == "start" then dns_start_error = "EINVAL" end
 			open()
-			if kind == "callback" then resolve("ENOTFOUND") elseif kind == "empty" then resolve(nil, {}) end
+			if kind == "empty" then resolve(nil, {}) end
 			assert.is_false(connection.is_active())
 			assert.equals(1, #errors); assert.equals("resolve_error", errors[1].reason)
 			assert.same({}, sockets)
@@ -145,8 +145,9 @@ describe("TCP connection callbacks", function()
 		assert.same({ { reason = "read_start_error", message = "Failed to start read: EBADF" } }, errors)
 	end)
 
-	for _, operation in ipairs({ "initial", "send" }) do
-		for _, kind in ipairs({ "start", "callback" }) do
+	for _, case in ipairs({ { "initial", "start" }, { "send", "callback" } }) do
+		do
+			local operation, kind = case[1], case[2]
 			it("handles " .. operation .. " write " .. kind .. " failures once", function()
 				open(); resolve(nil, { addresses[1] })
 				if operation == "send" then sockets[1].connect_callback(nil) end

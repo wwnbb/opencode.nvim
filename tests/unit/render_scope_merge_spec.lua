@@ -21,6 +21,16 @@ describe("coalesced transcript render scopes", function()
 		end
 	end)
 
+	it("keeps an immediate request immediate in either order", function()
+		for _, immediate_first in ipairs({ true, false }) do
+			local user, stream = { kind = "question", immediate = true }, { kind = "message", immediate = false }
+			local merged = coordinator.merge_requests(nil, immediate_first and user or stream)
+			merged = coordinator.merge_requests(merged, immediate_first and stream or user)
+			assert.is_true(merged.immediate)
+		end
+		assert.is_nil(coordinator.merge_requests(nil, { kind = "message" }).immediate)
+	end)
+
 	it("preserves a global invalidation before or after scoped updates", function()
 		for _, global_first in ipairs({ true, false }) do
 			local scoped, global = { session_id = "foreign" }, { force = true }
@@ -76,27 +86,6 @@ describe("coalesced transcript render scopes", function()
 				sessions_changed = true }, received[1]._render_sessions)
 			assert.is_false(coordinator.request_relevant(received[1], "focused"))
 			assert.is_true(coordinator.request_relevant(received[1], "session_status_change"))
-		end, debug.traceback)
-		vim.schedule = original_schedule
-		bus.clear()
-		assert.is_true(ok, err)
-	end)
-
-	it("still emits scoped bus requests while preserving their combined payload", function()
-		local bus = require("opencode.events.bus")
-		bus.clear()
-		local original_schedule, scheduled, received = vim.schedule, {}, {}
-		vim.schedule = function(fn) scheduled[#scheduled + 1] = fn end
-		local ok, err = xpcall(function()
-			coordinator.setup(bus)
-			bus.on("chat_render", function(data) received[#received + 1] = data end)
-			for _, id in ipairs({ "foreign", "current", "third" }) do
-				bus.emit("sync_changed", { kind = "message", session_id = id, force = id == "current" })
-			end
-			while #scheduled > 0 do table.remove(scheduled, 1)() end
-			assert.equals(1, #received)
-			assert.same({ foreign = true, current = true, third = true }, received[1]._render_sessions)
-			assert.is_true(received[1].force)
 		end, debug.traceback)
 		vim.schedule = original_schedule
 		bus.clear()

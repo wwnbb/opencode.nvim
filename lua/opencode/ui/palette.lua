@@ -312,7 +312,7 @@ end
 local truncate_display_width = require("opencode.util.text").truncate
 
 local function truncate_with_ellipsis(text, max_width)
-	return truncate_display_width(text, max_width, "...")
+	return truncate_display_width(text, max_width, "…")
 end
 
 -- Keep the existing theme colors; only the dialog layout changes.
@@ -438,7 +438,7 @@ local function render_list()
 		})
 	end
 	local frame_width = state.frame.win_config.width
-	local close_label = keymaps.label("palette", "close")
+	local close_label = keymaps.hint({ keymaps.label("palette", "close") }) or ""
 	local title = truncate_display_width("Commands", math.max(0, frame_width - vim.fn.strdisplaywidth(close_label) - 9))
 	local header = truncate_display_width("    " .. title
 		.. string.rep(" ", math.max(0, frame_width - #title - vim.fn.strdisplaywidth(close_label) - 8)) .. close_label .. "    ", frame_width)

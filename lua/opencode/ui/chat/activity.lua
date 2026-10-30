@@ -107,6 +107,11 @@ end
 
 require("opencode.ui.highlights").register("opencode.ui.chat.activity", ensure_highlights)
 
+-- Folded and opened containers use the shared fold marker; a spinner takes its place while working.
+local function fold_prefix(expanded)
+	return cs.module(view, require("opencode.ui.chat.tool_panel")).fold_prefix(expanded)
+end
+
 local function add_line(result, text, hl, prefix)
 	cs.module(view, require("opencode.ui.chat.render")).add_panel_line(result, text, hl, {
 		prefix = prefix or "",
@@ -118,6 +123,7 @@ local function append_thought(result, part)
 	local render = cs.module(view, require("opencode.ui.chat.render"))
 	local body = require("opencode.ui.markdown").render(reasoning_text(part), {
 		width = math.max(1, render.get_chat_text_width() - vim.fn.strdisplaywidth("▏  ")),
+		streaming = not (type(part.time) == "table" and part.time.completed),
 	}, render)
 	local offset = #result.lines
 	for _, line in ipairs(body) do
@@ -142,8 +148,8 @@ local function render_low(group, refs, expanded, expansions)
 		else tools = tools + 1; if tool_group.failed(ref.part) then failed = failed + 1 end end
 	end
 	local frame = M.is_working(group, refs) and cs.module(view, require("opencode.ui.chat.task_animation")).get_task_anim_frame() or nil
-	local header = (frame or (expanded and "-" or "+")) .. " Activity · " .. tools .. (tools == 1 and " tool, " or " tools, ")
-		.. thoughts .. (thoughts == 1 and " thought" or " thoughts")
+	local header = (frame and (frame .. " ") or fold_prefix(expanded)) .. "Activity · " .. tools
+		.. (tools == 1 and " tool call, " or " tool calls, ") .. thoughts .. (thoughts == 1 and " thought" or " thoughts")
 	if failed > 0 then header = header .. " · " .. failed .. " failed" end
 	add_line(result, header, failed > 0 and "OpenCodeActivityError" or "OpenCodeToolGroup")
 	local tree = require("opencode.ui.chat.widget_tree")
@@ -165,7 +171,11 @@ local function render_low(group, refs, expanded, expansions)
 				separator_before = node.separator_before,
 			})
 		end
-		if rendered and #rendered.lines > 0 then last_tool_name = part.type == "tool" and part.tool or nil end
+		if rendered and #rendered.lines > 0 then
+			-- A shell panel ends on its "▏" row; only another shell panel continues it.
+			if last_tool_name == "bash" and part.tool ~= "bash" then result.lines[#result.lines + 1] = "" end
+			last_tool_name = part.type == "tool" and part.tool or nil
+		end
 		tree.append(result, node, rendered)
 	end
 	result.lines[#result.lines + 1] = ""
@@ -190,7 +200,7 @@ function M.render(group, expanded, expansions)
 		title = candidate and (rest == "" or rest:sub(1, 2) == "\n\n" or rest:sub(1, 4) == "\r\n\r\n")
 			and vim.trim(candidate) or nil
 	end
-	local header = (frame or (expanded and "-" or "+")) .. (working and " Thinking" or " Thought")
+	local header = (frame and (frame .. " ") or fold_prefix(expanded)) .. (working and "Thinking" or "Thought")
 	if title and (working or not expanded) then header = header .. ": " .. title end
 	if not working then
 		if #refs > 1 then header = header .. " · " .. #refs .. " steps" end

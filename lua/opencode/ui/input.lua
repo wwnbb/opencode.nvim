@@ -618,10 +618,14 @@ function M.show(opts)
 	vim.cmd(restored and "startinsert" or "startinsert!")
 end
 
-function M.close(save_draft)
+---@param keep_mode? boolean the caller restores a composer and its mode
+local function close(save_draft, keep_mode)
 	if not state.visible then
 		return
 	end
+	-- A deferred close (BufLeave) runs after focus moved on: leave Insert mode in
+	-- a file the user is now editing, but never in a transcript or other UI.
+	local focused = vim.tbl_contains(M.get_winids(), vim.api.nvim_get_current_win())
 	history_search.cancel(state)
 
 	if save_draft ~= false then save_pending() end
@@ -636,7 +640,14 @@ function M.close(save_draft)
 
 	reset_composer_state()
 
-	vim.cmd("stopinsert")
+	if keep_mode then return end
+	if focused or (vim.api.nvim_get_mode().mode:sub(1, 1) == "i" and not vim.bo.modifiable) then
+		vim.cmd("stopinsert")
+	end
+end
+
+function M.close(save_draft)
+	return close(save_draft)
 end
 
 function M.is_visible()
@@ -664,10 +675,17 @@ function M.suspend()
 	local parent = state.parent_winid ~= state.view.winid and state.parent_winid or nil
 	local float_dims = state.layout.float_dims
 	local insert = vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
-	M.close()
+	-- :startinsert is ignored while Insert mode is still active, so a pending
+	-- :stopinsert would win over the restored composer; keep the mode instead.
+	close(nil, true)
+	local function abandon()
+		if insert then vim.cmd("stopinsert") end
+	end
 	return function()
 		local views = require("opencode.ui.chat.state")
-		if not views.valid(opts.view, generation) or not opts.view.visible or views.session(opts.view).id ~= opts.session_id then return end
+		if not views.valid(opts.view, generation) or not opts.view.visible or views.session(opts.view).id ~= opts.session_id then
+			return abandon()
+		end
 		require("opencode.ui.chat").focus_view(opts.view)
 		opts.winid, opts.float_dims = opts.view.winid, opts.view.float_dims
 		if parent and vim.api.nvim_win_is_valid(parent) then
@@ -675,8 +693,8 @@ function M.suspend()
 			vim.api.nvim_set_current_win(parent)
 		end
 		-- Focus restoration can synchronously open another composer for this view.
-		M.close()
-		if M.show(opts) == false then return end
+		close(nil, true)
+		if M.show(opts) == false then return abandon() end
 		vim.api.nvim_win_set_cursor(state.winid, cursor)
 		if not insert then vim.cmd("stopinsert") end
 	end

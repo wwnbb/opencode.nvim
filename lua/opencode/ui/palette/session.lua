@@ -18,7 +18,7 @@ end
 local function directory_label(directory)
 	local path = tostring(directory or ""):gsub("\\", "/"):gsub("/+$", "")
 	local parts = vim.split(path, "/", { trimempty = true })
-	local label = #parts > 2 and (".../" .. parts[#parts - 1] .. "/" .. parts[#parts]) or directory
+	local label = #parts > 2 and ("…/" .. parts[#parts - 1] .. "/" .. parts[#parts]) or directory
 	return require("opencode.util.text").truncate(label or "", 28, "...")
 end
 
@@ -132,7 +132,7 @@ function M.browse(query, context)
 			or (query.project and "Selected project" or "All projects")
 		show_menu(context, initial_input, { context = context, items = items, title = " Switch Session ", width = 90, searchable = true,
 			message = scope .. " · " .. #items .. (#items == 1 and " session" or " sessions") .. " · ● current",
-			search_placeholder = "Search by session title or directory...", confirm_label = "open",
+			search_placeholder = "Search by session title or directory…", confirm_label = "open",
 			item_detail = function(item) return "Selected: " .. item.title .. "\n" .. item.directory end,
 			sort = function(a, b) return a.sort_key > b.sort_key end,
 			on_select = function(item) if current() then M.open(item.value, context) end end,

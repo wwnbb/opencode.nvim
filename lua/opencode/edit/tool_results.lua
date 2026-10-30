@@ -163,11 +163,7 @@ function M.display_path(path)
 		return "unknown"
 	end
 
-	local raw = tostring(path)
-	if raw:sub(1, 1) == "/" or raw:sub(1, 1) == "~" then
-		return vim.fn.fnamemodify(raw, ":~:.")
-	end
-	return raw
+	return text_util.normalize_path(path)
 end
 local display_path = M.display_path
 

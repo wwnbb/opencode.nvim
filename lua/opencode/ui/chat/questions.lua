@@ -22,8 +22,9 @@ local function allows_custom_answer(question)
 	return type(question) == "table" and question.custom == true
 end
 
+-- Only the user's own answers request renders here; show them without throttling.
 local function schedule_render()
-	render_coordinator.request({ kind = "question" })
+	render_coordinator.request({ kind = "question", immediate = true })
 end
 
 local function selection_changed(request_id, focus)

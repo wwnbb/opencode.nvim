@@ -247,22 +247,30 @@ local function append_command(result, command, resources)
 end
 
 ---The request in full: title, command, details and every unshown resource.
+---The header already names the tool, so its own permission has no title line.
 ---@param result table
 ---@param request OpenCodePermissionRequest
+---@return boolean added
 local function append_request(result, request)
-	local _, _, title_rows = add_panel_line(result, request.title, "OpenCodePermissionTitle")
-	highlight_panel_text(result, title_rows, request.title, "OpenCodePermissionTitle")
+	local count = #result.lines
+	if not request.own and request.title ~= "" then
+		local _, _, title_rows = add_panel_line(result, request.title, "OpenCodePermissionTitle")
+		highlight_panel_text(result, title_rows, request.title, "OpenCodePermissionTitle")
+	end
 
 	local shown_values = vim.tbl_map(function(detail) return detail.value end, request.details)
 	local resources = unshown_resources(request, request.command, shown_values)
 	if request.command ~= "" then
-		add_panel_blank(result)
+		if #result.lines > count then
+			add_panel_blank(result)
+		end
 		append_command(result, request.command, request.resources)
 		if #request.details + #resources > 0 or request.message ~= "" then
 			add_panel_blank(result)
 		end
 	end
 	append_details(result, PANEL, request.details, resources, request.message)
+	return #result.lines > count
 end
 
 -- ─── Standalone panel ─────────────────────────────────────────────────────────
@@ -278,8 +286,11 @@ local function add_header(result, request, status, suffix)
 	elseif status == "rejected" then
 		header, hl_group = "# Permission rejected", "OpenCodePermissionRejected"
 	end
-	local title = request.tool ~= "" and ("for " .. request.tool) or ""
-	widget_base.add_status_header(panel_helpers, result, header, title, suffix, hl_group, "OpenCodePermissionTitle")
+	-- Only the tool name takes the title highlight.
+	if request.tool ~= "" then
+		header = header .. " for"
+	end
+	widget_base.add_status_header(panel_helpers, result, header, request.tool, suffix, hl_group, "OpenCodePermissionTitle")
 end
 
 ---Header and request of a standalone panel, between blank panel rows.
@@ -291,8 +302,9 @@ local function append_panel_request(result, request, status, suffix)
 	add_panel_blank(result)
 	add_header(result, request, status, suffix)
 	add_panel_blank(result)
-	append_request(result, request)
-	add_panel_blank(result)
+	if append_request(result, request) then
+		add_panel_blank(result)
+	end
 end
 
 -- ─── Pending options ──────────────────────────────────────────────────────────
@@ -327,7 +339,7 @@ local function append_options(result, perm_state, request)
 	if can_save and selected == 2 then
 		local save = request.always
 		if #save == 1 and save[1] == "*" then
-			add_panel_line(result, "This will always allow " .. request.type .. " for this project.", "OpenCodePermissionMuted")
+			add_panel_line(result, "This will always allow " .. request.title .. " for this project.", "OpenCodePermissionMuted")
 		else
 			add_panel_line(result, "This will always allow the following patterns for this project.", "OpenCodePermissionMuted")
 			for _, pattern in ipairs(save) do
@@ -339,17 +351,27 @@ local function append_options(result, perm_state, request)
 	return first_option_line, #options, option_lines, option_end_lines
 end
 
+---The error line, then the key hint, then a closing blank row when either was shown.
 ---@param result table
+---@param perm_state table
 ---@param option_count number
-local function append_hint(result, option_count)
+local function append_tail(result, perm_state, option_count)
+	local tail_start = #result.lines
+	if perm_state.error then
+		add_panel_line(result, perm_state.error.message or "Unable to confirm decision", "OpenCodePermissionError")
+	end
 	local keymaps = require("opencode.util.keymap")
 	local keys = (require("opencode.ui.chat.state").state.config or {}).keymaps
 	local function key(action) return keymaps.label("chat", action, keys) end
 	local select_item, move_item = widget_base.selection_hint(option_count, keys)
-	local hint = keymaps.hint({ select_item, move_item, { key("confirm"), "confirm" }, { key("widget_message"), "message" } })
-	if not hint then return end
-	add_panel_line(result, hint, "OpenCodePermissionMuted")
-	add_panel_blank(result)
+	local hint = keymaps.hint({ select_item, move_item, { key("confirm"), "confirm" }, { key("widget_message"), "message" } },
+		{ omit_disabled = true })
+	if hint then
+		add_panel_line(result, hint, "OpenCodePermissionMuted")
+	end
+	if #result.lines > tail_start then
+		add_panel_blank(result)
+	end
 end
 
 -- Get formatted lines for a pending permission
@@ -369,24 +391,20 @@ function M.get_lines_for_permission(_permission_id, perm_state, opts)
 		add_panel_line(result, icons.pending .. " Allow this command?", "OpenCodePermissionHeader")
 		append_details(result, PANEL, {}, unshown_resources(request, row_command), request.message)
 	else
-		append_panel_request(result, request, "pending")
+		append_panel_request(result, request, "pending", perm_state.submitting and "(submitting)" or nil)
 	end
 
 	if perm_state.status == "unavailable" or perm_state.submitting then
 		add_panel_line(result, perm_state.submitting and "Sending decision…" or "Request is no longer pending", "OpenCodePermissionMuted")
-		if attached then
-			add_panel_blank(result)
-		else
+		add_panel_blank(result)
+		if not attached then
 			add_trailing_separator(result)
 		end
 		return result.lines, result.highlights, widget_base.make_meta({ attached = attached or nil })
 	end
-	if perm_state.error then
-		add_panel_line(result, perm_state.error.message or "Unable to confirm decision", "OpenCodePermissionError")
-	end
 
 	local first_option_line, option_count, option_lines, option_end_lines = append_options(result, perm_state, request)
-	append_hint(result, option_count)
+	append_tail(result, perm_state, option_count)
 	if not attached then
 		add_trailing_separator(result)
 	end
@@ -398,6 +416,7 @@ function M.get_lines_for_permission(_permission_id, perm_state, opts)
 			first_interactive_line = first_option_line,
 			option_lines = option_lines,
 			option_end_lines = option_end_lines,
+			selected_line = option_lines[perm_state.selected_option or 1],
 			attached = attached or nil,
 		})
 end

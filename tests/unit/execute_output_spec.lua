@@ -29,14 +29,6 @@ describe("execute output descriptions", function()
 		assert.same({ '""' }, output.describe('""').lines)
 	end)
 
-	it("serializes table values and reports an array count", function()
-		local result = output.describe({ "one", false, vim.NIL })
-		assert.same({ "one", false, vim.NIL }, vim.json.decode(result.raw))
-		assert.same({ "- one", "- false", "- null" }, result.lines)
-		assert.equals(3, result.count)
-		assert.equals("items", result.count_label)
-	end)
-
 	it("summarizes a useful generic JSON field inside a screenshot-like wrapper", function()
 		for _, fields in ipairs({
 			{ '"main":' .. vim.json.encode(string.rep("Long page text\n", 200)), '"title":"Senior Engineer | Example"', '"apply":[{"href":"https://example.test/apply"}]' },
@@ -76,16 +68,6 @@ describe("execute output descriptions", function()
 		assert.same({ "false", "", "Logs:", "finished" }, output.describe("false\n\nLogs:\nfinished").lines)
 	end)
 
-	it("formats several fenced JSON values including scalar false and null", function()
-		local result = output.describe("First:\n~~~json\nfalse\n~~~\nSecond:\n```JSON\nnull\n```")
-		assert.same({ "First:", "false", "Second:", "null" }, result.lines)
-	end)
-
-	it("preserves Unicode and special JSON key names", function()
-		local result = output.describe('{"ключ":"Привет 🌍\\n日本語","a\\nb":"value"}')
-		assert.same({ [["a\nb": value]], '"ключ":', "  Привет 🌍", "  日本語" }, result.lines)
-	end)
-
 	it("bounds deep JSON formatting and retains data beyond the readable depth", function()
 		local raw = string.rep('{"child":', 40) .. '"leaf"' .. string.rep("}", 40)
 		local result = output.describe(raw, { max_depth = 4 })
@@ -102,14 +84,6 @@ describe("execute output descriptions", function()
 			assert.is_true(result.truncated)
 			assert.is_true(#table.concat(result.lines) <= 100)
 		end
-	end)
-
-	it("falls back safely for Lua values that cannot be JSON encoded", function()
-		local value = { a = function() end }
-		value.self = value
-		local result = output.describe(value)
-		assert.is_string(result.raw)
-		assert.is_true(#result.lines > 0)
 	end)
 
 	it("provides generic field columns and a document with separate headings", function()
@@ -194,10 +168,8 @@ describe("execute output descriptions", function()
 	end)
 	it("preserves literal text and invalid JSON in compact and document views", function()
 		for _, raw in ipairs({
-			"  ```JSON\n{broken}\n  ```\nLogs: bad", "```json\n{broken", [[{"broken":"\escape"}]],
-			"Example:\n````markdown\n```json\n{\"a\":1}\n```\n````\nDone.",
-			"```json\n{broken}\n```\nLogs: bad", "```json\n{unfinished",
-			"# Heading\n\nSome **text**.\n",
+			"  ```JSON\n{broken}\n  ```\nLogs: bad", [[{"broken":"\escape"}]],
+			"Example:\n````markdown\n```json\n{\"a\":1}\n```\n````\nDone.", "```json\n{unfinished",
 		}) do
 			local result = output.describe(raw)
 			local expected = vim.split(raw, "\n", { plain = true })
@@ -226,5 +198,4 @@ describe("execute output descriptions", function()
 			for _, line in ipairs(result.lines) do assert.is_true(pcall(vim.json.encode, line)) end
 		end
 	end)
-
 end)

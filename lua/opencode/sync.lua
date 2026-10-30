@@ -50,7 +50,8 @@ local store = {
 	task_child_owner = {}, -- { [child_session_id] = messageID .. "\0" .. partID }
 	task_part_child = {}, -- { [messageID .. "\0" .. partID] = child_session_id }
 	message_revision = {}, -- { [messageID] = number } internal render invalidation
-	part_revision = {}, -- { [messageID .. "\0" .. partID] = number } internal render invalidation
+	part_revision = {}, -- { [messageID] = { [partID] = number } } internal render invalidation
+	part_revision_counter = 0, -- Never reset: a re-added part must not reuse a cached revision.
 	session_revision = {}, -- { [sessionID] = number } internal render invalidation
 	session_generation = {}, -- Invalidates HTTP snapshots even before the first message arrives.
 	snapshot_generation = 0,
@@ -311,7 +312,17 @@ end
 ---@param session_id string|nil
 local function bump_part_revision(message_id, part_id, session_id)
 	bump_message_revision(message_id, session_id)
-	bump_revision(store.part_revision, part_key(message_id, part_id))
+	if not message_id or not part_id then
+		return
+	end
+	-- Indexed by message so dropping one message touches only its parts.
+	local revisions = store.part_revision[message_id]
+	if not revisions then
+		revisions = {}
+		store.part_revision[message_id] = revisions
+	end
+	store.part_revision_counter = store.part_revision_counter + 1
+	revisions[part_id] = store.part_revision_counter
 end
 
 ---@param old_value any
@@ -327,12 +338,7 @@ local function clear_message_revisions(message_id)
 		return
 	end
 	store.message_revision[message_id] = nil
-	local prefix = message_id .. "\0"
-	for key in pairs(store.part_revision) do
-		if key:sub(1, #prefix) == prefix then
-			store.part_revision[key] = nil
-		end
-	end
+	store.part_revision[message_id] = nil
 end
 
 -- Find owning session for a message ID.
@@ -1060,8 +1066,8 @@ end
 ---@param part_id string
 ---@return number
 function M.get_part_revision(message_id, part_id)
-	local key = part_key(message_id, part_id)
-	return key and store.part_revision[key] or 0
+	local revisions = message_id and store.part_revision[message_id]
+	return revisions and part_id and revisions[part_id] or 0
 end
 
 ---@param session_id string
@@ -1150,13 +1156,11 @@ function M.get_message_render_parts(message_id, opts)
 	local native_order = source[1] and source[1].content_order ~= nil
 	local parts = native_order and {} or source
 	local tool_parts, part_revisions = {}, {}
+	local revisions = store.part_revision[message_id] or {}
 	for _, index in ipairs(cached.order) do
 		local part = source[index]
 		if native_order then parts[#parts + 1] = part end
-		if part.id then
-			local key = part_key(message_id, part.id)
-			part_revisions[part.id] = key and store.part_revision[key] or 0
-		end
+		if part.id then part_revisions[part.id] = revisions[part.id] or 0 end
 	end
 	for _, index in ipairs(cached.tools) do tool_parts[#tool_parts + 1] = source[index] end
 

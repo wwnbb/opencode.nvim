@@ -136,8 +136,9 @@ local function build_header_lines(log_count)
 
 	-- Auto-scroll indicator
 	local indicator = NuiLine()
-	indicator:append(NuiText(" [Auto-scroll " .. (state.auto_scroll and "ON" or "OFF") .. " - "
-		.. keymaps.label("logs", "auto_scroll", (state.config or {}).keymaps) .. " to toggle] ", "Comment"))
+	local toggle = keymaps.hint({ { keymaps.label("logs", "auto_scroll", (state.config or {}).keymaps), "to toggle" } })
+	indicator:append(NuiText(" [Auto-scroll " .. (state.auto_scroll and "ON" or "OFF") .. (toggle and (" - " .. toggle) or "")
+		.. "] ", "Comment"))
 	table.insert(lines, indicator)
 
 	-- Empty line

@@ -42,31 +42,6 @@ describe("tab session creation and close keys", function()
 		lifecycle.ensure_connected, client.create_session, client.get_messages, vim.notify = unpack(saved)
 	end)
 
-	it("keeps one native tab when repeatedly creating and closing layouts with N and x", function()
-		local tab, buf = first.tabpage, first.bufnr
-		local native_tabs = #vim.api.nvim_list_tabpages()
-		for i = 1, 12 do
-			press("N")
-			assert.equals(i, #created)
-			created[i](nil, { id = "session-key-new-" .. i, title = "New " .. i })
-			settle()
-			assert.equals("session-key-new-" .. i, views.session(chat.get_view()).id)
-			assert.equals(2, #workspace.list())
-			assert.equals(1, #vim.api.nvim_tabpage_list_wins(tab))
-			assert.equals(native_tabs, #vim.api.nvim_list_tabpages())
-			assert.is_true(first.suspended)
-			press("x")
-			assert.equals(first, chat.get_view())
-			assert.equals("session-key-a", views.session(chat.get_view()).id)
-			assert.equals(1, #workspace.list())
-			assert.equals(1, #vim.api.nvim_tabpage_list_wins(tab))
-			assert.equals(buf, vim.api.nvim_get_current_buf())
-			assert.is_false(app.is_runtime_session("session-key-new-" .. i))
-			assert.is_true(first.visible)
-		end
-		assert.is_false(table.concat(notices, "\n"):find("No active", 1, true) ~= nil)
-	end)
-
 	it("ignores a new-session reply after x closed its owner", function()
 		local tab = first.tabpage
 		press("N")

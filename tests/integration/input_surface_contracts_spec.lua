@@ -40,5 +40,4 @@ describe("input surface contracts", function()
 		assert.is_true(vim.wait(100, function() return #calls == 5 end, 5))
 		assert.same({ "queue", "steer", "queue", "steer", "confirm" }, calls)
 	end)
-
 end)

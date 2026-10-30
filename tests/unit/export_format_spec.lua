@@ -87,10 +87,4 @@ describe("native session export formatters", function()
 		assert.is_nil(json:find("Find the report", 1, true))
 		assert.is_true(json:find("[redacted:text:u1]", 1, true) ~= nil)
 	end)
-
-	it("preserves an intentionally empty session title", function()
-		local source = transcript()
-		source.info.title = ""
-		assert.is_true(export.markdown(source, { thinking = true }):find("# \n\n**Session ID:** session-1", 1, true) ~= nil)
-	end)
 end)

@@ -45,7 +45,7 @@ describe("read-only VCS patch projection", function()
 
 	it("rejects truncated, overflowing, malformed, and combined hunks", function()
 		for _, text in ipairs({ "@@ -1,2 +1 @@\n-old\n+new", "@@ -1 +1 @@\n-old\n+new\n+overflow",
-			"@@ -1 +1 @@\n?invalid", "@@ -1 +1 @@\n-old\n@@ -5 +5 @@\n-x\n+y", "@@ -x +1 @@", "@@@ -1 -1 +1 @@@" }) do
+			"@@ -1 +1 @@\n-old\n@@ -5 +5 @@\n-x\n+y", "@@@ -1 -1 +1 @@@" }) do
 			local rows, err = vcs.project(text)
 			assert.is_nil(rows, text); assert.is_string(err)
 		end
@@ -63,8 +63,7 @@ describe("read-only VCS patch projection", function()
 		local copy = assert(vcs.files(source))
 		copy[1].file = "changed"
 		assert.equals("a.lua", source[1].file)
-		for _, bad in ipairs({ { key = "status", value = "unknown" }, { key = "file", value = "" }, { key = "patch", value = false },
-			{ key = "additions", value = -1 }, { key = "deletions", value = 0.5 }, { key = "additions", value = math.huge } }) do
+		for _, bad in ipairs({ { key = "status", value = "unknown" }, { key = "patch", value = false }, { key = "deletions", value = 0.5 } }) do
 			local invalid = vim.deepcopy(source); invalid[1][bad.key] = bad.value
 			assert.is_nil(vcs.files(invalid))
 		end

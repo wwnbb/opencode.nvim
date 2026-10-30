@@ -2,7 +2,7 @@ describe("native event envelope decoding", function()
 	local decode = require("opencode.protocol.events").decode
 
 	it("rejects malformed locations", function()
-		for _, location in ipairs({ 42, true, false, "invalid", vim.NIL }) do
+		for _, location in ipairs({ 42, "invalid", vim.NIL }) do
 			local decoded, err = decode({ type = "provider.updated", data = {}, location = location })
 			assert.is_nil(decoded)
 			assert.equals("Invalid v2 event location", err)

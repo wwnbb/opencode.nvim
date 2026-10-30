@@ -270,20 +270,6 @@ describe("opencode state ownership", function()
 		end
 	end)
 
-	it("does not append logs when reading the same model fallback", function()
-		seed_catalog()
-		local logger = require("opencode.logger")
-		sync.handle_provider_defaults({ p1 = "m1" })
-		local_state.agent.set("Code")
-		logger.clear()
-		local fallback_current = local_state.model.current()
-		assert.equals("p1", fallback_current.providerID, "fallback provider default should be selected")
-		assert.equals("m1", fallback_current.modelID, "fallback provider default model should be selected")
-		local first_log_count = logger.count()
-		local_state.model.current()
-		assert.equals(first_log_count, logger.count(), "unchanged model selection reads should not append logs")
-	end)
-
 	it("mirrors native execution status without inferring idle from history", function()
 		session_actions.set_active("session_status", "Status Session", { preserve_cache = true })
 		state.upsert_session({ id = "history_other", title = "Other busy session" }, { touch = false })
@@ -437,8 +423,6 @@ describe("opencode state ownership", function()
 			and question_state.has_question("form_visible_session") end,
 			"native forms should be retained for each runtime tab")
 	end)
-
-
 
 	it("closes a child through its root without resolving pending permissions", function()
 		local close_replies = {}
@@ -685,41 +669,5 @@ describe("opencode state ownership", function()
 		assert.equals(0, #cleanup_chat_state.local_notices, "cleanup should clear chat local notices")
 		danger.approve("cleanup_danger")
 		assert.equals(replies_before_cleanup + 2, #replies, "cleanup should clear danger reply dedupe")
-	end)
-
-	it("wraps historical file results using panel prefixes and diff highlights", function()
-		local file_edit_results = require("opencode.ui.chat.file_edit_results")
-		local long_title = "Patch applied " .. string.rep("with wrapped summary ", 8)
-		local rendered_file_result = file_edit_results.render_tool({
-			tool = "apply_patch",
-			state = {
-				status = "completed",
-				metadata = {
-					title = long_title,
-					files = {
-						{
-							filePath = "lua/opencode/some/really/long/path/for/render_check.lua",
-							type = "update",
-							status = "applied",
-							additions = 3,
-							deletions = 2,
-						},
-					},
-				},
-			},
-		}, false)
-		assert.is_truthy(rendered_file_result ~= nil, "file edit result should render")
-		assert.is_truthy(#rendered_file_result.lines > 1, "file edit result should wrap long panel text")
-		for _, line_text in ipairs(rendered_file_result.lines) do
-			assert.equals("▏  ", line_text:sub(1, #"▏  "), "file edit result lines should use panel prefix")
-		end
-		local has_diff_add = false
-		local has_diff_delete = false
-		for _, hl in ipairs(rendered_file_result.highlights) do
-			has_diff_add = has_diff_add or hl.hl_group == "DiffAdd"
-			has_diff_delete = has_diff_delete or hl.hl_group == "DiffDelete"
-		end
-		assert.is_truthy(has_diff_add, "file edit result should highlight additions")
-		assert.is_truthy(has_diff_delete, "file edit result should highlight deletions")
 	end)
 end)

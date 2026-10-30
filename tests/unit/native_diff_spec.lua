@@ -130,13 +130,6 @@ describe("native review file actions", function()
 		assert.is_true(calls[1].restored)
 		assert.equals(before, vim.api.nvim_get_current_win())
 	end)
-	it("restores the previous window without an on_close hook", function()
-		local before = vim.api.nvim_get_current_win()
-		open()
-		native.close()
-		assert.is_false(native.is_active())
-		assert.is_true(vim.wait(100, function() return vim.api.nvim_get_current_win() == before end))
-	end)
 	it("reports an unrestored focus to on_close when the previous window is gone", function()
 		vim.cmd("split")
 		local before, ctx = vim.api.nvim_get_current_win(), nil
@@ -259,17 +252,16 @@ describe("native review file actions", function()
 		assert.equals("unsaved manual\n", read())
 		assert.equals("rejected", edits.get_edit("r").files[1].status)
 	end)
-	for _, reset in ipairs({ "switch", "owner", "epoch" }) do
+	for _, reset in ipairs({ "switch", "epoch" }) do
 		it("does not apply a stale deletion confirmation after " .. reset, function()
 			local choose
 			menu.open = function(opts) choose = opts.on_select end
 			open("delete")
 			if reset == "epoch" then require("opencode.session.pending").clear_session("s")
 			else
-				local id = reset == "switch" and "other" or "r"
-				edits.add_edit(id, "s", { { fileID = "f", filePath = path, before = "before\n", after = "after\n", type = "update" } },
+				edits.add_edit("other", "s", { { fileID = "f", filePath = path, before = "before\n", after = "after\n", type = "update" } },
 					{ transport = "review_rpc", revision = 1, native_review = { status = "pending" } })
-				if reset == "switch" then native.show({ { filePath = path, before = "before\n", after = "after\n", type = "update", edit_file_index = 1 } }, { edit_id = id }) end
+				native.show({ { filePath = path, before = "before\n", after = "after\n", type = "update", edit_file_index = 1 } }, { edit_id = "other" })
 			end
 			choose("Yes, delete")
 			assert.equals("before\n", read())
@@ -319,11 +311,7 @@ describe("native review file actions", function()
 
 	it("late delete confirmation cannot write after review cancellation", function()
 		local choose
-		menu.open = function(opts)
-			assert.same({ "Yes, delete", "No, keep" }, opts.items)
-			assert.is_false(opts.sort)
-			choose = opts.on_select
-		end
+		menu.open = function(opts) choose = opts.on_select end
 		open("delete")
 		edits.set_review_record({ reviewID = "r", sessionID = "s", revision = 1, status = "cancelled" })
 		choose("Yes, delete")

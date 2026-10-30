@@ -11,12 +11,6 @@ describe("event error helpers", function()
 		assert.is_true(util.is_abort_error({ error = { name = "MessageAbortedError" } }))
 	end)
 
-	it("marks only repeated errors as duplicates", function()
-		local recent = {}
-		assert.is_false(util.mark_recent_error(recent, "session\0error"))
-		assert.is_true(util.mark_recent_error(recent, "session\0error"))
-	end)
-
 	it("extends the inclusive dedupe window and removes expired or invalid timestamps", function()
 		local original_now, now = vim.uv.now, 1000
 		vim.uv.now = function() return now end

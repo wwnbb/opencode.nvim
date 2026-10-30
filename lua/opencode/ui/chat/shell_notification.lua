@@ -36,6 +36,8 @@ function M.render_tool(part, expanded)
 	if metadata.timeout == true then heading = heading .. " · timed out" end
 	if type(metadata.signal) == "string" then heading = heading .. " · " .. metadata.signal end
 	local result = panel.result()
+	-- A shell panel like the bash row: blank rows above and below its content.
+	panel.add_blank(result)
 	panel.add_line(result, tool_panel.header(heading, { fold = true, expanded = expanded }), status_hl)
 	if command ~= "" then
 		for index, line in ipairs(vim.split(command, "\n", { plain = true })) do
@@ -55,10 +57,7 @@ function M.render_tool(part, expanded)
 			panel.add_raw_line(result, rows[index])
 		end
 		if not expanded and #rows > MAX_PREVIEW_ROWS then
-			local keymaps = require("opencode.util.keymap")
-			local keys = (view.config or {}).keymaps
-			panel.add_line(result, "… " .. tostring(#rows - MAX_PREVIEW_ROWS) .. " more rows · "
-				.. keymaps.label("chat", "confirm", keys) .. " / " .. keymaps.label("chat", "toggle_tool", keys) .. " to expand", "OpenCodeBashMuted")
+			panel.add_line(result, tool_panel.overflow_text(#rows - MAX_PREVIEW_ROWS, "rows"), "OpenCodeBashMuted")
 		end
 	end
 	if metadata.truncated == true then panel.add_line(result, "Output truncated by server", "OpenCodeBashWarning") end
@@ -68,6 +67,7 @@ function M.render_tool(part, expanded)
 			panel.add_line(result, "Job ID: " .. metadata.jobID, "OpenCodeBashMuted")
 		end
 	end
+	panel.add_blank(result)
 	return result
 end
 

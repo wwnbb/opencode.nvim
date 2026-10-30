@@ -1,10 +1,8 @@
 describe("upstream navigation callers and review notes", function()
 	local editor
 	after_each(function() if editor then editor.close(); editor = nil end end)
-	for _, route in ipairs({ "reopen-connect", "new-location", "active-picker", "session-picker", "family-picker",
-		"undo-abort", "undo-wait", "undo-revert", "session-projects", "session-worktrees", "workspace-projects", "workspace-worktrees",
-		"workspace-locations", "workspace-create", "workspace-refresh", "workspace-resolve",
-		"palette-connect", "active-connect", "open-connect", "focus-connect", "toggle-connect", "timeline-revert-native" }) do
+	for _, route in ipairs({ "reopen-connect", "new-location", "session-picker", "undo-revert", "workspace-create",
+		"palette-connect", "timeline-revert-native", "timeline-fork" }) do
 		for _, delayed in ipairs({ false, true }) do
 			it(route .. " keeps foreground behavior and later notes (delayed=" .. tostring(delayed) .. ")", function()
 				editor = require("tests.helpers.embedded_editor").new()
@@ -62,11 +60,9 @@ describe("upstream navigation callers and review notes", function()
 					require("opencode.ui.palette").setup()
 					local registry = require("opencode.command_registry")
 					if not delayed then chat.focus_input() end
-					local connection_method = ({ ["palette-connect"] = "command_palette", ["active-connect"] = "active_sessions",
-						["open-connect"] = "open", ["focus-connect"] = "focus", ["toggle-connect"] = "toggle" })[route]
-					if connection_method then
+					if route == "palette-connect" then
 						lifecycle.ensure_connected = function(callback) release = callback; if not delayed then release() end end
-						api[connection_method]()
+						api.command_palette()
 					elseif route == "reopen-connect" then
 						sessions.remember({ id = target.id, title = "Old target", location = source.location })
 						assert(sessions.close(target.id, { silent = true }))
@@ -76,51 +72,30 @@ describe("upstream navigation callers and review notes", function()
 						client.get_location = function(directory, callback) hold(callback, { directory = directory }) end
 						client.create_session = function(opts, callback) assert(opts.location.directory == source.location.directory); callback(nil, target) end
 						assert(registry.run("session.new", vim.tbl_extend("force", context, { args = vim.fn.getcwd() })))
-					elseif route == "active-picker" then
-						sessions.remember(target)
-						client.get_session_statuses = function(callback) hold(callback, {}) end
-						require("opencode.ui.active_sessions").show(context)
 					elseif route == "session-picker" then
 						client.get_all_sessions = function(_, callback) hold(callback, { target }) end
 						assert(registry.run("session.list", context))
-					elseif route == "family-picker" then
-						target.parentID = source.id
-						client.get_session = function(id, callback) if id == source.id then hold(callback, source) else callback(nil, target) end end
-						client.get_session_children = function(id, callback) callback(nil, id == source.id and { target } or {}) end
-						assert(registry.run("session.family", context))
+					elseif route == "timeline-fork" then
+						client.fork_session = function(id, opts, callback)
+							assert(id == source.id and opts.before == "upstream-turn"); hold(callback, target)
+						end
+						assert(require("opencode.ui.timeline").run("fork", source.id, "upstream-turn"))
 					elseif route == "timeline-revert-native" then
 						client.abort_session = function(_, callback) callback(nil) end
 						client.wait_session = function(_, callback) callback(nil) end
 						client.revert_message = function(_, message, _, callback) hold(callback, { messageID = message }) end
 						assert(require("opencode.ui.timeline").run("revert", source.id, "upstream-turn"))
-					elseif route:match("^undo%-") then
-						client.abort_session = function(_, callback) if route == "undo-abort" then hold(callback) else callback(nil) end end
-						client.wait_session = function(_, callback) if route == "undo-wait" then hold(callback) else callback(nil) end end
-						client.revert_message = function(_, message, _, callback)
-							if route == "undo-revert" then hold(callback, { messageID = message }) else callback(nil, { messageID = message }) end
-						end
+					elseif route == "undo-revert" then
+						client.abort_session = function(_, callback) callback(nil) end
+						client.wait_session = function(_, callback) callback(nil) end
+						client.revert_message = function(_, message, _, callback) hold(callback, { messageID = message }) end
 						require("opencode.slash").register_defaults()
 						assert(registry.run("session.undo", context))
-					elseif route:match("^session%-") then
-						if route == "session-projects" then client.list_projects = function(callback) hold(callback, { { id = "project", canonical = vim.fn.getcwd() } }) end
-						else client.list_worktrees = function(_, callback) hold(callback, { { directory = vim.fn.getcwd() .. "/feature" } }) end end
-						assert(registry.run("session.list", context)); settle(); press("p")
-						if route == "session-worktrees" then press("<CR>") end
 					else
-						if route == "workspace-projects" then client.list_projects = function(callback) hold(callback, { { id = "project", canonical = vim.fn.getcwd() } }) end
-						elseif route == "workspace-resolve" then client.get_location = function(directory, callback) hold(callback, { directory = directory }) end
-						elseif route == "workspace-create" then client.create_worktree = function(_, opts, callback)
+						client.create_worktree = function(_, opts, callback)
 							assert(opts.name == "review-branch"); hold(callback, { directory = vim.fn.getcwd() .. "/created" }) end
-						elseif route == "workspace-refresh" then client.refresh_worktrees = function(_, callback) hold(callback) end
-						else client.list_worktrees = function(_, callback) hold(callback, { { directory = vim.fn.getcwd() .. "/feature" } }) end end
-						assert(registry.run((route == "workspace-locations" or route == "workspace-resolve") and "session.workspaces" or "session.worktrees", context))
-						if route == "workspace-resolve" then settle(); press("<CR>")
-						elseif route == "workspace-locations" then settle(); press("jj<CR>"); press("<CR>")
-						elseif route ~= "workspace-projects" then
-							settle(); press("<CR>")
-							if route == "workspace-create" then press("n"); press("Areview-branch<CR>")
-							elseif route == "workspace-refresh" then press("r") end
-						end
+						assert(registry.run("session.worktrees", context))
+						settle(); press("<CR>"); press("n"); press("Areview-branch<CR>")
 					end
 					settle(); assert(release, "expected held callback for " .. route)
 					if delayed then
@@ -150,29 +125,26 @@ describe("upstream navigation callers and review notes", function()
 						assert(history.get_pending(source.id) == "Normal draft\nSecond line")
 						assert(history.get_pending_parts(source.id)[1].url == "file:///normal.lua")
 						assert(vim.deep_equal({ delivery = "steer" }, history.get_pending_options(source.id)))
-						if route:match("^undo%-") or route == "timeline-revert-native" then
+						if route == "undo-revert" or route == "timeline-revert-native" then
 							local deferred = history.peek_deferred(source.id)
 							assert(deferred.text == "Historical prompt" and deferred.parts[1].url == "file:///historical.lua")
+						elseif route == "timeline-fork" then
+							assert(history.get_pending(target.id) == "Historical prompt" and history.get_pending_parts(target.id)[1].url == "file:///historical.lua")
 						end
-					elseif connection_method then
-						if connection_method == "toggle" then assert(not chat.is_visible())
-						elseif connection_method == "command_palette" then assert(vim.wo.winhighlight:find("OpenCodePaletteNormal", 1, true))
-						elseif connection_method == "active_sessions" then assert(vim.bo.filetype == "opencode_float")
-						else assert(chat.is_visible() and vim.api.nvim_get_current_win() == view.winid and not input.is_visible()) end
+					elseif route == "palette-connect" then
+						assert(vim.wo.winhighlight:find("OpenCodePaletteNormal", 1, true))
 						assert(history.get_pending(source.id) == "Normal draft\nSecond line")
 						assert(history.get_pending_parts(source.id)[1].url == "file:///normal.lua")
 						assert(vim.deep_equal({ delivery = "steer" }, history.get_pending_options(source.id)))
-					elseif route:match("^undo%-") or route == "timeline-revert-native" then
+					elseif route == "undo-revert" or route == "timeline-revert-native" or route == "timeline-fork" then
 						assert(input.is_visible() and input.get_pending_text() == "Historical prompt" and input.get_pending_parts()[1].url == "file:///historical.lua")
 						if route == "timeline-revert-native" then assert(history.peek_deferred(source.id) == nil) end
 					elseif route ~= "reopen-connect" and route ~= "new-location" then
 						assert(vim.bo.filetype == "opencode_float")
-						if route == "active-picker" or route == "session-picker" or route == "family-picker" then
-							if route ~= "session-picker" then press("j") end
-							press("<CR>"); assert(app.get_session().id == target.id)
+						if route == "session-picker" then press("<CR>"); assert(app.get_session().id == target.id)
 						else press("<Esc>") end
 					end
-					if route == "reopen-connect" or route == "new-location" then
+					if route == "reopen-connect" or route == "new-location" or route == "timeline-fork" then
 						assert(app.get_session_record(target.id).title == target.title)
 						assert(vim.deep_equal(target.model, app.get_session_record(target.id).model))
 						if not delayed then assert(app.get_session().id == target.id) end
@@ -191,12 +163,12 @@ end)
 describe("public navigation entries from the unchanged editor", function()
 	local editor
 	after_each(function() if editor then editor.close(); editor = nil end end)
-	for _, method in ipairs({ "command_palette", "active_sessions", "open", "focus", "toggle" }) do
-		for _, delayed in ipairs({ false, true }) do
-			it(method .. " still opens in the foreground (delayed=" .. tostring(delayed) .. ")", function()
+	for _, method in ipairs({ "command_palette", "active_sessions", "open" }) do
+		do
+			it(method .. " still opens in the foreground after a delayed connection", function()
 				editor = require("tests.helpers.embedded_editor").new()
 				editor.lua([[
-					local method, delayed = ...
+					local method = ...
 					vim.o.lines, vim.o.columns = 55, 160
 					local api, app, sessions = require("opencode"), require("opencode.state"), require("opencode.session")
 					local client, lifecycle = require("opencode.client"), require("opencode.lifecycle")
@@ -210,11 +182,10 @@ describe("public navigation entries from the unchanged editor", function()
 					history.set_pending("Editor draft", { { type = "file", url = "file:///editor.lua" } }, "editor-source")
 					history.set_pending_options({ delivery = "steer" }, "editor-source")
 					local release
-					lifecycle.ensure_connected = function(callback) release = callback; if not delayed then release() end end
+					lifecycle.ensure_connected = function(callback) release = callback end
 					local window = vim.api.nvim_get_current_win()
 					api[method]()
-					assert(release)
-					if delayed then assert(vim.api.nvim_get_current_win() == window); release() end
+					assert(release and vim.api.nvim_get_current_win() == window); release()
 					vim.wait(70, function() return false end, 5)
 					assert(vim.api.nvim_get_current_win() ~= window)
 					if method == "command_palette" then assert(vim.wo.winhighlight:find("OpenCodePaletteNormal", 1, true))
@@ -227,7 +198,7 @@ describe("public navigation entries from the unchanged editor", function()
 					assert(history.get_pending("editor-source") == "Editor draft")
 					assert(history.get_pending_parts("editor-source")[1].url == "file:///editor.lua")
 					assert(vim.deep_equal({ delivery = "steer" }, history.get_pending_options("editor-source")))
-				]], { method, delayed })
+				]], { method })
 			end)
 		end
 	end

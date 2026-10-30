@@ -596,7 +596,7 @@ function M.open(file, opts, review_callbacks)
 	local proposed_win, proposed_buf = diff_pair.open(actual_win, actual_buf, {
 		after = after_content,
 		filepath = filepath,
-		relative = file.relative_path or vim.fn.fnamemodify(filepath, ":t"),
+		relative = file.relative_path or require("opencode.util.text").normalize_path(filepath),
 		on_split = mark_inline_diff_window,
 	})
 

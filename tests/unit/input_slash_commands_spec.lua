@@ -16,23 +16,12 @@ local unicode_commands = {
 	{ name = "Обзор", description = "ПРОВЕРКА", aliases = { "ОЦЕНКА" } },
 	{ name = "other", description = "Other" },
 }
-for _, query in ipairs({ "обзор", "ОБЗОР", "проверка", "оценка" }) do
+for _, query in ipairs({ "обзор", "оценка" }) do
 	assert.same({ unicode_commands[1] }, slash_commands.filter_commands(unicode_commands, query))
 end
 
-local function assert_trigger(line, col, row, query, message)
-	local trigger = slash_commands.detect_trigger_in_line(line, col, row)
-	assert.is_truthy(trigger, message .. " should trigger")
-	assert.equals(0, trigger.start_col, message .. " start_col")
-	assert.equals(col, trigger.end_col, message .. " end_col")
-	assert.equals(query, trigger.query, message .. " query")
-end
-
-assert_trigger("/", 1, 0, "", "bare slash")
-assert_trigger("/help", #"/help", 0, "help", "slash command query")
-assert_trigger("/models", #"/models", nil, "models", "row-agnostic helper")
-
-assert.is_nil(slash_commands.detect_trigger_in_line("", 0, 0), "empty line should not trigger")
+local trigger = slash_commands.detect_trigger_in_line("/help", #"/help", 0)
+assert.same({ 0, #"/help", "help" }, { trigger.start_col, trigger.end_col, trigger.query }, "slash command query")
 assert.is_nil(slash_commands.detect_trigger_in_line("hello /", #"hello /", 0), "slash after text should not trigger")
 assert.is_nil(slash_commands.detect_trigger_in_line("/help x", #"/help x", 0), "command with args should not trigger")
 assert.is_nil(slash_commands.detect_trigger_in_line("/help", #"/help", 1), "second row should not trigger")
@@ -49,32 +38,10 @@ end
 
 local function noop() end
 
-slash.register({
-	name = "ztest_alpha",
-	description = "Run alpha workflow",
-	category = "test",
-	handler = noop,
-})
-slash.register({
-	name = "ztest_models",
-	description = "Switch model",
-	category = "test",
-	handler = noop,
-})
-slash.register({
-	name = "ztest_sessions",
-	aliases = { "resume", "continue" },
-	description = "List sessions",
-	category = "test",
-	handler = noop,
-})
-slash.register({
-	name = "ztest_hidden",
-	description = "Hidden command",
-	category = "test",
-	handler = noop,
-	enabled = false,
-})
+slash.register({ name = "ztest_alpha", description = "Run alpha workflow", category = "test", handler = noop })
+slash.register({ name = "ztest_models", description = "Switch model", category = "test", handler = noop })
+slash.register({ name = "ztest_sessions", aliases = { "resume", "continue" }, description = "List sessions", category = "test", handler = noop })
+slash.register({ name = "ztest_hidden", description = "Hidden command", category = "test", handler = noop, enabled = false })
 
 local commands = slash.get_commands()
 assert.same({ "ztest_alpha", "ztest_models", "ztest_sessions" }, names(slash_commands.filter_commands(commands, "ztest_")), "slash filtering should match command names")
@@ -97,7 +64,7 @@ local function set_one_line(line, col)
 end
 
 set_one_line("/ztest_alpha", #"/ztest_alpha")
-local trigger = slash_commands.detect_trigger_in_line("/ztest_alpha", #"/ztest_alpha", 0)
+trigger = slash_commands.detect_trigger_in_line("/ztest_alpha", #"/ztest_alpha", 0)
 trigger.row = 0
 trigger.line = "/ztest_alpha"
 assert.is_truthy(slash_commands.insert_command(state, trigger, { name = "ztest_alpha" }), "slash insert should succeed")

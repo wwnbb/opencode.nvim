@@ -110,20 +110,11 @@ end
 ---@param command_lines string[]
 ---@param expanded boolean
 local function add_command(result, command_lines, expanded)
-	local start_line = nil
-	local can_highlight = true
 	local limit = expanded and #command_lines or math.min(MAX_COLLAPSED_COMMAND_LINES, #command_lines)
-	local displayed_lines = {}
-	for i = 1, limit do
-		local line = render.expand_tabs(command_lines[i] or "", PANEL_PREFIX_WIDTH + 2)
-		table.insert(displayed_lines, line)
-		local prefix = i == 1 and "$ " or "  "
-		local line_index, _, rows = add_panel_raw_line(result, prefix .. line, "OpenCodeBashCommand")
-		start_line = start_line or line_index
-		if #rows > 1 then
-			can_highlight = false
-		end
-	end
+	tool_panel.add_command_lines(result, vim.list_slice(command_lines, 1, limit), {
+		panel = panel_helpers,
+		hl_group = "OpenCodeBashCommand",
+	})
 
 	if not expanded and #command_lines > MAX_COLLAPSED_COMMAND_LINES then
 		add_panel_line(
@@ -131,14 +122,6 @@ local function add_command(result, command_lines, expanded)
 			tool_panel.overflow_text(#command_lines - MAX_COLLAPSED_COMMAND_LINES, "command lines"),
 			"OpenCodeBashMuted"
 		)
-	end
-
-	if start_line and can_highlight then
-		syntax.add_highlights(result, table.concat(displayed_lines, "\n"), "bash", {
-			scope = "tools",
-			line_start = start_line,
-			col_offset = #PANEL_PREFIX + #"$ ",
-		})
 	end
 end
 
@@ -188,7 +171,7 @@ function M.render_tool(tool_part, expanded, opts)
 		add_panel_blank(result)
 	end
 	if command == "" then
-		local text = working and ("~ Writing command... " .. tool_panel.anim_frame()) or "~ Writing command..."
+		local text = working and ("~ Writing command… " .. tool_panel.anim_frame()) or "~ Writing command…"
 		add_panel_line(result, text, working and "OpenCodeBashCommand" or "OpenCodeBashMuted")
 		add_panel_blank(result)
 		return result
@@ -197,8 +180,11 @@ function M.render_tool(tool_part, expanded, opts)
 	if description == "" then
 		description = "Shell"
 	end
-	if workdir ~= "" and not description:find(workdir, 1, true) then
-		description = description .. " in " .. workdir
+	local shown_workdir = workdir ~= "" and text_util.normalize_path(workdir) or ""
+	-- The working directory itself needs no mention.
+	if shown_workdir ~= "" and shown_workdir ~= text_util.normalize_path(vim.fn.getcwd())
+		and not description:find(workdir, 1, true) and not description:find(shown_workdir, 1, true) then
+		description = description .. " in " .. shown_workdir
 	end
 
 	local exit_code = tool_panel.normalize_number(metadata.exit)
@@ -225,7 +211,7 @@ function M.render_tool(tool_part, expanded, opts)
 
 	local header = "# " .. description
 	if exit_code ~= nil and exit_code ~= 0 then
-		header = header .. " (exit " .. tostring(exit_code) .. ")"
+		header = header .. " · exit " .. tostring(exit_code)
 	end
 	header = tool_panel.header(header, {
 		fold = has_command_overflow or has_overflow or expanded,

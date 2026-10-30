@@ -9,11 +9,12 @@ function M.setup(events)
 	local function changed(record)
 		events.emit("interaction_changed", { kind = "edit", action = record.status, id = record.reviewID, session_id = record.sessionID })
 	end
+	-- Finished IDs map to their session so that closing it can drop them.
 	local review_terminal = {}
 	local function upsert(record)
 		if type(record) ~= "table" or record.protocolVersion ~= 2 or not relevant(record.sessionID) then return end
 		if record.status == "pending" and review_terminal[record.reviewID] then return end
-		if record.status == "cancelled" or record.status == "settled" or record.status == "decided" then review_terminal[record.reviewID] = true end
+		if record.status == "cancelled" or record.status == "settled" or record.status == "decided" then review_terminal[record.reviewID] = record.sessionID end
 		if not edits.get_edit(record.reviewID) then
 			if record.status ~= "pending" then return end
 			edits.add_edit(record.reviewID, record.sessionID, record.files, {
@@ -36,7 +37,7 @@ function M.setup(events)
 	local function policy(record)
 		if type(record) ~= "table" or record.protocolVersion ~= 2 or not relevant(record.sessionID) then return end
 		local id, sid = record.gateID, record.sessionID
-		if record.status ~= "pending" then policy_terminal[id] = true; policy_busy[id] = nil; return end
+		if record.status ~= "pending" then policy_terminal[id] = sid; policy_busy[id] = nil; return end
 		if policy_terminal[id] or (policy_busy[id] and pending.is_current(policy_busy[id])) then return end
 		local token = pending.token(sid)
 		policy_busy[id] = token
@@ -51,7 +52,7 @@ function M.setup(events)
 				function(err, result)
 					if not current() then return end
 					finish(err)
-					if not err and result.status ~= "pending" then policy_terminal[id] = true end
+					if not err and result.status ~= "pending" then policy_terminal[id] = sid end
 				end)
 		end
 		-- Reconnect must not recreate an already pending native permission.
@@ -106,16 +107,44 @@ function M.setup(events)
 			end)
 		end)
 	end
-	for _, kind in ipairs({ "connected", "session_change" }) do
-		events.on(kind, function()
-			local seen = {}
-			for _, root_id in ipairs(state.get_runtime_session_order()) do
-				for _, sid in ipairs(require("opencode.sync").collect_session_tree(root_id)) do
-					if not seen[sid] then seen[sid] = true; recover(sid) end
-				end
-			end
-		end)
+	-- Roots whose review events stayed relevant since their last recovery: SSE
+	-- keeps them current, so only a newly relevant tree can hide records.
+	local covered = {}
+	local function recover_tree(root_id, seen)
+		seen = seen or {}
+		for _, sid in ipairs(require("opencode.sync").collect_session_tree(root_id)) do
+			if not seen[sid] then seen[sid] = true; recover(sid) end
+		end
+		covered[root_id] = true
 	end
+	events.on("connected", function()
+		local seen = {}
+		covered = {}
+		for _, root_id in ipairs(state.get_runtime_session_order()) do recover_tree(root_id, seen) end
+	end)
+	events.on("session_change", function(data)
+		local current = state.get_session().id
+		for root_id in pairs(covered) do
+			if root_id ~= current and not state.is_runtime_session(root_id) then covered[root_id] = nil end
+		end
+		if not current then return end
+		local root_id = util.runtime_root_for_session(current) or current
+		if data and data.reason == "pane_focus" and covered[root_id] then return end
+		recover_tree(root_id)
+	end)
+	events.on("disconnected", function() covered = {} end)
+	events.on("session.closed", function(data)
+		local closed = {}
+		for _, id in ipairs(data.session_ids or { data.session_id }) do closed[id] = true; covered[id] = nil end
+		for _, terminal in ipairs({ review_terminal, policy_terminal }) do
+			for id, sid in pairs(terminal) do
+				if closed[sid] then terminal[id] = nil end
+			end
+		end
+		for id, token in pairs(policy_busy) do
+			if closed[token.session_id] then policy_busy[id] = nil end
+		end
+	end)
 	events.on("review_reconcile", function(data) recover(data.session_id) end)
 	events.on("server_interaction", function(event)
 		if event.type:match("^rpc%.opencode_nvim%.review") then upsert(event.data.review) end

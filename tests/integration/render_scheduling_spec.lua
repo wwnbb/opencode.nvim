@@ -75,7 +75,7 @@ describe("transcript render scheduling", function()
 		chat.create()
 		state.auto_scroll = false
 		scheduled, timers = {}, {}
-		saved = { schedule = vim.schedule, defer = vim.defer_fn, now = vim.uv.now,
+		saved = { schedule = vim.schedule, defer = vim.defer_fn, now = vim.uv.now, hrtime = vim.uv.hrtime,
 			render = chat.render, winbar = chat.update_winbar }
 		vim.schedule = function(callback) scheduled[#scheduled + 1] = callback end
 		vim.defer_fn = function(callback, delay)
@@ -83,7 +83,9 @@ describe("transcript render scheduling", function()
 			return { stop = function() end, close = function() end }
 		end
 		vim.uv.now = function() return 100 end
-		state.last_render_time = 100
+		vim.uv.hrtime = function() return 0 end
+		-- The cold render in create() ran on the real clock.
+		state.last_render_time, state.last_render_duration, state.render_durations = 100, 0, {}
 		renders, winbars = 0, 0
 		chat.render = function(...)
 			renders = renders + 1
@@ -102,7 +104,7 @@ describe("transcript render scheduling", function()
 		require("opencode.ui.chat.execute_details").close(false)
 		require("opencode.ui.chat.tasks").stop_task_animation_timer()
 		chat.render, chat.update_winbar = saved.render, saved.winbar
-		vim.schedule, vim.defer_fn, vim.uv.now = saved.schedule, saved.defer, saved.now
+		vim.schedule, vim.defer_fn, vim.uv.now, vim.uv.hrtime = saved.schedule, saved.defer, saved.now, saved.hrtime
 		events.clear()
 		for _, window in ipairs(extra_windows) do
 			if vim.api.nvim_win_is_valid(window) then vim.api.nvim_win_close(window, true) end

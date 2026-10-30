@@ -15,12 +15,12 @@ local PANEL_BORDER_HL = "OpenCodeSearchMuted"
 local TOOL_CONFIG = {
 	glob = {
 		title = "Glob",
-		pending = "Finding files...",
+		pending = "Finding files…",
 		count_key = "count",
 	},
 	grep = {
 		title = "Grep",
-		pending = "Searching content...",
+		pending = "Searching content…",
 		count_key = "matches",
 	},
 }
@@ -178,7 +178,7 @@ function M.render_tool(tool_part, expanded, opts)
 		overflow_hl = "OpenCodeSearchMuted",
 		render_entry = function(_, entry)
 			if style and tool_part.tool == "glob" and entry.hl_group == output_hl and entry.text:sub(1, 1) == "/" then
-				entry.text = vim.fn.fnamemodify(entry.text, ":~:.")
+				entry.text = text_util.normalize_path(entry.text)
 			end
 			local grep_path, grep_body, body_col = nil, nil, nil
 			local grep_lang = nil

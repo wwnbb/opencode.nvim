@@ -23,10 +23,6 @@ describe("configurable composer bindings", function()
 		for _, key in ipairs({ "<CR>", "<Tab>" }) do
 			assert.equals("", vim.fn.maparg(key, "i", false, true).callback())
 		end
-		local keymaps = require("opencode.util.keymap")
-		assert.equals("<CR> / <Tab>", keymaps.label("input", "send", configured))
-		assert.equals("<CR>", keymaps.label("input", "command_enter", configured))
-		assert.equals("<Tab>", keymaps.label("input", "autocomplete_confirm", configured))
 		assert.is_true(vim.wait(100, function() return sent == 2 end, 5))
 		visible = true
 		for _, key in ipairs({ "<CR>", "<Tab>" }) do

@@ -16,6 +16,19 @@ function M.live()
 end
 
 ---@param view table
+---@return boolean
+function M.is_live(view)
+	return vim.tbl_contains(M.live(), view)
+end
+
+---Whether the tab workspace holds layouts, shown or parked.
+---@return boolean
+function M.has_layouts()
+	local workspace = package.loaded["opencode.ui.chat.workspace"]
+	return workspace ~= nil and #workspace.list() > 0
+end
+
+---@param view table
 ---@return string|nil
 function M.root_session_id(view)
 	local views = M.registry()

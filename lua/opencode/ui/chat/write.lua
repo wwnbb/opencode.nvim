@@ -19,18 +19,22 @@ function M.render_tool(part, expanded)
 	local path = text.normalize_path(filepath)
 	local failed = tool_group.execution_failed(part)
 	local working = not failed and tool_group.is_working(part)
-	local status = failed and "Failed" or ctx.status:gsub("^%l", string.upper)
+	-- A status word only when the call did not simply complete.
+	local status = failed and "Failed" or ctx.status ~= "completed" and ctx.status:gsub("^%l", string.upper) or nil
 	local prefix = tool_panel.fold_prefix(expanded) .. "Write "
 	local header = tool_panel.fit_header({
 		prefix = prefix, target = render.expand_tabs(path, vim.fn.strdisplaywidth(prefix)),
-		suffix = " · " .. status, keep_suffix = true,
+		suffix = status and (" · " .. status) or "", keep_suffix = true,
 		spinner = working and (" " .. tool_panel.anim_frame()) or "",
 		width = math.max(1, render.get_chat_text_width() - 1),
 		truncate = function(value, width) return text.truncate(value, width, "…") end,
 	})
 	local result = panel.result()
 	render.add_panel_line(result, header, failed and style.error_hl or style.header_hl, { prefix = " " })
-	if not expanded then return result end
+	if not expanded then
+		if failed then style.add_error_lines(result, tool_panel.stringify_output(ctx.error), "Write failed") end
+		return result
+	end
 
 	style.add_border(result)
 	panel.add_line(result, "File: " .. path)

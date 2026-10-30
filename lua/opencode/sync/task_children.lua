@@ -16,6 +16,8 @@ function M.new(sync, store, hooks)
 	local T = {}
 	-- Navigation references can share a child after a fork copies settled history.
 	local task_child_references, task_child_pending, task_reference_sequence = {}, {}, 0
+	-- { [messageID] = { [partID] = true } } so clearing a message skips other messages' links.
+	local message_task_parts = {}
 
 	---@param tool_part table|nil
 	---@return string|nil
@@ -151,6 +153,11 @@ function M.new(sync, store, hooks)
 			end
 		end
 		store.task_part_child[key] = nil
+		local parts = message_task_parts[message_id]
+		if parts then
+			parts[part_id] = nil
+			if not next(parts) then message_task_parts[message_id] = nil end
+		end
 	end
 
 	---@param parent_session_id string
@@ -190,6 +197,8 @@ function M.new(sync, store, hooks)
 		end
 
 		store.task_part_child[key] = child_session_id
+		message_task_parts[message_id] = message_task_parts[message_id] or {}
+		message_task_parts[message_id][part_id] = true
 		task_child_references[child_session_id] = task_child_references[child_session_id] or {}
 		local references = task_child_references[child_session_id]
 		if not references[key] or references[key].parent ~= parent_session_id then
@@ -281,11 +290,8 @@ function M.new(sync, store, hooks)
 			return
 		end
 		hooks.forget_native(message_id)
-		local prefix = message_id .. "\0"
-		for key in pairs(store.task_part_child) do
-			if key:sub(1, #prefix) == prefix then
-				T.clear(message_id, key:sub(#prefix + 1))
-			end
+		for part_id in pairs(vim.deepcopy(message_task_parts[message_id] or {})) do
+			T.clear(message_id, part_id)
 		end
 	end
 
@@ -462,6 +468,7 @@ function M.new(sync, store, hooks)
 	---Forget private provenance; sync.clear_all resets the store-owned indexes.
 	function T.reset()
 		task_child_references, task_child_pending, task_reference_sequence = {}, {}, 0
+		message_task_parts = {}
 	end
 
 	return T

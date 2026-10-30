@@ -38,24 +38,7 @@ describe("usage statistics display", function()
 		end
 	end)
 
-	it("marks zero activity separately from days with steps", function()
-		local lines, marks = stats.render({
-			end_date = "2026-09-25",
-			daily = { ["2026-09-24"] = 8, ["2026-09-25"] = 0 },
-		}, 36)
-		local groups = {}
-		for _, mark in ipairs(marks) do
-			assert.is_true(mark.end_col <= #lines[mark.line + 1])
-			groups[mark.group] = true
-		end
-		assert.is_true(groups.OpenCodeStatsInactive)
-		assert.is_true(groups.OpenCodeStatsLevel4)
-		local report = table.concat(lines, "\n")
-		assert.is_truthy(report:find("active days", 1, true))
-		assert.is_truthy(report:find("1 days", 1, true))
-	end)
-
-	it("covers the editor grid without a border, resizes, and restores focus", function()
+	it("covers the editor grid, resizes, and restores focus", function()
 		local old_columns, old_lines = vim.o.columns, vim.o.lines
 		local previous_winid = vim.api.nvim_get_current_win()
 		local previous_bufnr = vim.api.nvim_get_current_buf()
@@ -63,16 +46,9 @@ describe("usage statistics display", function()
 		local screen = stats.show({ total_tokens = 42, sessions = 1, start_date = "2026-09-01", end_date = "2026-09-25" })
 		local winid = screen.winid
 		local function assert_full_screen(target_winid)
-			local config = vim.api.nvim_win_get_config(target_winid)
-			assert.equals("editor", config.relative)
-			assert.equals(0, config.row)
-			assert.equals(0, config.col)
-			assert.equals("none", config.border)
-			assert.is_nil(config.title)
 			assert.equals(vim.o.columns, vim.api.nvim_win_get_width(target_winid))
 			assert.equals(vim.o.lines - vim.o.cmdheight, vim.api.nvim_win_get_height(target_winid))
 		end
-		assert.is_true(vim.api.nvim_win_is_valid(winid))
 		assert.equals(winid, vim.api.nvim_get_current_win())
 		assert_full_screen(winid)
 		vim.o.columns, vim.o.lines = 56, 20

@@ -91,6 +91,18 @@ describe("event reduction", function()
 		assert.same({}, sync.get_parts("msg_3"))
 	end)
 
+	it("removes later messages when the undo boundary is older than the loaded page", function()
+		sync.handle_session_messages("s", projection.page("s", {
+			{ id = "msg_0150", type = "user", text = "kept", time = { created = 1 } },
+			{ id = "msg_0250", type = "user", text = "later", time = { created = 2 } },
+			{ id = "msg_0300", type = "assistant", content = { { type = "text", text = "last" } }, time = { created = 3 } },
+		}))
+		local effect = sync.handle_server_event({ id = "evt_old", created = 4,
+			type = "session.revert.committed", data = { sessionID = "s", to = "msg_0200" } })
+		assert.same({ "msg_0250", "msg_0300" }, effect.revert_removed)
+		assert.same({ "msg_0150" }, vim.tbl_map(function(message) return message.id end, sync.get_messages("s")))
+	end)
+
 	it("keeps a pending prompt after committing an older undo boundary", function()
 		local history = projection.page("s", {
 			{ id = "msg_old", type = "user", text = "old", time = { created = 1 } },

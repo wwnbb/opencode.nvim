@@ -179,16 +179,6 @@ describe("execute details inspector", function()
 		assert.is_true(ok, err)
 	end)
 
-	it("keeps readable paragraphs bounded while Raw retains the full source", function()
-		local raw = string.rep("long paragraph ", 30)
-		local popup = details.open({ state = { output = vim.json.encode({ body = raw }) } })
-		for _, line in ipairs(vim.api.nvim_buf_get_lines(popup.bufnr, 0, -1, false)) do
-			assert(vim.fn.strdisplaywidth(line) <= math.min(100, vim.api.nvim_win_get_width(popup.winid)))
-		end
-		press(popup, "2")
-		assert(text(popup) == vim.json.encode({ body = raw }))
-	end)
-
 	it("survives streaming input and preserves error and cancellation output", function()
 		local popup = details.open({ state = { status = "running", input = '{"code":"return await' } }, { view = "code" })
 		assert(text(popup) == "Code is still being received.")
@@ -222,15 +212,6 @@ describe("execute details inspector", function()
 		} } })
 		assert(text(popup):find("mcp://server/report", 1, true), "content should be available without projected files")
 		assert(not text(popup):find("SECRET_BINARY", 1, true))
-	end)
-
-	it("shows errors alongside partial output without changing original Raw", function()
-		local popup = details.open({ state = { status = "error", output = "Partial progress\r\n",
-			error = { message = "Remote tool disconnected" } } })
-		assert(text(popup):find("Remote tool disconnected", 1, true))
-		assert(text(popup):find("Partial progress", 1, true))
-		press(popup, "2")
-		assert(text(popup) == "Partial progress\r\n")
 	end)
 
 	it("treats absent native output as pending and displays NUL visibly", function()

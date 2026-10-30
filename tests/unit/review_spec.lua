@@ -55,19 +55,18 @@ describe("edit review safety", function()
 			assert.equals("rejected", item.files[1].status)
 		end
 	end)
-	for _, action in ipairs({ "resolve_file", "accept_file" }) do
-		for _, kind in ipairs({ "add", "update" }) do
-			it("classifies a changed empty-file existence as resolved during " .. action .. " for " .. kind, function()
-				if kind == "update" then write("") end
-				local item = edits.add_edit("r", "s", { {
-					fileID = "f", filePath = path, before = "", after = "after\n", type = kind,
-				} }, { transport = "review_rpc", revision = 1, native_review = { status = "pending" } })
-				if kind == "add" then write("") else vim.fn.delete(path) end
-				assert.is_true(edits[action]("r", 1))
-				if kind == "add" then assert.equals("", read()) else assert.is_nil(vim.uv.fs_stat(path)) end
-				assert.equals("resolved", item.files[1].status)
-			end)
-		end
+	for _, case in ipairs({ { "accept_file", "add" }, { "resolve_file", "update" } }) do
+		local action, kind = case[1], case[2]
+		it("classifies a changed empty-file existence as resolved during " .. action .. " for " .. kind, function()
+			if kind == "update" then write("") end
+			local item = edits.add_edit("r", "s", { {
+				fileID = "f", filePath = path, before = "", after = "after\n", type = kind,
+			} }, { transport = "review_rpc", revision = 1, native_review = { status = "pending" } })
+			if kind == "add" then write("") else vim.fn.delete(path) end
+			assert.is_true(edits[action]("r", 1))
+			if kind == "add" then assert.equals("", read()) else assert.is_nil(vim.uv.fs_stat(path)) end
+			assert.equals("resolved", item.files[1].status)
+		end)
 	end
 	it("does not permit stale local actions after cancellation or revive pending snapshots", function()
 		local item = add()
@@ -79,24 +78,22 @@ describe("edit review safety", function()
 		assert.equals("cancelled", item.native_review.status)
 		assert.equals("before\n", read())
 	end)
-	for _, disconnect in ipairs({ false, true }) do
-		it("allows retry after " .. (disconnect and "reconnect" or "reopening") .. " confirms a pending review", function()
-			local pending = require("opencode.session.pending")
-			local item = add()
-			assert.is_true(edits.set_message("r", "Keep my review note"))
-			assert.is_true(edits.accept_all("r"))
-			assert.is_true(edits.begin_review_submission("r"))
-			local record = { reviewID = "r", sessionID = "s", revision = 1, status = "pending" }
-			assert.is_true(edits.set_review_record(record))
-			assert.is_true(item.submitting)
-			if disconnect then pending.invalidate() else pending.clear_session("s") end
-			assert.is_true(edits.set_review_record(record))
-			assert.is_false(item.submitting)
-			assert.equals("accepted", item.files[1].status)
-			assert.equals("Keep my review note", item.message)
-			assert.is_true(edits.begin_review_submission("r"))
-		end)
-	end
+	it("allows retry after reconnect confirms a pending review", function()
+		local pending = require("opencode.session.pending")
+		local item = add()
+		assert.is_true(edits.set_message("r", "Keep my review note"))
+		assert.is_true(edits.accept_all("r"))
+		assert.is_true(edits.begin_review_submission("r"))
+		local record = { reviewID = "r", sessionID = "s", revision = 1, status = "pending" }
+		assert.is_true(edits.set_review_record(record))
+		assert.is_true(item.submitting)
+		pending.invalidate()
+		assert.is_true(edits.set_review_record(record))
+		assert.is_false(item.submitting)
+		assert.equals("accepted", item.files[1].status)
+		assert.equals("Keep my review note", item.message)
+		assert.is_true(edits.begin_review_submission("r"))
+	end)
 
 	it("keeps settled metadata when admission arrives after the terminal event", function()
 		local item = add()

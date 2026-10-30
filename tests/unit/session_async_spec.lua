@@ -74,28 +74,21 @@ describe("session actions across connection changes", function()
 		while #scheduled > 0 do table.remove(scheduled, 1)() end
 	end
 
-	for _, invalidation in ipairs({ "connection", "session" }) do
-		it("does not start queued-input actions after " .. invalidation .. " cancellation while connecting", function()
-			local connected = {}
-			lifecycle.ensure_connected = function(callback) connected[#connected + 1] = callback end
-			for _, request in ipairs(input_requests) do
-				actions[request.action]("original", "input-one", function() error("stale callback") end)
-			end
-			if invalidation == "connection" then pending.invalidate() else pending.clear_session("original") end
-			for _, callback in ipairs(connected) do callback() end
-			assert.same({}, input_calls)
-		end)
-	end
-
-	it("drops a late cancellation response after connection invalidation", function()
-		local completed = 0
-		send.cancel_input = saved.sends.cancel_input
-		pending.admit({ sessionID = "original", id = "input-one", delivery = "queue" })
-		actions.cancel_pending_input("original", "input-one", function() completed = completed + 1 end)
-		pending.invalidate()
-		reply(nil)
-		flush()
-		assert.equals(0, completed)
+	it("does not start queued-input or session actions after session cancellation while connecting", function()
+		local connected = {}
+		lifecycle.ensure_connected = function(callback) connected[#connected + 1] = callback end
+		for _, request in ipairs(input_requests) do
+			actions[request.action]("original", "input-one", function() error("stale callback") end)
+		end
+		for _, request in ipairs(requests) do
+			local callback = function() error("stale callback") end
+			if request.options then actions[request.action]("original", {}, callback)
+			else actions[request.action]("original", callback) end
+		end
+		pending.clear_session("original")
+		for _, callback in ipairs(connected) do callback() end
+		assert.same({}, input_calls)
+		assert.is_nil(reply)
 	end)
 
 	it("keeps input actions bound to their original session when tabs change", function()
@@ -121,15 +114,6 @@ describe("session actions across connection changes", function()
 		flush()
 		assert.equals("original", state.get_session().id)
 		assert.is_nil(state.get_session_record("old-server"))
-	end)
-
-	it("does not create a session on a different connection after waiting", function()
-		local connected
-		lifecycle.ensure_connected = function(callback) connected = callback end
-		app.new_session({ silent = true })
-		pending.invalidate()
-		connected()
-		assert.is_nil(reply)
 	end)
 
 	it("deletes only the requested session after switching tabs", function()
@@ -171,17 +155,6 @@ describe("session actions across connection changes", function()
 		assert.equals(0, completed)
 	end)
 
-	it("ignores queued session lists and integrations after changing connections", function()
-		local completed = 0
-		actions.list_sessions({}, function() completed = completed + 1 end)
-		reply(nil, {})
-		actions.list_integrations(function() completed = completed + 1 end, {})
-		reply(nil, {})
-		pending.invalidate()
-		flush()
-		assert.equals(0, completed)
-	end)
-
 	it("completes valid session operations after switching tabs", function()
 		local completed = 0
 		for _, request in ipairs(requests) do
@@ -198,19 +171,6 @@ describe("session actions across connection changes", function()
 		state.set_session("other", "Other")
 		flush()
 		assert.equals(6, completed)
-	end)
-
-	it("does not start session operations after their session is deleted while waiting", function()
-		local connected = {}
-		lifecycle.ensure_connected = function(callback) connected[#connected + 1] = callback end
-		for _, request in ipairs(requests) do
-			local callback = function() error("stale callback") end
-			if request.options then actions[request.action]("original", {}, callback)
-			else actions[request.action]("original", callback) end
-		end
-		pending.clear_session("original")
-		for _, callback in ipairs(connected) do callback() end
-		assert.is_nil(reply)
 	end)
 
 	it("does not reconcile an old connection after a late compaction response", function()

@@ -6,6 +6,9 @@ local server_env = require("opencode.server_env")
 local uv = vim.uv or vim.loop
 
 local pending_callbacks = {}
+-- Optional per-callback handlers run when a queued action is discarded, so
+-- callers can release resources held for a callback that will never run.
+local drop_handlers = setmetatable({}, { __mode = "k" })
 
 -- A managed process remains owned until its exit is observed, including after
 -- startup failure or a successful termination signal.
@@ -154,19 +157,36 @@ local function take_pending_callbacks()
 	return callbacks
 end
 
+local function drop_callbacks(callbacks, first)
+	for index = first or 1, #(callbacks or {}) do
+		local on_drop = drop_handlers[callbacks[index]]
+		drop_handlers[callbacks[index]] = nil
+		if on_drop then require("opencode.util.schedule").schedule_pcall("dropped action handler", on_drop) end
+	end
+end
+
+local function drop_pending_callbacks()
+	drop_callbacks(take_pending_callbacks())
+end
+
 local function remove_pending_callback(callback)
 	for index = #pending_callbacks, 1, -1 do
 		if pending_callbacks[index] == callback then
 			table.remove(pending_callbacks, index)
+			drop_callbacks({ callback })
 			return
 		end
 	end
 end
 
 local function process_callbacks(callbacks, attempt, token)
-	for _, callback in ipairs(callbacks or {}) do
+	for index, callback in ipairs(callbacks or {}) do
 		if state.get_connection() ~= "connected" or current_attempt ~= attempt
-			or (attempt and attempt.connection_token ~= token) then return end
+			or (attempt and attempt.connection_token ~= token) then
+			drop_callbacks(callbacks, index)
+			return
+		end
+		drop_handlers[callback] = nil
 		local ok, err = pcall(callback)
 		if not ok then
 			vim.notify("Pending callback error: " .. tostring(err), vim.log.levels.ERROR)
@@ -191,7 +211,7 @@ local function release_attempt(attempt, connection)
 	cancel_attempt_timers(attempt)
 	attempt.connection_token = attempt.connection_token + 1
 	attempt.connecting = false
-	pending_callbacks = {}
+	drop_pending_callbacks()
 
 	local waiters = attempt.stop_waiters or {}
 	attempt.stop_waiters = {}
@@ -280,7 +300,7 @@ fail_startup = function(attempt, message)
 	attempt.connection_token = attempt.connection_token + 1
 	attempt.disconnected = false
 	attempt.stop_reason = "failure"
-	pending_callbacks = {}
+	drop_pending_callbacks()
 	cancel_attempt_timers(attempt)
 	state.set_connection("error")
 
@@ -343,7 +363,7 @@ complete_connection = function(attempt, token, startup, success, version, failur
 	stop_attempt_timer(attempt, "event_timer")
 
 	if not success then
-		pending_callbacks = {}
+		drop_pending_callbacks()
 		if startup then
 			return fail_startup(attempt, failure_message)
 		end
@@ -543,6 +563,8 @@ local function spawn_server()
 						return
 					end
 
+					-- The port is gone with the process; reconnecting would retry it forever.
+					disconnect_events()
 					local waiters = release_attempt(attempt, "idle")
 					if code ~= 0 and code ~= 143 then -- 143 is SIGTERM
 						vim.notify("OpenCode server exited with code: " .. code, vim.log.levels.WARN)
@@ -588,8 +610,18 @@ setup_event_listeners = function(client)
 		then
 			return
 		end
-		if current_attempt and not current_attempt.connecting then
+		-- An attempt still starting or checking health owns its outcome through
+		-- its own timers; downgrading it here would strand queued actions.
+		if current_attempt and (current_attempt.connecting or not current_attempt.startup_done) then
+			return
+		end
+		if current_attempt then
 			current_attempt.connection_token = current_attempt.connection_token + 1
+		end
+		-- SSE reports every failed reconnect as a close; only the first one is news.
+		local connection = state.get_connection()
+		if connection == "idle" or connection == "error" then
+			return
 		end
 		state.set_connection("idle")
 		vim.notify("OpenCode disconnected: " .. (reason or "unknown"), vim.log.levels.WARN)
@@ -606,6 +638,8 @@ setup_event_listeners = function(client)
 			complete_connection(attempt, waiting.token, waiting.startup, true, waiting.version)
 			return
 		end
+		-- A health check in flight completes readiness itself.
+		if attempt and attempt.connecting then return end
 		state.set_connection("connected")
 	end)
 
@@ -645,6 +679,13 @@ connect_to_server = function(attempt, token, startup, version)
 			"Failed to connect OpenCode event stream: " .. error_detail(connect_err)
 		)
 	end
+	-- An automatic SSE reconnect may already have received server.connected;
+	-- connect_events() keeps that stream and no second event will arrive.
+	local sse = client.sse
+	if attempt.awaiting_event and attempt.awaiting_event.token == token
+		and sse and type(sse.is_connected) == "function" and sse.is_connected() then
+		return complete_connection(attempt, token, startup, true, version)
+	end
 
 	return true -- Native server.connected completes readiness exactly once.
 end
@@ -664,18 +705,24 @@ local function begin_managed(attempt)
 	client.configure_endpoint({ resolve_endpoint = function(callback, guard)
 		return discover_managed(attempt, callback, guard, true)
 	end })
-	discover_managed(attempt, function(err)
+	local finished = false
+	local discovery = discover_managed(attempt, function(err)
+		finished, attempt.discovery = true, nil
 		if not is_current_attempt(attempt) or attempt.disconnected or token ~= attempt.connection_token then return end
-		if err then pending_callbacks = {}; state.set_connection("error"); vim.notify(err.message, vim.log.levels.ERROR)
+		if err then drop_pending_callbacks(); state.set_connection("error"); vim.notify(err.message, vim.log.levels.ERROR)
 		else begin_health_checks(attempt, false) end
 	end, nil, true)
+	-- Only the first discovery step is cancellable; later steps check staleness.
+	if not finished then attempt.discovery = discovery end
 	return true
 end
 
 -- Ensure server is connected (lazy initialization entry point)
 ---@param callback function Called when connection is ready
-function M.ensure_connected(callback)
+---@param on_drop? function Called (scheduled) instead when the action is discarded
+function M.ensure_connected(callback, on_drop)
 	local connection = state.get_connection()
+	if on_drop then drop_handlers[callback] = on_drop end
 
 	if connection == "connected" then
 		-- Queue the action for this connection only.
@@ -685,10 +732,25 @@ function M.ensure_connected(callback)
 		return true
 	end
 
+	local attempt = current_attempt
+	if (connection == "idle" or connection == "error") and attempt and attempt.phase == "stopping" then
+		-- Retry once the stopping process exits; a restart waiter registered
+		-- earlier starts its replacement first. Disconnect, stop and setup cancel it.
+		local generation = restart_generation
+		table.insert(attempt.stop_waiters, function()
+			if generation ~= restart_generation then drop_callbacks({ callback }); return end
+			M.ensure_connected(callback)
+		end)
+		return false
+	end
+
 	if connection == "idle" or connection == "error" then
 		table.insert(pending_callbacks, callback)
 		if not M.start() then
 			remove_pending_callback(callback)
+			if attempt and attempt.phase == "stop_error" and current_attempt == attempt then
+				vim.notify("OpenCode server could not be stopped; stop it again before reconnecting", vim.log.levels.ERROR)
+			end
 		end
 		return false
 	end
@@ -709,6 +771,11 @@ function M.start()
 
 	if current_attempt then
 		local attempt = current_attempt
+		if attempt.connecting and attempt.phase ~= "stopping" and attempt.phase ~= "stop_error" then
+			-- A health or event check in flight decides this attempt; wait for it.
+			state.set_connection("connecting")
+			return true
+		end
 		if attempt.phase == "ready" then
 			if attempt.discovered then return begin_managed(attempt) end
 			attempt.disconnected = false
@@ -718,7 +785,8 @@ function M.start()
 		if attempt.phase == "starting" and not attempt.startup_done then
 			attempt.disconnected = false
 			state.set_connection("starting")
-			arm_startup_timeout(attempt)
+			-- Keep the original deadline; only a disconnect stops this timer.
+			if not attempt.timeout_timer then arm_startup_timeout(attempt) end
 			if attempt.listening_info then
 				return continue_startup(attempt)
 			end
@@ -844,7 +912,7 @@ function M.stop(on_stopped)
 	attempt.connection_token = attempt.connection_token + 1
 	attempt.disconnected = true
 	attempt.stop_reason = "stop"
-	pending_callbacks = {}
+	drop_pending_callbacks()
 	cancel_attempt_timers(attempt)
 	disconnect_events()
 
@@ -920,6 +988,9 @@ function M.disconnect()
 		attempt.connection_token = attempt.connection_token + 1
 		attempt.connecting = false
 		attempt.disconnected = true
+		local discovery = attempt.discovery
+		attempt.discovery = nil
+		if type(discovery) == "table" and type(discovery.cancel) == "function" then pcall(discovery.cancel) end
 		stop_attempt_timer(attempt, "health_timer")
 		stop_attempt_timer(attempt, "event_timer")
 		attempt.awaiting_event = nil
@@ -933,7 +1004,7 @@ function M.disconnect()
 		clear_chat = true,
 		reset_state = false,
 	})
-	pending_callbacks = {}
+	drop_pending_callbacks()
 	if attempt and attempt.phase == "stop_error" then
 		state.set_connection("error")
 	else

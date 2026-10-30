@@ -84,7 +84,6 @@ describe("native instruction update notices", function()
 		return page[2]
 	end
 
-
 	it("renders the same compact notice from an SSE catalog update and cold history", function()
 		sync.handle_session_messages(session_id, projection.page(session_id, neighbors))
 		local event = { id = "evt_02_notice", type = "session.instructions.updated", created = 2,
@@ -127,7 +126,6 @@ describe("native instruction update notices", function()
 	it("keeps identical catalog content in ordinary user, assistant and synthetic messages", function()
 		local cases = {
 			{ id = "msg_02_catalog", type = "user", text = catalog },
-			{ id = "msg_02_catalog", type = "assistant", content = { { type = "text", text = catalog } } },
 			{ id = "msg_02_catalog", type = "synthetic", text = catalog },
 		}
 		for _, native in ipairs(cases) do

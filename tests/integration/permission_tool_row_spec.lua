@@ -145,6 +145,36 @@ describe("permission widgets under their tool row", function()
 		assert.equals("", vim.trim(lines()[state.permissions.perm_read.end_line + 2]))
 	end)
 
+	it("treats a file edit row without a panel as a compact row", function()
+		sync.handle_session_messages("permission-row", { projection.project("permission-row", {
+			id = "message", type = "assistant", time = { created = 1 }, content = {
+				{ type = "tool", id = "call", name = "neovim_edit", state = { status = "running", input = {
+					filePath = "/srv/data/notes.txt", oldString = "a", newString = "b",
+				} } },
+			},
+		}) })
+		ask("perm_dir", "external_directory", {
+			timestamp = 1, tool_name = "neovim_edit", patterns = { "/srv/data" }, always = { "/srv/data/*" }, tool_input = {},
+		})
+		ask("perm_edit", "neovim_edit", {
+			timestamp = 2, tool_name = "neovim_edit", patterns = { "/srv/data/notes.txt" }, always = { "*" },
+			tool_input = { filePath = "/srv/data/notes.txt" },
+		})
+		permissions.mark_approved("perm_dir", "once")
+		chat.do_render()
+
+		local row, decided, pending = tool_row(), state.permissions.perm_dir, state.permissions.perm_edit
+		assert.is_truthy(lines()[row.end_line + 1]:find("~ Preparing file changes…", 1, true))
+		assert.equals(row.end_line + 1, decided.start_line)
+		assert.equals("     ✓ External directory allowed once: /srv/data", (lines()[decided.start_line + 1]:gsub("%s+$", "")))
+		assert.equals(decided.end_line, decided.start_line)
+		-- The pending request keeps its full panel after one separator.
+		assert.equals("", vim.trim(lines()[decided.end_line + 2]))
+		assert.equals(decided.end_line + 2, pending.start_line)
+		assert.equals(0, count("neovim_edit"))
+		assert.equals(1, count("# Permission required for Neovim Edit"))
+	end)
+
 	it("shows the full request when the bash row folds part of the command", function()
 		local long = {}
 		for i = 1, 20 do long[i] = "echo line" .. i end

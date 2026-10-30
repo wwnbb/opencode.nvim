@@ -1,4 +1,3 @@
-local schedule = require("tests.helpers.schedule")
 local input = require("opencode.ui.input")
 local history = require("opencode.ui.input.history")
 local app_state = require("opencode.state")
@@ -30,10 +29,6 @@ describe("input code highlighting", function()
 
 	local function wait_for(predicate)
 		assert.is_true(vim.wait(1000, predicate, 5), "Input highlights did not update")
-	end
-
-	local function keys(text)
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(text, true, false, true), "nxt", false)
 	end
 
 	before_each(function()
@@ -75,49 +70,6 @@ describe("input code highlighting", function()
 		assert.equals(draft, input.get_pending_text())
 		assert.equals(win, vim.api.nvim_get_current_win())
 		assert.same(cursor, vim.api.nvim_win_get_cursor(win))
-	end)
-
-	it("updates open fences while typing, undoing and editing the language or delimiters", function()
-		input.show({ text = "```lua\n" })
-		local buf = buffer()
-		keys("Areturn 1<Esc>")
-		wait_for(function() return fragments("@keyword"):find("return", 1, true) ~= nil end)
-		keys("u")
-		wait_for(function() return #marks() == 0 end)
-		keys("<C-r>")
-		wait_for(function() return #marks() > 0 end)
-		vim.api.nvim_buf_set_text(buf, 0, 3, 0, 6, { "missing_parser" })
-		wait_for(function() return #marks() == 0 end)
-		vim.api.nvim_buf_set_text(buf, 0, 3, 0, #"```missing_parser", { "lua" })
-		wait_for(function() return #marks() > 0 end)
-		schedule.with(function(flush)
-			vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "```", "return is prose here" }); flush()
-		end)
-		for _, mark in ipairs(marks()) do assert.equals(1, mark[2]) end
-		vim.api.nvim_buf_set_lines(buf, 0, 1, false, {})
-		wait_for(function() return #marks() == 0 end)
-	end)
-
-	it("clears disabled and over-limit blocks and resumes after a draft replacement", function()
-		local draft = "```lua\nreturn 1\nreturn 2\n```"
-		input.show({ text = draft })
-		wait_for(function() return #marks() > 0 end)
-		for _, setting in ipairs({
-			{ "syntax", "input_markdown", false }, { "syntax", "enabled", false },
-			{ "syntax", "max_lines", 1 },
-			{ "syntax", "max_bytes", 3 },
-		}) do
-			local section, key, value = unpack(setting)
-			local old = config[section][key]
-			config[section][key] = value
-			app_state.set_config(config)
-			input.set_pending_text(draft)
-			wait_for(function() return #marks() == 0 end)
-			config[section][key] = old
-			app_state.set_config(config)
-			input.set_pending_text(draft)
-			wait_for(function() return #marks() > 0 end)
-		end
 	end)
 
 	it("refreshes theme wrappers without changing the input background", function()

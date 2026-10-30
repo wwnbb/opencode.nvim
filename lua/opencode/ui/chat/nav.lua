@@ -285,7 +285,7 @@ function M.enter_child_session(part_id)
 			}, initial_input, previous_stack) then return end
 
 			vim.schedule(function()
-				render_coordinator.request({ session_id = child_session_id, reason = "child_navigation_loaded" })
+				render_coordinator.request({ session_id = child_session_id, reason = "child_navigation_loaded", immediate = true })
 			end)
 		end)
 	end)
@@ -336,7 +336,7 @@ function M.open_family_session(session_id, opts)
 		if not switch_view_session(session_id, info.title or info.name or session_id, {
 			reason = "family_navigation", preserve_cache = true, runtime = not child,
 		}, initial_input, previous_stack, opts.parent and function() show_parent_tail(session_id) end) then return end
-		render_coordinator.request({ session_id = session_id, reason = "family_navigation_loaded" })
+		render_coordinator.request({ session_id = session_id, reason = "family_navigation_loaded", immediate = true })
 	end)
 end
 
@@ -369,7 +369,7 @@ function M.leave_child_session()
 	}, nil, previous_stack, function() show_parent_tail(parent.id) end) then return end
 
 	vim.schedule(function()
-		render_coordinator.request({ session_id = parent.id, reason = "child_navigation" })
+		render_coordinator.request({ session_id = parent.id, reason = "child_navigation", immediate = true })
 	end)
 end
 

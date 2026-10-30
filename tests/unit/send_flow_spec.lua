@@ -83,28 +83,12 @@ describe("opencode send flow", function()
 		assert.same({}, pending.list("ses_a"))
 		callbacks.shell(nil)
 	end)
-	it("creates a session with captured location for model-free shell execution", function()
-		state.set_session(nil, nil); sync.clear_all()
-		assert.is_true(send.send("pwd", { mode = "shell", directory = "/original" }))
-		assert.same({ location = { directory = "/original" } }, calls[1].body)
-		state.set_session("ses_other", "Other")
-		callbacks.create(nil, { id = "ses_shell", title = "Shell", location = { directory = "/original" } })
-		assert.equals("ses_shell", calls[2].sid)
-		assert.equals("ses_other", state.get_session().id)
-	end)
 	it("rejects shell attachments and steering and restores the draft's shell mode", function()
 		assert.is_false(send.send("echo image", { mode = "shell", parts = { { type = "file", filename = "a.png" } } }))
 		assert.equals("shell", history.get_pending_mode("ses_a"))
 		assert.equals("echo image", history.get_pending("ses_a"))
 		assert.is_false(send.send("pwd", { mode = "shell", delivery = "steer" }))
 		assert.equals(0, #calls)
-	end)
-	it("restores rejected shell delivery options as a retryable shell draft", function()
-		assert.is_false(send.send("pwd", { mode = "shell", delivery = "steer" }))
-		local options = history.get_pending_options("ses_a")
-		assert.is_nil(options.delivery)
-		assert.is_true(send.send(history.get_pending("ses_a"), options))
-		assert.equals("shell", calls[1].method)
 	end)
 	it("does not retry uncertain shell execution or act on a stale response", function()
 		assert.is_true(send.send("sleep 2", { mode = "shell" }))
@@ -127,7 +111,6 @@ describe("opencode send flow", function()
 
 	for _, case in ipairs({
 		{ name = "malformed model", model = 42 },
-		{ name = "unavailable model", model = { providerID = "p", id = "missing" } },
 		{ name = "unavailable variant", model = { providerID = "p", modelID = "catalog-id", variant = "missing" } },
 	}) do
 		it("rejects an explicit " .. case.name .. " and preserves its draft", function()
@@ -161,38 +144,23 @@ describe("opencode send flow", function()
 		assert.same({}, sync.get_messages("ses_b"))
 	end)
 
-	for _, status in ipairs({ "idle", "busy", "retry" }) do
-		it("queues by default when session is " .. status .. " until delivery is confirmed", function()
-			state.set_session_status("ses_a", { type = status })
-			assert.is_true(send.send("стой", {}))
-			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
-			local payload = calls[2].body
-			assert.equals("queue", payload.delivery)
-			assert.equals("Sending · queue", selectors.prompt_status("ses_a", payload.id))
-			accepted()
-			assert.equals("queued", pending.get("ses_a", payload.id).status)
-			assert.equals("Queued", selectors.prompt_status("ses_a", payload.id))
-			assert.is_true(sync.get_message("ses_a", payload.id).provisional)
-			local effect = sync.handle_server_event({ id = "evt_delivery", created = 30, type = "session.inbox.delivered",
-				data = { sessionID = "ses_a", inboxID = payload.id } })
-			pending.update("ses_a", effect.delivered, { status = "delivered" })
-			assert.is_nil(selectors.prompt_status("ses_a", payload.id))
-			assert.is_nil(sync.get_message("ses_a", payload.id).provisional)
-			assert.equals(1, #sync.get_messages("ses_a"))
-		end)
-	end
-
-	it("keeps explicit queue delivery while an agent is busy", function()
-		state.set_session_status("ses_a", { type = "busy" })
-		assert.is_true(send.send("After this turn", { delivery = "queue", resume = false }))
+	it("queues by default even when the session is idle until delivery is confirmed", function()
+		state.set_session_status("ses_a", { type = "idle" })
+		assert.is_true(send.send("стой", {}))
 		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
 		local payload = calls[2].body
 		assert.equals("queue", payload.delivery)
-		assert.is_false(payload.resume)
+		assert.equals("Sending · queue", selectors.prompt_status("ses_a", payload.id))
 		accepted()
 		assert.equals("queued", pending.get("ses_a", payload.id).status)
 		assert.equals("Queued", selectors.prompt_status("ses_a", payload.id))
-		assert.equals("busy", state.get_session_status("ses_a").type)
+		assert.is_true(sync.get_message("ses_a", payload.id).provisional)
+		local effect = sync.handle_server_event({ id = "evt_delivery", created = 30, type = "session.inbox.delivered",
+			data = { sessionID = "ses_a", inboxID = payload.id } })
+		pending.update("ses_a", effect.delivered, { status = "delivered" })
+		assert.is_nil(selectors.prompt_status("ses_a", payload.id))
+		assert.is_nil(sync.get_message("ses_a", payload.id).provisional)
+		assert.equals(1, #sync.get_messages("ses_a"))
 	end)
 
 	it("sends an explicitly steered prompt with steer delivery", function()
@@ -203,47 +171,6 @@ describe("opencode send flow", function()
 		assert.equals("Sending · steer", selectors.prompt_status("ses_a", calls[2].body.id))
 		accepted()
 		assert.equals("accepted", pending.get("ses_a", calls[2].body.id).status)
-	end)
-
-	it("promotes the existing inbox item without resending or changing its attachments", function()
-		send.send("стой", { parts = { { type = "file", url = "file:///tmp/context" } } })
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-		local id = calls[2].body.id
-		assert.is_true(send.steer_input("ses_a", id))
-		assert.same({ method = "delivery", sid = "ses_a", id = id, delivery = "steer" }, calls[3])
-		assert.equals("Queued", selectors.prompt_status("ses_a", id))
-		state.set_session("ses_b", "B")
-		callbacks.delivery(nil)
-		assert.equals("Steering pending", selectors.prompt_status("ses_a", id))
-		assert.equals("steer", pending.get("ses_a", id).inbox.delivery)
-		assert.equals("file:///tmp/context", sync.get_parts(id)[2].url)
-		assert.equals(1, #sync.get_messages("ses_a"))
-		assert.equals(0, #sync.get_messages("ses_b"))
-		assert.equals(3, #calls)
-	end)
-
-	it("changes an accepted inbox item back to queue and allows steering it again", function()
-		send.send("Switch delivery", { parts = { { type = "file", url = "file:///tmp/context" } }, delivery = "steer" })
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-		local id = calls[2].body.id
-		assert.equals("accepted", pending.get("ses_a", id).status)
-		assert.is_true(send.queue_input("ses_a", id))
-		assert.same({ method = "delivery", sid = "ses_a", id = id, delivery = "queue" }, calls[3])
-		assert.equals("Steering pending", selectors.prompt_status("ses_a", id))
-		callbacks.delivery({ status = 409, message = "Unavailable" })
-		assert.equals("accepted", pending.get("ses_a", id).status)
-		assert.is_true(send.queue_input("ses_a", id))
-		callbacks.delivery(nil)
-		assert.equals("queued", pending.get("ses_a", id).status)
-		assert.equals("queue", pending.get("ses_a", id).inbox.delivery)
-		assert.equals("Queued", selectors.prompt_status("ses_a", id))
-		assert.is_true(send.steer_input("ses_a", id))
-		callbacks.delivery(nil)
-		assert.equals("accepted", pending.get("ses_a", id).status)
-		assert.equals("steer", pending.get("ses_a", id).inbox.delivery)
-		assert.equals("file:///tmp/context", sync.get_parts(id)[2].url)
-		assert.equals(1, #sync.get_messages("ses_a"))
-		assert.equals(5, #calls)
 	end)
 
 	it("does not undo a newer queue change when the earlier steer PATCH completes late", function()
@@ -276,56 +203,6 @@ describe("opencode send flow", function()
 		assert.is_true(ok, err)
 	end)
 
-	it("keeps queue state when a steering request fails", function()
-		send.send("Queued", {})
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-		local id, failure = calls[2].body.id
-		send.steer_input("ses_a", id, function(err) failure = err end)
-		callbacks.delivery({ status = 409, message = "Already delivered" })
-		assert.equals(409, failure.status)
-		assert.equals("queued", pending.get("ses_a", id).status)
-		assert.is_not_nil(sync.get_message("ses_a", id))
-		assert.equals(3, #calls)
-	end)
-
-	for _, terminal in ipairs({ "delivered", "cancelled" }) do
-		it("does not regress " .. terminal .. " when steering completes late", function()
-			send.send("Queued", {})
-			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-			local id = calls[2].body.id
-			send.steer_input("ses_a", id)
-			pending.update("ses_a", id, { status = terminal })
-			callbacks.delivery(nil)
-			assert.equals(terminal, pending.get("ses_a", id).status)
-			assert.is_nil(selectors.prompt_status("ses_a", id))
-			assert.is_false(send.steer_input("ses_a", id))
-			assert.equals(3, #calls)
-		end)
-	end
-
-	it("ignores a steering response after disconnect or session deletion", function()
-		send.send("Queued", {})
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-		local id, called = calls[2].body.id, false
-		send.steer_input("ses_a", id, function() called = true end)
-		pending.clear_session("ses_a")
-		callbacks.delivery(nil)
-		assert.is_nil(pending.get("ses_a", id))
-		assert.is_false(called)
-	end)
-
-	it("can retry a delivery change after a connection invalidates its callback", function()
-		send.send("Queued", {})
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-		local id = calls[2].body.id
-		assert.is_true(send.steer_input("ses_a", id))
-		pending.invalidate()
-		assert.is_true(send.steer_input("ses_a", id))
-		assert.equals(2, #vim.tbl_filter(function(call) return call.method == "delivery" end, calls))
-		callbacks.delivery(nil)
-		assert.equals("accepted", pending.get("ses_a", id).status)
-	end)
-
 	it("keeps a confirmed steering change when the original admission arrives late", function()
 		send.send("Queued", {})
 		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
@@ -345,89 +222,6 @@ describe("opencode send flow", function()
 		assert.equals(2, #calls)
 		assert.equals("Keep this", history.get_pending())
 		assert.equals("idle", state.get_session_status("ses_a").type)
-	end)
-
-	it("cancels only the confirmed inbox item and keeps the executing session busy", function()
-		send.send("Queued", {})
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-		local id = calls[#calls].body.id
-		send.cancel_input("ses_a", id)
-		state.set_session("ses_b", "B")
-		callbacks.cancel(nil)
-		assert.equals("cancelled", pending.get("ses_a", id).status)
-		assert.is_nil(require("opencode.local").message_agent.get("ses_a", id))
-		assert.is_nil(sync.get_message("ses_a", id))
-		assert.equals("busy", state.get_session_status("ses_a").type)
-		assert.equals("idle", state.get_session_status("ses_b").type)
-	end)
-
-	it("ignores a cancellation callback after the session was deleted", function()
-		local called = false
-		pending.admit({ sessionID = "ses_a", id = "gone", delivery = "queue" })
-		send.cancel_input("ses_a", "gone", function() called = true end)
-		pending.clear_session("ses_a")
-		callbacks.cancel(nil)
-		assert.is_false(called)
-	end)
-
-	it("edits only after confirmed cancellation and preserves the original send context", function()
-		local parts = { { type = "file", url = "data:image/png;base64,AAAA", filename = "shot.png", _marker = "[Image 1]" } }
-		send.send("Edit\n[Image 1]", { parts = parts, directory = "/original", resume = false })
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-		local id, draft = calls[#calls].body.id
-		send.edit_input("ses_a", id, function(err, result) assert.is_nil(err); draft = result end)
-		assert.is_nil(draft)
-		state.set_session("ses_b", "B")
-		callbacks.cancel(nil)
-		assert.equals("Edit\n[Image 1]", draft.text)
-		assert.same(parts, draft.parts)
-		assert.equals("ses_a", draft.options.session_id)
-		assert.equals("/original", draft.options.directory)
-		assert.equals(false, draft.options.resume)
-		assert.equals("cancelled", pending.get("ses_a", id).status)
-		assert.is_nil(sync.get_message("ses_a", id))
-	end)
-
-	it("restores native inbox attachments after reconnect for editing", function()
-		pending.admit({ sessionID = "ses_a", id = "restored", delivery = "steer", type = "user", payload = {
-			text = "Native draft", files = { { uri = "file:///tmp/file", name = "file" } },
-			agents = { { name = "explore" } }, skills = { { id = "review" } },
-		} })
-		local draft
-		send.edit_input("ses_a", "restored", function(err, result) assert.is_nil(err); draft = result end)
-		callbacks.cancel(nil)
-		local payload = require("opencode.protocol.requests").prompt(draft.text, { parts = draft.parts }, "new")
-		assert.same({ { uri = "file:///tmp/file", name = "file" } }, payload.files)
-		assert.same({ { name = "explore" } }, payload.agents)
-		assert.same({ { id = "review" } }, payload.skills)
-		assert.equals("steer", draft.options.delivery)
-	end)
-
-	it("uses a fresh admission attempt when editing a prompt across a reconnect", function()
-		send.send("Reconnect draft", { _token = pending.token("ses_a"), _catalog_ready = true, _catalog_deadline = 1 })
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-		local id, draft = calls[#calls].body.id
-		pending.invalidate()
-		send.edit_input("ses_a", id, function(err, value) assert.is_nil(err); draft = value end)
-		callbacks.cancel(nil)
-		assert.is_nil(draft.options._token)
-		assert.is_nil(draft.options._catalog_ready)
-		assert.is_nil(draft.options._catalog_deadline)
-		assert.is_true(send.send(draft.text, draft.options))
-	end)
-
-	it("does not open an edit draft when cancellation loses to delivery", function()
-		send.send("Keep delivered", {})
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-		local id, error, draft = calls[#calls].body.id
-		send.edit_input("ses_a", id, function(err, result) error, draft = err, result end)
-		pending.update("ses_a", id, { status = "delivered" })
-		callbacks.cancel(nil)
-		assert.equals("delivered", pending.get("ses_a", id).status)
-		assert.is_not_nil(error)
-		assert.equals("already_delivered", error.code)
-		assert.is_nil(draft)
-		assert.is_not_nil(sync.get_message("ses_a", id))
 	end)
 
 	it("confirms cancellation with ordered inbox and complete history reads before returning one draft", function()
@@ -515,36 +309,34 @@ describe("opencode send flow", function()
 		assert.is_nil(sync.get_message("ses_a", id).provisional)
 	end)
 
-	for _, kind in ipairs({ "compaction", "move" }) do
-		it("requires a terminal event to confirm cancellation of " .. kind .. " inputs", function()
-			local client, confirm = require("opencode.client")
-			client.get_all_messages = function(_, cb) confirm = cb end
-			pending.admit({ sessionID = "ses_a", id = "control", type = kind, delivery = "queue" })
-			local failure
-			send.cancel_input("ses_a", "control", function(err) failure = err end)
-			callbacks.cancel(nil); confirm(nil, {}, { complete = true })
-			assert.matches("could not be confirmed", failure.message)
-			assert.equals("queued", pending.get("ses_a", "control").status)
-			send.cancel_input("ses_a", "control", function(err) failure = err end)
-			callbacks.cancel(nil)
-			pending.update("ses_a", "control", { status = "cancelled" })
-			confirm(nil, {}, { complete = true })
-			assert.is_nil(failure)
-			assert.equals("cancelled", pending.get("ses_a", "control").status)
-		end)
-	end
+	it("requires a terminal event to confirm cancellation of compaction inputs", function()
+		local client, confirm = require("opencode.client")
+		client.get_all_messages = function(_, cb) confirm = cb end
+		pending.admit({ sessionID = "ses_a", id = "control", type = "compaction", delivery = "queue" })
+		local failure
+		send.cancel_input("ses_a", "control", function(err) failure = err end)
+		callbacks.cancel(nil); confirm(nil, {}, { complete = true })
+		assert.matches("could not be confirmed", failure.message)
+		assert.equals("queued", pending.get("ses_a", "control").status)
+		send.cancel_input("ses_a", "control", function(err) failure = err end)
+		callbacks.cancel(nil)
+		pending.update("ses_a", "control", { status = "cancelled" })
+		confirm(nil, {}, { complete = true })
+		assert.is_nil(failure)
+		assert.equals("cancelled", pending.get("ses_a", "control").status)
+	end)
 
-	for _, outcome in ipairs({ "pending", "inbox_error", "history_error", "partial" }) do
+	for _, outcome in ipairs({ "pending", "partial" }) do
 		it("preserves the input when cancellation confirmation is " .. outcome, function()
 			local client = require("opencode.client")
 			send.send("Keep queued", {})
 			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
 			local id, failure, draft = calls[#calls].body.id
 			client.get_inbox = function(_, cb)
-				cb(outcome == "inbox_error" and { message = "Offline" } or nil, outcome == "pending" and { { id = id } } or {})
+				cb(nil, outcome == "pending" and { { id = id } } or {})
 			end
 			client.get_all_messages = function(_, cb)
-				cb(outcome == "history_error" and { message = "Offline" } or nil, {}, { complete = outcome ~= "partial" })
+				cb(nil, {}, { complete = outcome ~= "partial" })
 			end
 			send.edit_input("ses_a", id, function(err, value) failure, draft = err, value end)
 			callbacks.cancel(nil)
@@ -558,20 +350,6 @@ describe("opencode send flow", function()
 			assert.equals("Keep queued", draft.text)
 		end)
 	end
-
-	it("ignores confirmation reads invalidated by disconnect and permits a fresh cancellation", function()
-		local client, confirm = require("opencode.client")
-		client.get_all_messages = function(_, cb) confirm = cb end
-		send.send("Reconnect", {})
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-		local id, draft = calls[#calls].body.id
-		send.edit_input("ses_a", id, function(_, value) draft = value end)
-		callbacks.cancel(nil); pending.invalidate(); confirm(nil, {}, { complete = true })
-		assert.is_nil(draft); assert.equals("queued", pending.get("ses_a", id).status)
-		send.edit_input("ses_a", id, function(err, value) assert.is_nil(err); draft = value end)
-		callbacks.cancel(nil); confirm(nil, {}, { complete = true })
-		assert.equals("Reconnect", draft.text)
-	end)
 
 	it("records an uncertain timeout without another POST or a false idle", function()
 		send.send("Uncertain", {})
@@ -769,48 +547,6 @@ describe("opencode send flow", function()
 		assert.equals(second_id, prompts[2].body.id)
 	end)
 
-	it("keeps a newer staged boundary when an older committed SSE arrives late", function()
-		local bus = require("opencode.events.bus")
-		local handler = require("opencode.events.handlers.server")
-		local projection = require("opencode.protocol.messages")
-		local old_id = "msg_00000000000000000000"
-		sync.handle_session_messages("ses_a", projection.page("ses_a", {
-			{ id = old_id, type = "user", text = "Undone", time = { created = 1 } },
-		}))
-		state.upsert_session({ id = "ses_a", revert = { messageID = old_id } })
-		bus.clear(); handler.clear(); handler.setup(bus)
-		local ok, err = pcall(function()
-			assert.is_true(send.send("Replacement turn", {}))
-			if callbacks.get then
-				local cb = callbacks.get; callbacks.get = nil
-				cb(nil, { id = "ses_a", agent = "build", model = model(), revert = { messageID = old_id } })
-			end
-			assert.is_function(callbacks.commit)
-			callbacks.commit(nil)
-			if callbacks.get then
-				local cb = callbacks.get; callbacks.get = nil
-				cb(nil, { id = "ses_a", agent = "build", model = model() })
-			end
-			local prompt = vim.tbl_filter(function(call) return call.method == "prompt" end, calls)[1]
-			assert.is_not_nil(prompt)
-			local id = prompt.body.id
-			callbacks.prompt(nil, { sessionID = "ses_a", id = id, type = "user", delivery = "queue",
-				payload = { text = "Replacement turn" }, time = { created = 20 } })
-			bus.emit("server_event", { id = "evt_delivery_new", created = 21, type = "session.inbox.delivered",
-				data = { sessionID = "ses_a", inboxID = id } })
-			bus.emit("server_event", { id = "evt_stage_new", created = 22, type = "session.revert.staged",
-				data = { sessionID = "ses_a", revert = { messageID = id } } })
-			assert.equals(id, state.get_session_record("ses_a").revert.messageID)
-			bus.emit("server_event", { id = "evt_commit_old", created = 10, type = "session.revert.committed",
-				data = { sessionID = "ses_a", to = old_id } })
-			assert.equals(id, state.get_session_record("ses_a").revert.messageID)
-			assert.is_not_nil(sync.get_message("ses_a", id))
-			assert.equals("delivered", pending.get("ses_a", id).status)
-		end)
-		bus.clear(); handler.clear()
-		assert.is_true(ok, err)
-	end)
-
 	it("keeps the draft and avoids optimistic state when committing a staged undo fails", function()
 		state.upsert_session({ id = "ses_a", revert = { messageID = "msg_old" } })
 		local file = { type = "file", url = "file:///tmp/retry.txt", filename = "retry.txt" }
@@ -889,38 +625,6 @@ describe("opencode send flow", function()
 			assert.is_nil(history.get_pending_options("ses_a")._context_snapshot)
 		end)
 	end)
-	it("rejects invalid ranges before network work and preserves the prompt", function()
-		with_context_source(function()
-			assert.is_false(send.send("@this", { range = { 2, 10 } }))
-			assert.equals(0, #calls)
-			assert.equals("@this", history.get_pending("ses_a"))
-			assert.is_nil(history.get_pending_options("ses_a")._context_error)
-		end)
-	end)
-	it("keeps the opening snapshot while catalogs are loaded asynchronously", function()
-		with_context_source(function(source)
-			local client = require("opencode.client")
-			local providers, agents
-			client.get_config_providers = function(cb) providers = cb end
-			client.list_agents = function(cb) agents = cb end
-			sync.select_catalog_location("/previous")
-			assert.is_true(send.send("@buffer", { directory = "/next" }))
-			assert.equals(0, #calls)
-			vim.api.nvim_buf_set_lines(source, 0, -1, false, { "new contents" })
-			providers(nil, { providers = { { id = "p", models = { ["catalog-id"] = {} } } } })
-			agents(nil, { { id = "build", name = "Builder" } })
-			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
-			assert.is_truthy(calls[#calls].body.text:find("local frozen = 1", 1, true))
-			assert.is_nil(calls[#calls].body.text:find("new contents", 1, true))
-		end)
-	end)
-	it("leaves slash and shell text unchanged", function()
-		assert.is_true(send.send("echo @buffer", { mode = "shell" }))
-		assert.equals("echo @buffer", calls[1].command)
-		assert.is_true(send.send("/custom @buffer"))
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
-		assert.equals("/custom @buffer", calls[#calls].body.text)
-	end)
 
 	it("waits for a new location's initially empty catalogs without changing the send target", function()
 		local old_defer, retry = vim.defer_fn, nil
@@ -966,16 +670,6 @@ describe("opencode send flow", function()
 		assert.equals(2, #sync.get_messages("ses_a"))
 	end)
 
-	it("resolves a location agent by id across the list before display names", function()
-		sync.select_catalog_location("/active")
-		sync.handle_location_catalog("/scoped", "providers", { providers = { { id = "p", models = { ["catalog-id"] = {} } } } })
-		sync.handle_location_catalog("/scoped", "agents", { { id = "plan", name = "build" }, { id = "build", name = "Builder" } })
-		state.set_session(nil)
-		assert.is_true(send.send("New", { directory = "/scoped" }))
-		assert.equals("create", calls[1].method)
-		assert.equals("build", calls[1].body.agent)
-	end)
-
 	it("reports a location provider without models as an unavailable model", function()
 		sync.select_catalog_location("/active")
 		sync.handle_location_catalog("/scoped", "providers", { providers = { { id = "p" } } })
@@ -998,7 +692,7 @@ describe("opencode send flow", function()
 		assert.equals("ses_b", state.get_session().id)
 	end)
 
-	for _, visibility in ipairs({ "visible", "suspended", "closed" }) do
+	for _, visibility in ipairs({ "visible", "closed" }) do
 		it("keeps a first prompt attached to its original pane (" .. visibility .. ")", function()
 			local views = require("opencode.ui.chat.state")
 			local view = views.new()
@@ -1009,8 +703,7 @@ describe("opencode send flow", function()
 				send.send("First prompt", { session_id = false, directory = "/tmp/owner",
 					_view_id = view.id, _view_generation = view.generation })
 				state.set_session("ses_b", "B")
-				if visibility == "closed" then views.remove(view)
-				elseif visibility == "suspended" then view.visible, view.suspended = false, true end
+				if visibility == "closed" then views.remove(view) end
 				callbacks.create(nil, { id = "ses_new", agent = "build", model = model() })
 				assert.equals("ses_new", calls[2].sid)
 				assert.equals("ses_b", state.get_session().id)

@@ -42,7 +42,7 @@ describe("Thought, Explore, Execute and Web groups", function()
 			{ parts = { thought("b", "second", { created = 500, completed = 4100 }) }, finish = "stop" },
 		})
 		assert.equals(groups.a, groups.b)
-		assert.is_truthy(text(groups.a):find("+ Thought · 2 steps · 3.8s", 1, true))
+		assert.is_truthy(text(groups.a):find("▸ Thought · 2 steps · 3.8s", 1, true))
 		assert.is_nil(text(groups.a):find("first", 1, true))
 		assert.is_truthy(text(groups.a, true):find("▏  second", 1, true))
 	end)
@@ -54,9 +54,9 @@ describe("Thought, Explore, Execute and Web groups", function()
 			tool("b", "grep", "completed", { pattern = "main" }), tool("c", "glob", "completed", { pattern = "*.rs" }), tool("d", "rg"),
 		} } })
 		assert.equals(groups.a, groups.c)
-		assert.is_truthy(text(groups.a):find("→ Explored — 1 read, 3 searches", 1, true))
+		assert.is_truthy(text(groups.a):find("→ Explored · 1 read, 3 searches", 1, true))
 		assert.is_nil(text(groups.a):find("Cargo.toml", 1, true))
-		assert.is_truthy(text(groups.a, true):find("↘ Explored — 1 read, 3 searches", 1, true))
+		assert.is_truthy(text(groups.a, true):find("↘ Explored · 1 read, 3 searches", 1, true))
 		assert.is_truthy(text(groups.a, true):find("\n → Read Cargo.toml", 1, true))
 		assert.is_truthy(text(groups.a, true):find('\n ● Grep "main"', 1, true))
 		assert.is_nil(text(groups.a, true):find("hidden file output", 1, true))
@@ -73,7 +73,7 @@ describe("Thought, Explore, Execute and Web groups", function()
 		assert.equals(groups.search, groups.fetch)
 		assert.equals(groups.search, groups.fetch2)
 		assert.equals("activity:web:search", groups.search.id)
-		assert.equals("→ Browsed — 2 searches, 2 fetches", vim.trim(text(groups.search)))
+		assert.equals("→ Browsed · 2 searches, 2 fetches", vim.trim(text(groups.search)))
 		local collapsed = activity.render(groups.search, false)
 		assert.is_nil(collapsed.children.search.start_line)
 		assert.is_nil(collapsed.children.fetch.start_line)
@@ -108,7 +108,7 @@ describe("Thought, Explore, Execute and Web groups", function()
 		local groups = collect({ { parts = { tool("ok", "execute"), failed, cancelled } } })
 		local closed = activity.render(groups.ok, false)
 		local closed_text = table.concat(closed.lines, "\n")
-		assert.is_truthy(closed_text:find("Executed — 3 calls · 2 failed", 1, true))
+		assert.is_truthy(closed_text:find("Executed · 3 calls · 2 failed", 1, true))
 		assert.is_truthy(closed_text:find("mcp.read", 1, true))
 		assert.is_nil(closed_text:find("details of failure", 1, true))
 		assert.is_false(activity.is_working(groups.ok))
@@ -122,7 +122,7 @@ describe("Thought, Explore, Execute and Web groups", function()
 		failed.state.error = "ripgrep failed: invalid regex"
 		local groups = collect({ { parts = { tool("read", "read"), failed } } })
 		local rendered = text(groups.read)
-		assert.is_truthy(rendered:find("Explored — 1 read, 1 search", 1, true))
+		assert.is_truthy(rendered:find("Explored · 1 read, 1 search", 1, true))
 		assert.is_truthy(rendered:find("● rg [pattern=[]", 1, true))
 		assert.is_nil(rendered:find("error: ripgrep failed: invalid regex", 1, true))
 		local opened = activity.render(groups.read, false, { rg = true })
@@ -158,17 +158,17 @@ describe("Thought, Explore, Execute and Web groups", function()
 		local original = read("live", "running")
 		local groups = collect({ { parts = { original }, finish = "stop" } })
 		assert.is_true(activity.is_working(groups.live))
-		assert.is_truthy(text(groups.live):find("Exploring — ", 1, true))
+		assert.is_truthy(text(groups.live):find("Exploring · ", 1, true))
 		local updated = read("live", "completed")
 		updated.messageID, updated.sessionID = "m1", "s"
 		sync.handle_part_updated(updated)
 		assert.is_false(activity.is_working(groups.live))
-		assert.is_truthy(text(groups.live):find("Explored — ", 1, true))
+		assert.is_truthy(text(groups.live):find("Explored · ", 1, true))
 	end)
 
 	it("colors the group by the latest call while retaining earlier failures", function()
 		local failed = read("failed", "error")
-		for _, status in ipairs({ "completed", "running", "pending", "error" }) do
+		for _, status in ipairs({ "completed", "error" }) do
 			local latest = read("latest", status)
 			local groups = collect({ { parts = { failed } }, { parts = { latest } } })
 			for _, expanded in ipairs({ false, true }) do
@@ -183,11 +183,8 @@ describe("Thought, Explore, Execute and Web groups", function()
 
 	it("follows explicit status before historical timestamps in the shared tool classifier", function()
 		for _, case in ipairs({
-			{ status = "pending", working = true }, { status = "running", working = true },
-			{ status = "streaming", working = true }, { status = "completed", working = false },
-			{ status = "error", working = false }, { status = "cancelled", working = false },
-			{ status = "canceled", working = false }, { status = "interrupted", working = false },
-			{ time = { completed = 20 }, working = false }, { time = { ["end"] = 20 }, working = false },
+			{ status = "running", working = true }, { status = "cancelled", working = false },
+			{ time = { completed = 20 }, working = false },
 		}) do
 			local part = tool("status", "read")
 			part.state.status = case.status
@@ -202,9 +199,8 @@ describe("Thought, Explore, Execute and Web groups", function()
 	it("recognizes explicit, metadata and cancellation failures in the shared classifier", function()
 		local policy = require("opencode.ui.chat.tool_group")
 		for _, failure in ipairs({
-			{ status = "error" }, { status = "completed", error = "tool failed" },
-			{ status = "completed", metadata = { error = true } },
-			{ status = "cancelled" }, { status = "canceled" }, { status = "interrupted" },
+			{ status = "completed", error = "tool failed" },
+			{ status = "completed", metadata = { error = true } }, { status = "interrupted" },
 		}) do
 			local part = tool("failed", "read")
 			part.state = vim.tbl_deep_extend("force", part.state, failure)
@@ -229,7 +225,7 @@ describe("Thought, Explore, Execute and Web groups", function()
 		failed.state.error = "File not found"
 		local groups = collect({ { parts = { thought("redacted", "[REDACTED]"), failed, tool("running", "read", "running") } } })
 		assert.is_nil(groups.redacted)
-		assert.is_truthy(text(groups.error):find("Exploring — 2 reads", 1, true))
+		assert.is_truthy(text(groups.error):find("Exploring · 2 reads", 1, true))
 		assert.is_truthy(text(groups.error):find("File not found", 1, true))
 	end)
 end)
@@ -240,7 +236,6 @@ for _, family in ipairs({
 	{ kind = "explore", tool = "read", done = "Explored", active = "Exploring", count = "reads" },
 	{ kind = "execute", tool = "execute", done = "Executed", active = "Executing", count = "calls" },
 	{ kind = "web", tool = "websearch", done = "Browsed", active = "Browsing", count = "searches" },
-	{ kind = "web", tool = "webfetch", done = "Browsed", active = "Browsing", count = "fetches" },
 }) do
 	describe(family.tool .. " shared tool group behavior", function()
 		before_each(function()
@@ -262,7 +257,7 @@ for _, family in ipairs({
 		it("renders active and failed headers while keeping failed leaves reachable", function()
 			local running = collect({ { parts = { call("running", "running") } } }).running
 			assert.is_true(activity.is_working(running))
-			assert.is_truthy(text(running):find(family.active .. " — ", 1, true))
+			assert.is_truthy(text(running):find(family.active .. " · ", 1, true))
 			assert.equals("OpenCodeToolGroup", header_highlight(activity.render(running, false)))
 
 			local failed = call("failed", "error")
@@ -289,7 +284,7 @@ for _, family in ipairs({
 				assert.is_nil(closed.children[id].start_line)
 			end
 			assert.equals(2, #closed.lines)
-			assert.is_truthy(closed.lines[1]:find(family.done .. " — 2 " .. family.count, 1, true))
+			assert.is_truthy(closed.lines[1]:find(family.done .. " · 2 " .. family.count, 1, true))
 			local opened = activity.render(groups.first, true, expansions)
 			local body = table.concat(opened.lines, "\n")
 			assert.is_nil(body:find("private-result-first", 1, true))

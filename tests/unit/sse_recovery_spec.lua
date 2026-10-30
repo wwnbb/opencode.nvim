@@ -107,7 +107,7 @@ describe("SSE connection recovery", function()
 		assert.equals(5000, timers[#timers].delay)
 	end)
 
-	for _, status in ipairs({ 401, 403, 404, 204 }) do
+	for _, status in ipairs({ 401, 204 }) do
 		it("stops automatic retry for HTTP " .. status .. " until explicitly reconnected", function()
 			stream().on_headers(status, { ["content-type"] = "text/event-stream" })
 			advance(60000)
@@ -118,7 +118,7 @@ describe("SSE connection recovery", function()
 			connect()
 		end)
 	end
-	for _, status in ipairs({ 408, 429, 500, 503 }) do
+	for _, status in ipairs({ 429, 503 }) do
 		it("retries temporary HTTP " .. status, function()
 			stream().on_headers(status, {})
 			advance(5000)

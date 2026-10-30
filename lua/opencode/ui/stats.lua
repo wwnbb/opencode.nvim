@@ -44,22 +44,7 @@ local function count(value)
 	return math.max(0, math.floor(tonumber(value) or 0))
 end
 
-local function format_compact(value)
-	local number = count(value)
-	if number < 1000 then return tostring(number) end
-	local units = { { 1e12, "T" }, { 1e9, "B" }, { 1e6, "M" }, { 1e3, "K" } }
-	for index, unit in ipairs(units) do
-		if number >= unit[1] then
-			local amount = tonumber(string.format("%.1f", number / unit[1]))
-			if amount >= 1000 and index > 1 then
-				unit = units[index - 1]
-				amount = tonumber(string.format("%.1f", number / unit[1]))
-			end
-			return tostring(amount):gsub("%.0$", "") .. unit[2]
-		end
-	end
-	return tostring(number)
-end
+local format_compact = require("opencode.util.locale").compact_number
 
 local function centered(text, width)
 	local padding = math.max(0, math.floor((width - vim.fn.strdisplaywidth(text)) / 2))

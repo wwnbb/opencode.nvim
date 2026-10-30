@@ -43,10 +43,7 @@ local trim_edge_newlines = text_util.trim_edge_newlines
 ---@param path string
 ---@return string
 local function normalize_path(path)
-	if not text_util.is_present(path) then
-		return "unknown"
-	end
-	return vim.fn.fnamemodify(tostring(path), ":~:.")
+	return text_util.is_present(path) and text_util.normalize_path(path) or "unknown"
 end
 
 local function get_read_path(input)

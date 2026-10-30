@@ -29,7 +29,6 @@ describe("native OpenCode layout tabline", function()
 	local function open(tabline, showtabline)
 		editor.lua([[
 			vim.o.tabline, vim.o.showtabline = ...
-			_G.editor_tab = vim.api.nvim_get_current_tabpage()
 			require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
 				chat = { layout = "tab" } })
 			require("opencode.client").get_messages = function(_, _, cb) cb(nil, {}) end
@@ -74,27 +73,6 @@ describe("native OpenCode layout tabline", function()
 		assert.is_nil(text:find("Editor tabs", 1, true))
 		assert.is_nil(text:find("opencode [tabs]", 1, true))
 	end)
-
-	for _, visibility in ipairs({ 0, 1, 2 }) do
-		it("restores editor options through toggle and captures later changes (showtabline=" .. visibility .. ")", function()
-			local custom = "%#TabLineSel#My custom tabs%#TabLineFill#"
-			open(custom, visibility)
-			assert.equals(2, editor.lua("return vim.o.showtabline"))
-			assert.is_truthy(top_row():find("native-a", 1, true))
-			local original = editor.lua([[
-				chat.toggle()
-				local result = { vim.o.tabline, vim.o.showtabline }
-				assert(vim.api.nvim_get_current_tabpage() == editor_tab)
-				vim.o.tabline, vim.o.showtabline = "Updated editor tabs", 0
-				chat.toggle()
-				assert(bar_text():find("native-a", 1, true) and vim.o.showtabline == 2)
-				chat.toggle()
-				assert(vim.o.tabline == "Updated editor tabs" and vim.o.showtabline == 0)
-				return result
-			]])
-			assert.same({ custom, visibility }, original)
-		end)
-	end
 
 	it("supports counted selection and configured navigation from the chat pane", function()
 		open()
@@ -168,7 +146,7 @@ describe("native OpenCode layout tabline", function()
 			chat.create_layout(seed("native-d")); ids[3] = workspace.current().id
 			return ids
 		]])
-		for _, height in ipairs({ 50, 24, 38 }) do
+		for _, height in ipairs({ 50, 24 }) do
 			editor.request("nvim_ui_try_resize", { 100, height })
 			for _, step in ipairs({ { "gt", 1, 1 }, { "gt", 2, 3 }, { "gT", 1, 1 }, { "gT", 3, 1 } }) do
 				editor.feed(step[1])

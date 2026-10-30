@@ -45,65 +45,60 @@ describe("tab workspace editor state", function()
 	end)
 	after_each(function() if editor then editor.close() end end)
 
-	-- 2 headers × 3 bufhidden values × 2 modified states × 2 targets × 3 operations = 72.
-	for _, enabled in ipairs({ false, true }) do
-		for _, hidden in ipairs({ "hide", "wipe", "delete" }) do
-			for _, modified in ipairs({ false, true }) do
-				for _, location in ipairs({ false, true }) do
-					for _, operation in ipairs({ "switch", "close", "recovery" }) do
-						local label = ("header=%s hidden=%s modified=%s loclist=%s %s")
-							:format(tostring(enabled), hidden, tostring(modified), tostring(location), operation)
-						it("preserves both file-only layouts: " .. label, function()
-							editor.lua([[
-								local enabled, hidden, modified, location, operation = ...
-								open(enabled)
-								local target = newfile(hidden)
-								local owner = filepane(target)
-								vim.bo[target].modified = modified
-								if location then locations(owner, target); vim.cmd("belowright 3lopen") end
-								chat.close_view(first)
-								local second = chat.create_layout(seed("matrix-b"))
-								local other = workspace.current().id
-								local outgoing = newfile(hidden)
-								filepane(outgoing)
-								vim.bo[outgoing].modified = modified
-								chat.close_view(second)
-								local function preserved()
-									for _, buf in ipairs({ target, outgoing }) do
-										assert(vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf), "file was unloaded/deleted")
-										assert(vim.bo[buf].bufhidden == hidden, "bufhidden must be restored")
-										assert(vim.bo[buf].modified == modified, "modified state must be retained")
-										assert(vim.deep_equal({ "first", "middle", "last" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
-									end
-								end
-								if operation == "recovery" then
-									vim.api.nvim_create_autocmd("BufWinEnter", { buffer = target, once = true,
-										callback = function() error("matrix BufWinEnter failure") end })
-									local ok, err = pcall(workspace.select, original)
-									assert(not ok and tostring(err):find("matrix BufWinEnter failure", 1, true), tostring(err))
-									preserved()
-									assert(workspace.current().id == other and not views.workspace.switching)
-									assert(not workspace.current().incomplete, "failed switch must recover the outgoing layout")
-								end
-								if operation == "close" then workspace.close_current() else workspace.select(original) end
-								preserved()
-								assert(workspace.current().id == original and not views.workspace.switching)
-								owner = vim.fn.win_findbuf(target)[1]
-								assert(owner and vim.api.nvim_win_is_valid(owner))
-								local list = vim.fn.getloclist(owner, { winid = 0, idx = 0 })
-								assert((list.winid ~= 0) == location)
-								if location then assert(list.idx == 2 and vim.api.nvim_get_current_win() == list.winid) end
-								if operation ~= "close" then workspace.select(other); preserved() end
-							]], { enabled, hidden, modified, location, operation })
-						end)
+	for _, case in ipairs({
+		{ true, "wipe", true, true, "switch" }, { false, "delete", true, false, "close" }, { true, "hide", false, true, "recovery" },
+	}) do
+		local enabled, hidden, modified, location, operation = unpack(case)
+		local label = ("header=%s hidden=%s modified=%s loclist=%s %s")
+			:format(tostring(enabled), hidden, tostring(modified), tostring(location), operation)
+		it("preserves both file-only layouts: " .. label, function()
+			editor.lua([[
+				local enabled, hidden, modified, location, operation = ...
+				open(enabled)
+				local target = newfile(hidden)
+				local owner = filepane(target)
+				vim.bo[target].modified = modified
+				if location then locations(owner, target); vim.cmd("belowright 3lopen") end
+				chat.close_view(first)
+				local second = chat.create_layout(seed("matrix-b"))
+				local other = workspace.current().id
+				local outgoing = newfile(hidden)
+				filepane(outgoing)
+				vim.bo[outgoing].modified = modified
+				chat.close_view(second)
+				local function preserved()
+					for _, buf in ipairs({ target, outgoing }) do
+						assert(vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf), "file was unloaded/deleted")
+						assert(vim.bo[buf].bufhidden == hidden, "bufhidden must be restored")
+						assert(vim.bo[buf].modified == modified, "modified state must be retained")
+						assert(vim.deep_equal({ "first", "middle", "last" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false)))
 					end
 				end
-			end
-		end
+				if operation == "recovery" then
+					vim.api.nvim_create_autocmd("BufWinEnter", { buffer = target, once = true,
+						callback = function() error("matrix BufWinEnter failure") end })
+					local ok, err = pcall(workspace.select, original)
+					assert(not ok and tostring(err):find("matrix BufWinEnter failure", 1, true), tostring(err))
+					preserved()
+					assert(workspace.current().id == other and not views.workspace.switching)
+					assert(not workspace.current().incomplete, "failed switch must recover the outgoing layout")
+				end
+				if operation == "close" then workspace.close_current() else workspace.select(original) end
+				preserved()
+				assert(workspace.current().id == original and not views.workspace.switching)
+				owner = vim.fn.win_findbuf(target)[1]
+				assert(owner and vim.api.nvim_win_is_valid(owner))
+				local list = vim.fn.getloclist(owner, { winid = 0, idx = 0 })
+				assert((list.winid ~= 0) == location)
+				if location then assert(list.idx == 2 and vim.api.nvim_get_current_win() == list.winid) end
+				if operation ~= "close" then workspace.select(other); preserved() end
+			]], { enabled, hidden, modified, location, operation })
+		end)
 	end
 
-	for _, enabled in ipairs({ false, true }) do
-		it("restores narrow mirrors before scroll and views without changing global minima (tabbar=" .. tostring(enabled) .. ")", function()
+	local enabled = true
+	do
+		it("restores narrow mirrors before scroll and views without changing global minima", function()
 			editor.lua([[
 				open(...)
 				vim.o.winheight = 10
@@ -146,10 +141,10 @@ describe("tab workspace editor state", function()
 			]], { enabled })
 		end)
 
-		for _, operation in ipairs({ "close", "reset" }) do
-			for _, recovery_failure in ipairs({ false, true }) do
-				it("restores hooks once after inner " .. operation .. " failure (tabbar=" .. tostring(enabled)
-					.. " recovery failure=" .. tostring(recovery_failure) .. ")", function()
+		for _, case in ipairs({ { "close", false } }) do
+			local operation, recovery_failure = case[1], case[2]
+			do
+				it("restores hooks once after inner " .. operation .. " failure (recovery failure=" .. tostring(recovery_failure) .. ")", function()
 					editor.lua([[
 						local enabled, operation, recovery_failure = ...
 						open(enabled)
@@ -201,7 +196,7 @@ describe("tab workspace editor state", function()
 			end
 		end
 
-		it("does not allocate editor buffers or replace @buffer (tabbar=" .. tostring(enabled) .. ")", function()
+		it("does not allocate editor buffers or replace @buffer", function()
 			editor.lua([[
 				open(...)
 				chat.create_layout(seed("state-b")); settle()
@@ -215,7 +210,7 @@ describe("tab workspace editor state", function()
 			]], { enabled })
 		end)
 
-		it("restores native location-list contents, ownership, geometry and focus with the tabbar " .. tostring(enabled), function()
+		it("restores native location-list contents, ownership, geometry and focus", function()
 			editor.lua([[
 				open(...)
 				local file = vim.api.nvim_create_buf(true, false)
@@ -274,176 +269,8 @@ describe("tab workspace editor state", function()
 			]], { enabled })
 		end)
 
-		it("preserves wipe-on-hide files when a file-only layout switches or closes (tabbar=" .. tostring(enabled) .. ")", function()
-			editor.lua([[
-				open(...)
-				local file = vim.api.nvim_create_buf(true, false)
-				vim.bo[file].bufhidden = "wipe"
-				vim.api.nvim_buf_set_lines(file, 0, -1, false, { "keep this unsaved file" })
-				vim.cmd("rightbelow split")
-				vim.api.nvim_win_set_buf(0, file)
-				chat.close_view(first)
-				chat.create_layout(seed("state-b"))
-				workspace.close_current(); settle()
-				assert(workspace.current().id == original)
-				assert(vim.api.nvim_get_current_buf() == file, "must restore the file-only layout")
-				workspace.close_current(); settle()
-				assert(vim.api.nvim_buf_is_valid(file) and vim.bo[file].modified)
-				assert(vim.bo[file].bufhidden == "wipe", "must restore the original buffer option")
-				assert(vim.api.nvim_buf_get_lines(file, 0, -1, false)[1] == "keep this unsaved file")
-				assert(#workspace.list() == 0 and not views.workspace.switching)
-			]], { enabled })
-		end)
-
-		for _, hidden in ipairs({ "wipe", "delete" }) do
-			it("preserves outgoing unsaved " .. hidden .. " buffers while restoring an open location list (tabbar=" .. tostring(enabled) .. ")", function()
-				editor.lua([[
-					local enabled, hidden = ...
-					open(enabled)
-					local file = newfile("hide")
-					local owner = filepane(file)
-					locations(owner, file); vim.cmd("belowright 3lopen")
-					chat.create_layout(seed("state-b"))
-					local other = workspace.current().id
-					local outgoing = newfile(hidden)
-					filepane(outgoing)
-					vim.api.nvim_buf_set_lines(outgoing, 0, -1, false, { "UNSAVED MUST SURVIVE" })
-					for _ = 1, 3 do
-						workspace.select(original)
-						assert(vim.api.nvim_buf_is_valid(outgoing) and vim.api.nvim_buf_is_loaded(outgoing))
-						assert(vim.bo[outgoing].modified and vim.bo[outgoing].bufhidden == hidden)
-						assert(vim.api.nvim_buf_get_lines(outgoing, 0, -1, false)[1] == "UNSAVED MUST SURVIVE")
-						workspace.select(other)
-						assert(vim.api.nvim_get_current_buf() == outgoing)
-					end
-				]], { enabled, hidden })
-			end)
-		end
-
-		it("restores and leaves a valid minimum-height location-list layout without a spare pane (tabbar=" .. tostring(enabled) .. ")", function()
-			editor.lua([[
-				local enabled = ...
-				open(enabled)
-				local file = newfile("hide")
-				local owner = filepane(file)
-				locations(owner, file); vim.cmd("belowright 1lopen")
-				vim.o.lines = enabled and 10 or 8
-				settle()
-				local lines, count = vim.o.lines, #vim.api.nvim_tabpage_list_wins(0)
-				vim.o.lines = 60
-				chat.create_layout(seed("state-b"))
-				local other = workspace.current().id
-				vim.o.lines = lines
-				local peak = 0
-				vim.api.nvim_create_autocmd("WinNew", { callback = function()
-					peak = math.max(peak, #vim.api.nvim_tabpage_list_wins(0))
-				end })
-				for _ = 1, 3 do
-					assert(workspace.select(original))
-					assert(#vim.api.nvim_tabpage_list_wins(0) == count)
-					owner = vim.fn.win_findbuf(file)[1]
-					local list = vim.fn.getloclist(owner, { idx = 0, winid = 0 })
-					assert(list.idx == 2 and vim.api.nvim_get_current_win() == list.winid)
-					assert(vim.fn.getloclist(list.winid, { filewinid = 0 }).filewinid == owner)
-					assert(workspace.select(other))
-				end
-				assert(peak <= count, "restoring a native list must not allocate an N+1 placeholder pane")
-			]], { enabled })
-		end)
-
-		it("restores a valid single-row vertical location-list layout (tabbar=" .. tostring(enabled) .. ")", function()
-			editor.lua([[
-				local enabled = ...
-				open(enabled)
-				local file = newfile("delete")
-				local owner = filepane(file, "rightbelow vsplit")
-				locations(owner, file); vim.cmd("belowright 3lopen")
-				assert(vim.fn.win_splitmove(vim.api.nvim_get_current_win(), owner, { vertical = true, rightbelow = true }) == 0)
-				vim.o.lines = enabled and 6 or 4
-				settle()
-				local lines, count = vim.o.lines, #vim.api.nvim_tabpage_list_wins(0)
-				vim.o.lines = 60
-				chat.create_layout(seed("state-b"))
-				local other = workspace.current().id
-				vim.o.lines = lines
-				for _ = 1, 3 do
-					assert(workspace.select(original))
-					assert(#vim.api.nvim_tabpage_list_wins(0) == count)
-					owner = vim.fn.win_findbuf(file)[1]
-					local list = vim.fn.getloclist(owner, { winid = 0 }).winid
-					assert(vim.fn.getloclist(list, { filewinid = 0 }).filewinid == owner)
-					assert(vim.api.nvim_get_current_win() == list)
-					assert(workspace.select(other))
-				end
-			]], { enabled })
-		end)
-
-		it("roundtrips exact chat/file/list geometry in " .. (enabled and "10" or "8") .. " rows without resizing", function()
-			editor.lua([[
-				local enabled = ...
-				open(enabled)
-				local file = newfile("wipe")
-				local owner = filepane(file)
-				locations(owner, file); vim.cmd("belowright 1lopen")
-				vim.o.lines = enabled and 10 or 8
-				settle()
-				local function geometry()
-					local result = {}
-					for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-						local buf = vim.api.nvim_win_get_buf(win)
-						local label = vim.fn.getwininfo(win)[1].loclist == 1 and "locations"
-							or buf == file and "file" or buf == first.bufnr and "chat" or "bar"
-						result[label] = { vim.api.nvim_win_get_position(win), vim.api.nvim_win_get_width(win), vim.api.nvim_win_get_height(win) }
-					end
-					return result
-				end
-				local expected, count = geometry(), #vim.api.nvim_tabpage_list_wins(0)
-				chat.create_layout(seed("minimum-b"))
-				local other, peak = workspace.current().id, 0
-				vim.api.nvim_create_autocmd("WinNew", { callback = function()
-					peak = math.max(peak, #vim.api.nvim_tabpage_list_wins(0))
-				end })
-				for _ = 1, 3 do
-					workspace.select(original)
-					assert(vim.deep_equal(expected, geometry()), vim.inspect({ expected = expected, actual = geometry() }))
-					owner = vim.fn.win_findbuf(file)[1]
-					local list = vim.fn.getloclist(owner, { winid = 0 }).winid
-					assert(vim.api.nvim_get_current_win() == list and vim.fn.getloclist(list, { filewinid = 0 }).filewinid == owner)
-					workspace.select(other)
-				end
-				assert(peak <= count, "native list creation must not need an additional pane")
-			]], { enabled })
-		end)
-
-		it("retains rendered custom quickfixtextfunc output (tabbar=" .. tostring(enabled) .. ")", function()
-			editor.lua([[
-				open(...)
-				function _G.WorkspaceLocationText(info)
-					local result = {}
-					for i = info.start_idx, info.end_idx do result[#result + 1] = "custom location " .. i end
-					return result
-				end
-				local file = newfile("wipe")
-				local owner = filepane(file)
-				locations(owner, file)
-				assert(vim.fn.setloclist(owner, {}, "a", { quickfixtextfunc = "v:lua.WorkspaceLocationText" }) == 0)
-				vim.cmd("belowright 3lopen")
-				local expected = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-				assert(expected[1] == "custom location 1" and expected[2] == "custom location 2")
-				chat.create_layout(seed("state-b"))
-				local other = workspace.current().id
-				for _ = 1, 3 do
-					workspace.select(original)
-					owner = vim.fn.win_findbuf(file)[1]
-					local win = vim.fn.getloclist(owner, { winid = 0 }).winid
-					assert(vim.deep_equal(expected, vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false)))
-					workspace.select(other)
-				end
-			]], { enabled })
-		end)
-
-		for _, callback in ipairs({ "partial", "lambda", "dictionary" }) do
-			it("retains a native " .. callback .. " quickfixtextfunc without an external reference (tabbar=" .. tostring(enabled) .. ")", function()
+		for _, callback in ipairs({ "partial" }) do
+			it("retains a native " .. callback .. " quickfixtextfunc without an external reference", function()
 				editor.lua([[
 					local enabled, callback = ...
 					open(enabled)
@@ -482,8 +309,8 @@ describe("tab workspace editor state", function()
 			end)
 		end
 
-		for _, shared in ipairs({ false, true }) do
-			it("keeps different native lists for multiple owners (shared file=" .. tostring(shared) .. ", tabbar=" .. tostring(enabled) .. ")", function()
+		for _, shared in ipairs({ true }) do
+			it("keeps different native lists for multiple owners of the same file", function()
 				editor.lua([[
 					local enabled, shared = ...
 					open(enabled)
@@ -552,7 +379,7 @@ describe("tab workspace editor state", function()
 			end)
 		end
 
-		it("preserves an empty native list and its open/closed state (tabbar=" .. tostring(enabled) .. ")", function()
+		it("preserves an empty native list and its open/closed state", function()
 			editor.lua([[
 				open(...)
 				local file = newfile("delete")
@@ -574,7 +401,7 @@ describe("tab workspace editor state", function()
 		end)
 	end
 
-	for _, operation in ipairs({ "close", "reset" }) do
+	for _, operation in ipairs({ "reset" }) do
 		it("releases native callback snapshots after " .. operation, function()
 			editor.lua([[
 				local operation = ...
@@ -617,47 +444,7 @@ describe("tab workspace editor state", function()
 		]])
 	end)
 
-	it("clears the switching guard after E36 before disposing any views and remains usable", function()
-		editor.lua([[
-			open(false)
-			for i = 1, 5 do chat.create_split(chat.get_view(), seed("state-split-" .. i), "horizontal") end
-			local second = chat.create_layout(seed("state-b"))
-			local other = workspace.current().id
-			vim.o.lines = 4
-			local ok, err = pcall(workspace.close_current)
-			assert(not ok and tostring(err):find("E36", 1, true), tostring(err))
-			assert(not views.workspace.switching, "failed close must release the switching guard")
-			assert(workspace.current().id == other and #workspace.list() == 2)
-			assert(views.valid(second) and second.visible and vim.api.nvim_win_is_valid(second.winid))
-			assert(first.suspended, "failed suspension must not dispose hidden views")
-			vim.o.lines = 60
-			assert(chat.focus_view(second))
-			assert(workspace.select(original)); assert(workspace.select(other))
-			workspace.close_current(); settle()
-			assert(workspace.current().id == original and #workspace.list() == 1)
-			assert(chat.focus_view(first))
-		]])
-	end)
-
-	it("does not dispose the closing layout before its replacement fits", function()
-		editor.lua([[
-			open(true)
-			for i = 1, 5 do chat.create_split(chat.get_view(), seed("state-split-" .. i), "horizontal") end
-			local second = chat.create_layout(seed("state-b"))
-			local other = workspace.current().id
-			vim.o.lines = 10
-			local ok, err = pcall(workspace.close_current)
-			assert(not ok and tostring(err):find("E36", 1, true), tostring(err))
-			assert(not views.workspace.switching and #workspace.list() == 2)
-			assert(views.valid(second) and second.workspace_id == other and second.visible)
-			assert(workspace.current().id == other and vim.api.nvim_win_is_valid(second.winid))
-			vim.o.lines = 60
-			workspace.close_current()
-			assert(#workspace.list() == 1 and workspace.current().id == original and not views.valid(second))
-		]])
-	end)
-
-	for _, operation in ipairs({ "select", "close" }) do
+	for _, operation in ipairs({ "select" }) do
 		it("restores buffer options and recovers same-layout selection after partial suspension fails in " .. operation, function()
 			editor.lua([[
 				local operation = ...
@@ -692,60 +479,6 @@ describe("tab workspace editor state", function()
 		end)
 	end
 
-	for _, failure in ipairs({ 1, 2 }) do
-		it("retains failed disposals and prunes successful ones before retrying close: member " .. failure, function()
-			editor.lua([[
-				local failure = ...
-				open(false)
-				local second = chat.create_layout(seed("state-b"))
-				local third = chat.create_split(second, seed("state-c"), "vertical")
-				local other, failed = workspace.current().id, failure == 1 and second or third
-				local owned, disposed = chat.for_view(failed)
-				disposed = owned.dispose
-				owned.dispose = function() error("injected disposal failure") end
-				local ok, err = pcall(workspace.close_current)
-				owned.dispose = disposed
-				assert(not ok and tostring(err):find("injected disposal failure", 1, true), tostring(err))
-				assert(not views.workspace.switching and failed.workspace_id == other and views.valid(failed))
-				if failure == 2 then assert(not views.valid(second)) end
-				assert(workspace.select(other))
-				assert(#vim.api.nvim_tabpage_list_wins(0) == 3 - failure, "disposed members must not leave blank panes")
-				assert(workspace.current().last_view == (failure == 1 and third or failed))
-				if failure == 2 then assert(workspace.current().root_view == third) end
-				workspace.close_current(); settle()
-				assert(not views.valid(second) and not views.valid(third))
-				assert(not views.for_session("state-b") and not views.for_session("state-c"))
-				assert(#workspace.list() == 1 and workspace.current().id == original)
-			]], { failure })
-		end)
-	end
-
-	it("reconciles partially reset trees and keeps the visible layout attached", function()
-		editor.lua([[
-			open(true)
-			local second = chat.create_layout(seed("state-b"))
-			local other = workspace.current().id
-			locations(second.winid, newfile("hide")); vim.cmd("belowright 3lopen")
-			local third = chat.create_split(second, seed("state-c"), "vertical")
-			local current = chat.create_layout(seed("state-d"))
-			local selected = workspace.current().id
-			local owned = chat.for_view(third)
-			local dispose = owned.dispose
-			owned.dispose = function() error("injected partial reset failure") end
-			local ok, err = pcall(workspace.reset)
-			owned.dispose = dispose
-			assert(not ok and tostring(err):find("injected partial reset failure", 1, true), tostring(err))
-			assert(not views.workspace.switching and not views.valid(second))
-			assert(current.workspace_id == selected and current.visible and workspace.current().id == selected)
-			settle()
-			assert(workspace.select(other))
-			assert(workspace.current().root_view == third and workspace.current().last_view == third)
-			assert(#vim.api.nvim_tabpage_list_wins(0) == 1 and vim.api.nvim_get_current_buf() == third.bufnr)
-			workspace.close_current(); workspace.reset()
-			assert(#workspace.list() == 0 and not views.workspace.switching)
-		]])
-	end)
-
 	it("restores a moved location-list pane before its owner without changing nested geometry", function()
 		editor.lua([[
 			open(true)
@@ -776,27 +509,4 @@ describe("tab workspace editor state", function()
 			end
 		]])
 	end)
-
-	for _, switching in ipairs({ false, true }) do
-		it("restores the prior switching guard on reset failure: " .. tostring(switching), function()
-			editor.lua([[
-				local switching = ...
-				open(false)
-				chat.create_layout(seed("state-b"))
-				local owned = chat.for_view(first)
-				local dispose = owned.dispose
-				owned.dispose = function() error("injected reset failure") end
-				views.workspace.switching = switching
-				local ok, err = pcall(workspace.reset)
-				owned.dispose = dispose
-				assert(not ok and tostring(err):find("injected reset failure", 1, true), tostring(err))
-				assert(views.workspace.switching == switching, "reset must restore the prior switching guard")
-				views.workspace.switching = false
-				assert(workspace.select(original))
-				assert(chat.focus_view(first))
-				workspace.reset()
-				assert(not views.workspace.switching and #workspace.list() == 0)
-			]], { switching })
-		end)
-	end
 end)

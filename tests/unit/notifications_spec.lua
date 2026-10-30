@@ -44,16 +44,16 @@ describe("event notifications", function()
 		drain(); assert.equals(2, #notices)
 	end)
 
-	it("reports native execution failure without a false done notice", function()
-		bus.emit("session_status_change", { session_id = "notify-session", status = { type = "busy" } })
-		bus.emit("server_event", { type = "session.execution.failed", data = {
-			sessionID = "notify-session", error = { message = "native failure" },
-		} })
-		bus.emit("session_status_change", { session_id = "notify-session", status = { type = "idle", outcome = "failed" } })
-		drain(); assert.is_true(#notices > 0)
+	it("reports a repeated stream error once per outage", function()
+		for _ = 1, 3 do bus.emit("error", "Stream connect failed") end
+		bus.emit("error", "Other failure")
 		drain()
-		assert.is_truthy(table.concat(notices, "\n"):find("native failure", 1, true))
-		assert.is_nil(table.concat(notices, "\n"):find("Session done", 1, true))
+		assert.same({ "OpenCode event stream error: Stream connect failed",
+			"OpenCode event stream error: Other failure" }, notices)
+		bus.emit("connected", {})
+		bus.emit("error", "Stream connect failed")
+		drain()
+		assert.equals(3, #notices)
 	end)
 
 	it("suppresses done after failure without an idle outcome and allows the next successful run", function()
@@ -69,6 +69,23 @@ describe("event notifications", function()
 		bus.emit("session_status_change", { session_id = "notify-session", status = { type = "idle" } })
 		drain()
 		assert.same({ "Notify: native failure", "Notify: Session done" }, notices)
+	end)
+
+	it("announces done when the root finishes, never for a subagent child", function()
+		state.upsert_session({ id = "notify-child", title = "Child", parentID = "notify-session" }, { touch = false })
+		bus.emit("session_status_change", { session_id = "notify-session", status = { type = "busy" } })
+		bus.emit("session_status_change", { session_id = "notify-child", status = { type = "busy" } })
+		bus.emit("session_status_change", { session_id = "notify-child", status = { type = "idle", outcome = "succeeded" } })
+		drain()
+		assert.same({}, notices, "a finished subagent is not the session finishing")
+		bus.emit("session_status_change", { session_id = "notify-child", status = { type = "busy" } })
+		bus.emit("server_event", { type = "session.execution.failed", data = {
+			sessionID = "notify-child", error = { message = "child failure" },
+		} })
+		bus.emit("session_status_change", { session_id = "notify-child", status = { type = "idle" } })
+		bus.emit("session_status_change", { session_id = "notify-session", status = { type = "idle", outcome = "succeeded" } })
+		drain()
+		assert.same({ "Notify: child failure", "Notify: Session done" }, notices)
 	end)
 
 	it("preserves always notifications and applies native focused/blurred/unknown filters", function()

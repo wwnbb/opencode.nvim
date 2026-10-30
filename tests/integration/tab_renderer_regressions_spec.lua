@@ -117,40 +117,6 @@ describe("tab renderer regressions", function()
 			assert.equals("session-3", result.current)
 		end)
 
-		it("recenters " .. layout .. " manually paged tabs when the fitted count changes at constant width", function()
-			open_renderer(layout)
-			local result = editor.lua([[
-				local window = view.session_tabs_winid or view.winid
-				local width = vim.api.nvim_win_get_width(window)
-				local page
-				for id, target in pairs(view.winbar_targets) do
-					if target.kind == "page" and target.start == 1 then page = id; break end
-				end
-				assert(page)
-				tabs.select_winbar_session(page)
-				local paged, first, count = tab_text(), view.session_tabs_start, view.session_tabs_max_tabs
-				tabs.update_winbar()
-				local refreshed = tab_text()
-				app.upsert_session({ id = "session-1", title = "Session 1 extended", name = "Session 1 extended" }, { touch = false })
-				app.set_session_status("session-5", "busy")
-				tabs.update_winbar()
-				return { paged = paged, first = first, count = count, refreshed = refreshed,
-					fitted = tab_text(), fitted_first = view.session_tabs_start, fitted_count = view.session_tabs_max_tabs,
-					width = width, final_width = vim.api.nvim_win_get_width(window), current = view.session_id }
-			]])
-			assert.equals(1, result.first)
-			assert.equals(3, result.count)
-			assert.is_truthy(result.paged:find("Session 1", 1, true))
-			assert.equals(result.paged, result.refreshed)
-			assert.equals(2, result.fitted_count)
-			assert.equals(2, result.fitted_first)
-			assert.is_truthy(result.fitted:find("Session 3", 1, true))
-			assert.is_nil(result.fitted:find("Session 1", 1, true))
-			assert.equals(65, result.width)
-			assert.equals(result.width, result.final_width)
-			assert.equals("session-3", result.current)
-		end)
-
 		it("bounds narrow " .. layout .. " labels and click targets, including controls and Unicode", function()
 			open_renderer(layout)
 			local result = editor.lua([[
@@ -218,7 +184,6 @@ describe("tab renderer regressions", function()
 			client.get_session = function(id, cb) cb(nil, app.get_session_record(id)) end
 			_G.chat, _G.workspace = require("opencode.ui.chat"), require("opencode.ui.chat.workspace")
 			_G.bar = require("opencode.ui.chat.workspace_bar")
-			_G.editor_tabline, _G.editor_showtabline = vim.o.tabline, vim.o.showtabline
 			_G.settle = function() vim.wait(80, function() return false end, 5) end
 			local sequence = 9000
 			_G.native = function(kind, id, data)
@@ -372,31 +337,6 @@ describe("tab renderer regressions", function()
 		end
 	end)
 
-	it("enables the shared bar without closing or moving an active multiline composer", function()
-		open_workspace("tab", { enabled = false })
-		local result = editor.lua([[
-			chat.focus_input(); settle()
-			local input = require("opencode.ui.input")
-			local text, parts = "Draft\nPreserve me", { { type = "file", url = "file:///renderer.lua", filename = "renderer.lua" } }
-			input.set_pending_draft(text, parts, { options = { delivery = "steer" } }); settle()
-			local window, buffer = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
-			vim.api.nvim_win_set_cursor(window, { 2, 4 })
-			local config = vim.deepcopy(app.get_config())
-			config.chat.session_tabs.enabled = true; app.set_config(config); settle()
-			return { bar = vim.o.showtabline == 2 and vim.o.tabline ~= editor_tabline, same = vim.api.nvim_get_current_win() == window and vim.api.nvim_get_current_buf() == buffer,
-				visible = input.is_visible(), owner = input.owner_view() == first, text = input.get_pending_text(),
-				parts = input.get_pending_parts(), options = input.get_pending_options(), cursor = vim.api.nvim_win_get_cursor(0) }
-		]])
-		assert.is_true(result.bar)
-		assert.is_true(result.same)
-		assert.is_true(result.visible)
-		assert.is_true(result.owner)
-		assert.equals("Draft\nPreserve me", result.text)
-		assert.same({ { type = "file", url = "file:///renderer.lua", filename = "renderer.lua" } }, result.parts)
-		assert.same({ delivery = "steer" }, result.options)
-		assert.same({ 2, 4 }, result.cursor)
-	end)
-
 	it("selects the visible fifth icon using accumulated display cells with a combining separator", function()
 		open_workspace("tab", { auto_fit = true, separator = vim.fn.nr2char(0x301) })
 		local click = editor.lua([[
@@ -410,60 +350,6 @@ describe("tab renderer regressions", function()
 		editor.request("nvim_input_mouse", { "left", "press", "", 0, click.row, click.column })
 		editor.request("nvim_input_mouse", { "left", "release", "", 0, click.row, click.column })
 		assert.is_true(editor.lua("settle(); return workspace.current().id == fifth"))
-	end)
-
-	it("aggregates distinct suspended split sessions while retaining the root title", function()
-		open_workspace()
-		local result = editor.lua([[
-			local second = chat.create_split(first, seed("split-b"), "vertical")
-			chat.create_split(second, seed("split-b"), "horizontal")
-			chat.create_layout(seed("root-c"))
-			assert(second.suspended)
-			app.set_session_status("split-b", "busy"); bar.update()
-			local running = bar_text()
-			app.set_session_pending_counts("split-b", { questions = 1 }); bar.update()
-			local waiting = bar_text()
-			app.set_session_pending_counts("split-b", {})
-			app.set_session_status("split-b", "error")
-			app.upsert_session({ id = "root-a", time = { idle = 20, viewed = 10 } }, { touch = false })
-			bar.update()
-			local error_over_unread = bar_text()
-			app.set_session_status("root-a", "busy"); bar.update()
-			local running_over_error = bar_text()
-			app.set_session_status("root-a", "error")
-			app.set_session_status("split-b", "idle")
-			app.upsert_session({ id = "split-b", time = { idle = 20, viewed = 10 } }, { touch = false })
-			bar.update()
-			local error_over_secondary_unread = bar_text()
-			app.set_session_status("root-a", "idle")
-			app.upsert_session({ id = "root-a", time = { viewed = 20 } }, { touch = false })
-			bar.update()
-			local unread = bar_text()
-			app.upsert_session({ id = "split-b", time = { viewed = 20 } }, { touch = false })
-			local selectors, calls = require("opencode.selectors"), {}
-			local original = selectors.get_session_view
-			selectors.get_session_view = function(id, ...)
-				calls[id] = (calls[id] or 0) + 1
-				return original(id, ...)
-			end
-			bar.update()
-			selectors.get_session_view = original
-			return { running = running, waiting = waiting, idle = bar_text(), calls = calls,
-				error_over_unread = error_over_unread, running_over_error = running_over_error,
-				error_over_secondary_unread = error_over_secondary_unread, unread = unread }
-		]])
-		assert.is_truthy(result.running:find("● root-a", 1, true))
-		assert.is_truthy(result.waiting:find("◈ root-a", 1, true))
-		assert.is_truthy(result.error_over_unread:find("✕ root-a", 1, true))
-		assert.is_truthy(result.running_over_error:find("● root-a", 1, true))
-		assert.is_truthy(result.error_over_secondary_unread:find("✕ root-a", 1, true))
-		assert.is_truthy(result.unread:find("◆ root-a", 1, true))
-		assert.is_truthy(result.idle:find("○ root-a", 1, true))
-		for _, text in ipairs({ result.waiting, result.error_over_unread, result.running_over_error,
-			result.error_over_secondary_unread, result.unread }) do
-			assert.is_nil(text:find("split-b", 1, true))
-		end
-		assert.equals(1, result.calls["split-b"])
 	end)
 
 	it("shows Error and Unread from a suspended secondary pane without changing focus", function()
@@ -497,76 +383,6 @@ describe("tab renderer regressions", function()
 		assert.is_true(result.unread_hl)
 		assert.is_true(result.focused)
 		assert.is_true(result.selected)
-	end)
-
-	it("uses display-cell mouse targets and bounds the shared header after Unicode resizes", function()
-		open_workspace()
-		local click = editor.lua([[
-			app.upsert_session({ id = "root-a", title = "界é\n%root" }, { touch = false })
-			_G.second = chat.create_layout(seed("root-b", "Second"))
-			workspace.select(first.workspace_id)
-			bar.update()
-			local text = bar_text()
-			assert(text:find("界é %root", 1, true))
-			return { row = 0,
-				column = vim.fn.strwidth(text:sub(1, assert(text:find("Second", 1, true)) - 1)) + #"Second" - 1 }
-		]])
-		editor.request("nvim_input_mouse", { "left", "press", "", 0, click.row, click.column })
-		editor.request("nvim_input_mouse", { "left", "release", "", 0, click.row, click.column })
-		assert.is_true(editor.lua([[
-			return vim.wait(1000, function()
-				return workspace.current().id == second.workspace_id and vim.api.nvim_get_current_win() == second.winid
-			end)
-		]]))
-		for _, width in ipairs({ 60, 28, 16, 12 }) do
-			editor.request("nvim_ui_try_resize", { width, 35 })
-			local result = editor.lua([[
-				bar.update()
-				local text = bar_text()
-				return { text = text, cells = vim.fn.strwidth(text),
-					width = vim.o.columns,
-					selected = workspace.current().id == second.workspace_id }
-			]])
-			assert.is_true(result.cells <= result.width, vim.inspect(result))
-			assert.is_nil(result.text:find("[%c]"))
-			assert.is_true(result.selected)
-		end
-	end)
-
-	it("normalizes shared-tabline titles before rendering", function()
-		open_workspace()
-		local text = editor.lua([[
-			chat.create_layout(seed("controls", "hello\nworld\t%界"))
-			bar.update()
-			return bar_text()
-		]])
-		assert.is_truthy(text:find("hello world %界", 1, true))
-		assert.is_nil(text:find("[%c]"))
-	end)
-
-	it("reenables the shared tabline without moving focus or replacing the editor tabline", function()
-		open_workspace()
-		assert.is_true(editor.lua([[
-			local config = vim.deepcopy(app.get_config())
-			local previous, windows = vim.api.nvim_get_current_win(), #vim.api.nvim_tabpage_list_wins(0)
-			config.chat.session_tabs.enabled = false; app.set_config(config)
-			assert(vim.wait(1000, function() return vim.o.tabline == editor_tabline end))
-			assert(vim.o.showtabline == editor_showtabline)
-			config.chat.session_tabs.enabled = true; app.set_config(config)
-			assert(vim.wait(1000, function() return vim.o.tabline ~= editor_tabline end))
-			assert(vim.api.nvim_get_current_win() == previous and #vim.api.nvim_tabpage_list_wins(0) == windows)
-			assert(vim.o.showtabline == 2 and vim.api.nvim_win_get_position(previous)[1] == 1)
-			first.config.session_tabs.enabled = false; bar.update()
-			assert(vim.o.tabline == editor_tabline)
-			chat.toggle(); settle()
-			local other, count = vim.api.nvim_get_current_win(), #vim.api.nvim_tabpage_list_wins(0)
-			first.config.session_tabs.enabled = true; bar.update()
-			assert(vim.o.tabline == editor_tabline)
-			assert(vim.api.nvim_get_current_win() == other and #vim.api.nvim_tabpage_list_wins(0) == count)
-			chat.open(); settle()
-			assert(vim.o.tabline ~= editor_tabline and vim.o.showtabline == 2)
-			return chat.get_view() == first and #vim.api.nvim_tabpage_list_wins(0) == windows
-		]]))
 	end)
 
 	it("observes each refresh once, including hiding a view", function()

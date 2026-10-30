@@ -31,6 +31,8 @@ function M.render_tool(part, expanded)
 		style.add_border(result, true)
 		style.contain_background(result)
 	end
+	-- Rendered as a task, it still ends with the blank row of every compact row.
+	result.lines[#result.lines + 1] = ""
 	return result
 end
 

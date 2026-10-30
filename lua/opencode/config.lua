@@ -228,6 +228,12 @@ M.defaults = {
 		border = "rounded", -- "none" | "single" | "double" | "rounded" | "solid" | Nui style table
 	},
 
+	-- On-screen key hints: widget and popup footers, border labels, "press X"
+	-- lines and the welcome screen. Help screens always list their keys.
+	key_hints = {
+		enabled = true,
+	},
+
 	notifications = {
 		enabled = true,
 		when = "always", -- "always" | "blurred" | "focused"
@@ -345,6 +351,9 @@ function M.merge(opts)
 	local context_bytes = merged.context.max_bytes
 	if type(context_bytes) ~= "number" or context_bytes < 1024 or context_bytes % 1 ~= 0 then
 		error("opencode.nvim: context.max_bytes must be an integer >= 1024", 2)
+	end
+	if type(merged.key_hints) ~= "table" or type(merged.key_hints.enabled) ~= "boolean" then
+		error("opencode.nvim: key_hints.enabled must be a boolean", 2)
 	end
 	local completion = merged.completion
 	validate_editor_feature("completion", completion)

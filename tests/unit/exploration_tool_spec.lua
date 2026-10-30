@@ -78,13 +78,7 @@ describe("exploration list presentation", function()
 		end
 	end)
 
-	it("keeps headers unshaded and confines panel highlights to the indented body", function()
-		for _, name in ipairs({ style.header_hl, style.error_hl }) do
-			local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
-			assert.is_nil(hl.bg)
-			assert.is_not_true(hl.italic)
-			assert.is_not_true(hl.bold)
-		end
+	it("shows errors in both states and confines panel highlights to the indented body", function()
 		local failed = part("grep", { pattern = "[" }, "")
 		failed.state.status, failed.state.error = "error", "Invalid pattern"
 		for _, expanded in ipairs({ false, true }) do

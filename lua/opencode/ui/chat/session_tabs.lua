@@ -291,13 +291,13 @@ local function prepare_session_tabs(tabs_cfg, sessions, active_session, current_
 	end
 	prepared.aside = btw_status_label()
 	if prepared.aside then prepared.aside_width = width(prepared.aside) end
-	width("...0")
+	width("…0")
 	return prepared
 end
 
 local function session_tabs_row_width(sessions, first, last, prepared)
-	local left = first > 1 and ("..." .. tostring(first - 1)) or nil
-	local right = last < #sessions and ("..." .. tostring(#sessions - last)) or nil
+	local left = first > 1 and ("…" .. tostring(first - 1)) or nil
+	local right = last < #sessions and ("…" .. tostring(#sessions - last)) or nil
 	if prepared.contextual_width then
 		local labels = {}
 		if left then labels[#labels + 1] = left end
@@ -342,9 +342,9 @@ local function build_session_tabs_line(tabs_cfg, sessions, max_tabs, prepared)
 	local left, right = start_index > 1, end_index < #sessions
 	if compact and prepared.labels[start_index] then
 		local labels = {}
-		if left then labels[#labels + 1] = "..." .. (start_index - 1) end
+		if left then labels[#labels + 1] = "…" .. (start_index - 1) end
 		labels[#labels + 1] = prepared.labels[start_index].text
-		if right then labels[#labels + 1] = "..." .. (#sessions - end_index) end
+		if right then labels[#labels + 1] = "…" .. (#sessions - end_index) end
 		if vim.fn.strdisplaywidth(table.concat(labels, separator)) > available_width then left, right = false, false end
 	end
 
@@ -383,7 +383,7 @@ local function build_session_tabs_line(tabs_cfg, sessions, max_tabs, prepared)
 			start = clamp(page_start, 1, max_start),
 			current_session_id = current_session_id,
 		})
-		local label = "..." .. tostring(hidden_count)
+		local label = "…" .. tostring(hidden_count)
 		local start_col = display_col + 1
 		append_text(label, "OpenCodeWinbar")
 		register_mouse_target(id, start_col, display_col)
@@ -404,7 +404,7 @@ local function build_session_tabs_line(tabs_cfg, sessions, max_tabs, prepared)
 			display_icon = text_util.truncate((available_width >= 6 and item.current and " " or "") .. item.symbol, available_width)
 			local remaining = available_width - vim.fn.strdisplaywidth(display_icon)
 			local gap = remaining > vim.fn.strdisplaywidth(vim.fn.strcharpart(item.title, 0, 1)) and " " or ""
-			display_label = text_util.truncate(gap .. item.title, remaining, remaining >= 6 and "..." or "")
+			display_label = text_util.truncate(gap .. item.title, remaining, remaining >= 4 and "…" or "")
 		end
 		append_separator()
 		local id = register_target({

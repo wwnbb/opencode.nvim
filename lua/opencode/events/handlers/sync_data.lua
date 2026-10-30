@@ -6,6 +6,8 @@ function M.setup(events)
 	local state = require("opencode.state")
 	local pending = require("opencode.session.pending")
 	local revisions, scheduled = {}, {}
+	-- Revision of the request in flight and of the last successful load, per location and domain.
+	local inflight, loaded = {}, {}
 	local methods = {
 		providers = "get_config_providers", agents = "list_agents", commands = "list_commands",
 		skills = "list_skills", mcp = "get_mcp_status", config = "get_config",
@@ -25,8 +27,12 @@ function M.setup(events)
 		local key = directory .. "\0" .. domain
 		revisions[key] = (revisions[key] or 0) + 1
 		local revision, token = revisions[key], pending.token()
+		inflight[key] = revision
 		client[methods[domain]](function(err, data)
-			if revisions[key] ~= revision or not pending.is_current(token) then return end
+			if revisions[key] ~= revision then return end
+			inflight[key] = nil
+			if not pending.is_current(token) then return end
+			if not err then loaded[key] = revision end
 			sync.handle_location_catalog(directory, domain, data, err)
 			if err then
 				local message = "Failed to fetch " .. domain .. ": " .. (err.message or "unknown error")
@@ -49,8 +55,16 @@ function M.setup(events)
 	end
 	events.on("connected", refresh_all)
 	events.on("session_change", function(data)
-		if data and data.reason == "pane_focus" and sync.get_catalog_location() == current_directory() then return end
-		if state.is_connected() then refresh_all() end
+		if not state.is_connected() then return end
+		local directory = current_directory()
+		if sync.get_catalog_location() ~= directory then refresh_all(); return end
+		if data and data.reason == "pane_focus" then return end
+		-- Change events keep a loaded location current; retry only what never loaded.
+		for domain in pairs(methods) do
+			local key = directory .. "\0" .. domain
+			local revision = revisions[key]
+			if not revision or (loaded[key] ~= revision and inflight[key] ~= revision) then refresh(domain, directory) end
+		end
 	end)
 	events.on("catalog_invalidated", function(data)
 		local domain = domains[data.type]

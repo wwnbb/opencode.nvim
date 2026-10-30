@@ -391,7 +391,7 @@ function M._show_file(index)
 
 	-- Proposed content in a readonly split LEFT; focus stays on the actual
 	-- file (RIGHT, editable) at its first change.
-	local relative = file.relativePath or vim.fn.fnamemodify(filepath, ":t")
+	local relative = file.relativePath or require("opencode.util.text").normalize_path(filepath)
 	if external then
 		-- codediff installs its pane mappings from a scheduled render; queue
 		-- ours behind it so review keys win on shared lhs such as q.
@@ -409,11 +409,14 @@ function M._show_file(index)
 
 	-- Show status notification
 	local total = #state.files
-	local status_msg = relative .. " | " .. keymaps.label("native_diff", "apply_all") .. "=apply all  "
-		.. keymaps.label("native_diff", "note") .. "=note  do=get hunk  " .. keymaps.label("native_diff", "help") .. "=help"
+	local keys = keymaps.hint({ { keymaps.label("native_diff", "apply_all"), "apply all" },
+		{ keymaps.label("native_diff", "note"), "note" }, "do get hunk", { keymaps.label("native_diff", "help"), "help" } },
+		{ omit_disabled = true })
+	local status_msg = relative .. (keys and (" · " .. keys) or "")
 	if total > 1 then
-		status_msg = string.format("[%d/%d] %s | %s / %s=file nav", index, total, status_msg,
-			keymaps.label("native_diff", "next_file"), keymaps.label("native_diff", "prev_file"))
+		local nav = keymaps.hint({ { keymaps.label("native_diff", "next_file") .. " / " .. keymaps.label("native_diff", "prev_file"),
+			"file nav" } }, { omit_disabled = true })
+		status_msg = string.format("[%d/%d] %s", index, total, status_msg) .. (nav and (" · " .. nav) or "")
 	end
 	vim.notify(status_msg, vim.log.levels.INFO)
 end

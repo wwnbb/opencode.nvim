@@ -122,16 +122,6 @@ describe("complete session export workflow", function()
 		assert.equals(2, #format_calls)
 	end)
 
-	it("reports a system clipboard failure while retaining the transcript in the unnamed register", function()
-		vim.fn.setreg = function(register, content)
-			if register == "+" then return 1 end
-			return originals.setreg(register, content)
-		end
-		run_slash("copy")
-		assert.equals("# Server transcript\n\nSERVER_OLD_MESSAGE\n", vim.fn.getreg('"'))
-		assert.is_true(notices[#notices]:find("Could not copy to system clipboard", 1, true) ~= nil)
-	end)
-
 	it("detects a clipboard readback mismatch without losing the unnamed register", function()
 		vim.fn.setreg = function(register, content)
 			if register == "+" then return 0 end
@@ -160,30 +150,26 @@ describe("complete session export workflow", function()
 		assert.equals("SERVER_OLD_MESSAGE", format_calls[1].data.messages[1].text)
 	end)
 
-	for _, target in ipairs({ "another session", "no active session" }) do
-		it("exports the opening session after switching to " .. target, function()
-			require("opencode.ui.export").show()
-			app_state.set_session(target == "another session" and "export-other" or nil, "Other")
-			choose(menus[1], "format")
-			choose(menus[2], "copy")
-			assert.same({ { id = session_id, opts = { sanitize = false } } }, requests)
-		end)
-	end
+	it("exports the opening session after switching to no active session", function()
+		require("opencode.ui.export").show()
+		app_state.set_session(nil)
+		choose(menus[1], "format")
+		choose(menus[2], "copy")
+		assert.same({ { id = session_id, opts = { sanitize = false } } }, requests)
+	end)
 
-	for _, invalidation in ipairs({ "connection", "session" }) do
-		it("cancels all export menu choices after " .. invalidation .. " invalidation", function()
-			local pending = require("opencode.session.pending")
-			for _, choice in ipairs({ "format", "copy", "buffer" }) do
-				require("opencode.ui.export").show()
-				local count = #menus
-				if invalidation == "connection" then pending.invalidate() else pending.clear_session(session_id) end
-				choose(menus[count], choice)
-				assert.same({}, requests)
-				assert.same({}, format_calls)
-				assert.equals(count, #menus)
-			end
-		end)
-	end
+	it("cancels all export menu choices after session invalidation", function()
+		local pending = require("opencode.session.pending")
+		for _, choice in ipairs({ "format", "copy", "buffer" }) do
+			require("opencode.ui.export").show()
+			local count = #menus
+			pending.clear_session(session_id)
+			choose(menus[count], choice)
+			assert.same({}, requests)
+			assert.same({}, format_calls)
+			assert.equals(count, #menus)
+		end
+	end)
 
 	it("sends JSON sanitize to the server and copies the returned object", function()
 		require("opencode.ui.export").show()

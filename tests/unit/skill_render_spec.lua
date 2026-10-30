@@ -1,5 +1,4 @@
 local skill = require("opencode.ui.chat.skill")
-local render = require("opencode.ui.chat.render")
 local style = require("opencode.ui.chat.tool_style")
 local syntax = require("opencode.ui.syntax")
 local sync = require("opencode.sync")
@@ -51,10 +50,6 @@ describe("skill list rendering", function()
 		local closed, opened = skill.render_tool(item, false), skill.render_tool(item, true)
 		assert.equals(1, #closed.lines)
 		assert.equals(' → Skill "review"', closed.lines[1]:gsub(" +$", ""))
-		assert.equals(closed.lines[1]:gsub("→", "↘"), opened.lines[1])
-		assert.equals(style.header_hl, opened.highlights[1].hl_group)
-		contains(opened.lines[2], "   ┌")
-		contains(opened.lines[#opened.lines], "   └")
 		local output = body_text(opened)
 		contains(output, "Skill: review")
 		contains(output, "Review Lua changes")
@@ -71,8 +66,6 @@ describe("skill list rendering", function()
 			if hl.hl_group:find("Strong", 1, true) then
 				contains(opened.lines[hl.line + 1]:sub(hl.col_start + 1, hl.col_end), "Check invariants")
 				emphasized = true
-			elseif hl.hl_group == style.output_hl or hl.hl_group == style.border_hl then
-				assert.equals(3, hl.col_start)
 			end
 		end
 		assert.is_true(emphasized)
@@ -108,13 +101,12 @@ describe("skill list rendering", function()
 
 	it("keeps the full Unicode name in the body while headers stay on one row", function()
 		local name = string.rep("世界Ж", 30) .. "_TAIL"
-		for _, width in ipairs({ 100, 24, 12 }) do
+		for _, width in ipairs({ 100, 12 }) do
 			vim.api.nvim_win_set_config(winid, { width = width })
 			local item = part({ status = "streaming", input = { name = name }, output = "Working instructions." })
 			local closed, opened = skill.render_tool(item, false), skill.render_tool(item, true)
 			assert.equals(1, #closed.lines)
-			assert.equals("|", vim.trim(closed.lines[1]):sub(-1))
-			contains(opened.lines[2], "   ┌")
+			assert.is_not_nil(require("tests.helpers.tool_render").spinner(closed.lines[1]))
 			contains(body_text(opened):gsub("\n", ""), name)
 			for _, line in ipairs(opened.lines) do
 				assert.is_true(vim.fn.strdisplaywidth(line) <= width, "Overflow: " .. line)
@@ -162,32 +154,30 @@ describe("skill list rendering", function()
 	end)
 
 	it("keeps full errors behind the folded row and stops animation for terminal failures", function()
-		for _, status in ipairs({ "error", "cancelled", "canceled", "interrupted", "aborted" }) do
+		for _, status in ipairs({ "error", "cancelled" }) do
 			local message = "Unable to load skill review\nTry an available skill."
 			local item = part({ status = status, input = { name = "review" }, error = { message = message } })
 			local closed, opened = skill.render_tool(item, false), skill.render_tool(item, true)
-			assert.equals(1, #closed.lines)
+			-- Folded, the error follows the row as sub-lines, like every compact row.
+			assert.same({ "     Unable to load skill review", "     Try an available skill." },
+				vim.tbl_map(function(line) return (line:gsub("%s+$", "")) end, vim.list_slice(closed.lines, 2)))
 			assert.equals(style.error_hl, closed.highlights[1].hl_group)
 			contains(closed.lines[1], "Failed")
-			assert.is_nil(closed.lines[1]:find("|", 1, true))
+			assert.is_nil(require("tests.helpers.tool_render").spinner(closed.lines[1]))
 			contains(body_text(opened), message)
-			for _, hl in ipairs(opened.highlights) do
-				assert.is_not_equal("ErrorMsg", hl.hl_group)
-				if hl.hl_group == style.body_error_hl then assert.equals(3, hl.col_start) end
-			end
+			for _, hl in ipairs(opened.highlights) do assert.is_not_equal("ErrorMsg", hl.hl_group) end
 		end
 	end)
 
 	it("uses shared working policy for streaming, incomplete and timestamped states", function()
-		for _, state in ipairs({ {}, { status = "pending" }, { status = "streaming" },
-			{ status = "running", time = { completed = 2000 } } }) do
+		for _, state in ipairs({ {}, { status = "running", time = { completed = 2000 } } }) do
 			state.input = { name = "review" }
-			assert.equals("|", vim.trim(skill.render_tool(part(state), false).lines[1]):sub(-1))
+			assert.is_not_nil(require("tests.helpers.tool_render").spinner(skill.render_tool(part(state), false).lines[1]))
 		end
 		local finished = skill.render_tool(part({ input = { name = "review" }, error = false,
 			time = { start = 1000, completed = 2000 } }), true)
 		contains(body_text(finished), "No instructions returned")
-		assert.is_nil(finished.lines[1]:find("|", 1, true))
+		assert.is_nil(require("tests.helpers.tool_render").spinner(finished.lines[1]))
 		assert.is_nil(text(finished):find("false", 1, true))
 	end)
 
@@ -195,9 +185,7 @@ describe("skill list rendering", function()
 		assert.is_nil(skill.render_tool(nil, false))
 		assert.is_nil(skill.render_tool({ tool = "read" }, false))
 		for _, item in ipairs({
-			{ tool = "skill" }, part({ status = "running", input = vim.NIL }),
 			{ tool = "skill", state = vim.NIL, metadata = vim.NIL },
-			part({ status = "completed", metadata = vim.NIL }),
 			part({ status = "completed", input = { name = vim.NIL }, output = vim.NIL, error = vim.NIL }),
 			part({ status = "error", input = "unfinished input", error = vim.NIL }),
 		}) do
@@ -217,13 +205,12 @@ describe("skill list rendering", function()
 		for _, attachment in ipairs({
 			{ type = "skill", id = "ui-part-1", skillID = "catalog-review" },
 			{ type = "skill", id = "ui-part-1", skillID = "catalog-review", text = vim.NIL },
-			{ type = "skill", id = "ui-part-1", skillID = "catalog-review", text = false },
 		}) do
 			local snapshot = vim.deepcopy(attachment)
 			local closed, opened = skill.render_attachment(attachment, false), skill.render_attachment(attachment, true)
 			assert.equals(1, #closed.lines)
 			contains(closed.lines[1], 'Skill "Review changes" · Unconfirmed')
-			assert.is_nil(closed.lines[1]:find("|", 1, true))
+			assert.is_nil(require("tests.helpers.tool_render").spinner(closed.lines[1]))
 			contains(body_text(opened), "Skill instructions are not available in this message")
 			assert.is_nil(text(opened):find("CATALOG_", 1, true))
 			assert.is_nil(text(opened):find("WRONG_SKILL", 1, true))
@@ -243,9 +230,7 @@ describe("skill list rendering", function()
 		local snapshot = vim.deepcopy(attachment)
 		local closed, opened = skill.render_attachment(attachment, false), skill.render_attachment(attachment, true)
 		contains(closed.lines[1], 'Skill "Selected review" · Attached')
-		assert.is_nil(closed.lines[1]:find("|", 1, true))
-		contains(opened.lines[2], "   ┌")
-		contains(opened.lines[#opened.lines], "   └")
+		assert.is_nil(require("tests.helpers.tool_render").spinner(closed.lines[1]))
 		local output = body_text(opened)
 		contains(output, "Skill: Source review")
 		contains(output, "Server description")
@@ -270,7 +255,7 @@ describe("skill list rendering", function()
 		assert.is_nil(skill.render_attachment({ type = "tool", tool = "skill" }, false))
 		local result = skill.render_attachment({ type = "skill", skillID = "empty", text = "" }, true)
 		contains(result.lines[1], 'Skill "empty" · Attached')
-		assert.is_nil(result.lines[1]:find("|", 1, true))
+		assert.is_nil(require("tests.helpers.tool_render").spinner(result.lines[1]))
 		contains(body_text(result), "No instructions returned")
 		assert.is_nil(text(result):find("Unconfirmed", 1, true))
 	end)

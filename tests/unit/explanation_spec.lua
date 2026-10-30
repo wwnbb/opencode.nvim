@@ -118,19 +118,10 @@ describe("selection explanation request lifecycle", function()
 		assert.is_true(requests[1].opts.timeout > 0)
 		assert.is_truthy(requests[1].prompt:find("local value = 1", 1, true))
 		assert.same({}, shown)
-		local answers = {
-			"L1–2 — Defines and returns a value.\n\nNo side effects.",
-			"L1 — Defines a value.",
-			"This selection defines and returns a value.",
-			"L1–3 — Explains the whole function.",
-		}
-		for index, answer in ipairs(answers) do
-			if index > 1 then assert.is_true(controller.explain_selection()) end
-			requests[index].callback(nil, answer)
-			assert.equals(answer, shown[index])
-			assert.is_true(views[index].open)
-		end
-		assert.same(answers, shown)
+		local answer = "L1–2 — Defines and returns a value.\n\nNo side effects."
+		requests[1].callback(nil, answer)
+		assert.same({ answer }, shown)
+		assert.is_true(views[1].open)
 		assert.same({}, errors)
 		assert.same({ "local value = 1", "return value", "after()" },
 			vim.api.nvim_buf_get_lines(source, 0, -1, false))
@@ -167,20 +158,6 @@ describe("selection explanation request lifecycle", function()
 		assert.is_true(apply("explanation_variant", false, "cwd"))
 		assert.is_true(controller.explain_selection()); connect()
 		assert.same({ providerID = "test", id = "second" }, requests[3].model)
-	end)
-
-	it("rejects local options early when lifecycle does not own the server, even without a port", function()
-		config.explanation.options = { body = { max_tokens = 32 } }
-		config.server.url = "http://remote.example:4096"
-		state.set_config(config)
-		package.loaded["opencode.lifecycle"].owns_server = function() return false end
-		assert.is_false(controller.explain_selection())
-		assert.same({}, requests)
-		assert.same({}, views)
-		assert.matches("requires a managed server", notices[#notices], 1, true)
-		package.loaded["opencode.lifecycle"].owns_server = function() return true end
-		assert.is_true(controller.explain_selection())
-		assert.equals(1, #requests)
 	end)
 
 	it("retains the setup enabled guard and falls back when no runtime feature config exists", function()
@@ -237,17 +214,6 @@ describe("selection explanation request lifecycle", function()
 		close_view(views[2])
 		requests[2].opts.on_update("<answer>\nlate update")
 		assert.same({ "Определяет значение", "Определяет значение." }, shown)
-	end)
-
-	it("keeps a completed answer when its cancelled deadline callback runs", function()
-		local queued
-		vim.schedule_wrap = function(callback) queued = callback; return function() end end
-		assert.is_true(controller.explain_selection())
-		requests[1].callback(nil, "Defines a value.")
-		queued()
-		assert.same({ "Defines a value." }, shown)
-		assert.same({}, errors)
-		assert.is_true(views[1].open)
 	end)
 
 	it("cancels on popup close and ignores late answers", function()

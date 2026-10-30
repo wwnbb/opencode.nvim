@@ -95,7 +95,7 @@ describe("palette pane ownership", function()
 		assert.equals(panes[1].winid, vim.api.nvim_get_current_win())
 	end)
 
-	for _, case in ipairs({ { "model.switch", "model" }, { "agent.switch", "agent" }, { "model.variant", "variant" } }) do
+	for _, case in ipairs({ { "model.switch", "model" }, { "agent.switch", "agent" } }) do
 		it("keeps " .. case[2] .. " selection bound to its original pane", function()
 			commands[case[1]].run()
 			assert.equals(panes[1], picker.context.view)

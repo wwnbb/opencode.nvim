@@ -509,115 +509,67 @@ function M.render_content(content, opts)
 	return require("opencode.ui.markdown").render(content, opts, M)
 end
 
----Render a single tool line (fold icon + status + tool name, optional expanded body).
+---Render a tool no widget knows (MCP and custom tools) as a compact row:
+---" ▸ <Name> · <description>[ · <Status>][ <spinner>]", its error as sub-lines
+---when folded, and input, output and error in the shared frame when opened.
 ---@param tool_part table
 ---@param is_expanded boolean
 ---@return table { lines: string[], highlights: table[] }
 function M.render_tool_line(tool_part, is_expanded)
-	local tool_name = tool_part.tool or "unknown"
-	local tool_status = tool_part.state and tool_part.state.status or "pending"
+	local style = cs.module(view, require("opencode.ui.chat.tool_style"))
+	local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
+	local text = require("opencode.util.text")
+	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
+	local status = tool_state.status or "pending"
+	local input, output, err = tool_state.input, tool_state.output, tool_state.error
+	local working = status == "pending" or status == "running"
+	local failed = status == "error" or (text.is_present(err) and err ~= false)
+	local cancelled = status == "cancelled" or status == "canceled" or status == "interrupted" or status == "aborted"
+	local function present(value)
+		return text.is_present(value) and not (type(value) == "table" and next(value) == nil)
+	end
+	local foldable = present(input) or present(output) or failed
 
-	local status_symbol = "○"
-	local status_hl = "Comment"
-	if tool_status == "completed" then
-		status_symbol = "●"
-		status_hl = "Normal"
-	elseif tool_status == "running" then
-		status_symbol = "◐"
-		status_hl = "WarningMsg"
-	elseif tool_status == "error" then
-		status_symbol = "✗"
-		status_hl = "ErrorMsg"
+	local header = (foldable and tool_panel.fold_prefix(is_expanded) or "")
+		.. require("opencode.util.tool_names").display_name(tool_part.tool or "unknown")
+	if type(input) == "table" and text.is_present(input.description) then
+		header = header .. " · " .. M.sanitize_buffer_line(tostring(input.description))
+	end
+	local status_word = failed and "Failed" or cancelled and "Cancelled"
+		or status == "pending" and "Pending" or status == "running" and "Running" or nil
+	if status_word then header = header .. " · " .. status_word end
+	local elapsed = not working and tool_panel.duration(tool_state.time) or nil
+	if elapsed then header = header .. " · " .. elapsed end
+	if working and not failed then header = header .. " " .. tool_panel.anim_frame() end
+
+	local result = { lines = {}, highlights = {} }
+	M.add_panel_line(result, header, failed and style.error_hl or style.header_hl, { prefix = " " })
+	local error_text = failed and (type(err) == "string" and err or json_or_inspect(err)) or ""
+	if not is_expanded then
+		if failed then style.add_error_lines(result, error_text) end
+		result.lines[#result.lines + 1] = ""
+		return result
 	end
 
-	local result_lines = {}
-	local result_highlights = {}
-	local result = { lines = result_lines, highlights = result_highlights }
-
-	local function add_hl_line(text, hl_group)
-		text = M.sanitize_buffer_line(text)
-		table.insert(result_lines, text)
-		if hl_group then
-			table.insert(result_highlights, {
-				line = #result_lines - 1,
-				col_start = 0,
-				col_end = #text,
-				hl_group = hl_group,
-			})
-		end
+	local panel = style.panel
+	local function section(label, value, language, hl)
+		if not present(value) then return end
+		if #result.lines > 2 then panel.add_blank(result) end
+		panel.add_line(result, label, style.border_hl)
+		local body = text.normalize_text(value, function(v) return type(v) == "string" and v or json_or_inspect(v) end)
+		tool_panel.add_raw_body(result, body, {
+			panel = panel, prefix = style.prefix, hl_group = hl,
+			language = hl == nil and (type(value) == "table" and "json"
+				or syntax.detect_output_language(body, M.get_tool_metadata(tool_part))) or nil,
+		})
 	end
-
-	local fold_icon = is_expanded and "▾" or "▸"
-	local header = fold_icon .. " " .. status_symbol .. " " .. tool_name
-	local tool_state_data = tool_part.state or {}
-	if type(tool_state_data.input) == "table" and tool_state_data.input.description then
-		header = header .. " - " .. tool_state_data.input.description
-	end
-	add_hl_line(header, status_hl)
-
-	if is_expanded then
-		local tool_input = tool_state_data.input
-		local tool_output = tool_state_data.output
-		local tool_error = tool_state_data.error
-
-		if tool_input then
-			local input_str = type(tool_input) == "string" and tool_input or json_or_inspect(tool_input)
-			add_hl_line("  Input: ", "Special")
-			local input_start = #result_lines
-			for _, iline in ipairs(vim.split(input_str, "\n", { plain = true })) do
-				add_hl_line("    " .. iline, "Comment")
-			end
-			local input_lang = type(tool_input) == "table" and "json" or syntax.detect_output_language(input_str, nil)
-			if input_lang then
-				if input_lang == "markdown" then
-					syntax.add_markdown_highlights(result, input_str, {
-						scope = "tools",
-						line_start = input_start,
-						col_offset = 4,
-					})
-				else
-					syntax.add_highlights(result, input_str, input_lang, {
-						scope = "tools",
-						line_start = input_start,
-						col_offset = 4,
-					})
-				end
-			end
-		end
-
-		if tool_output then
-			local output_str = type(tool_output) == "string" and tool_output or json_or_inspect(tool_output)
-			add_hl_line("  Output: ", "Special")
-			local output_start = #result_lines
-			for _, oline in ipairs(vim.split(output_str, "\n", { plain = true })) do
-				add_hl_line("    " .. oline, "Comment")
-			end
-			local output_lang = type(tool_output) == "table" and "json"
-				or syntax.detect_output_language(output_str, M.get_tool_metadata(tool_part))
-			if output_lang == "markdown" then
-				syntax.add_markdown_highlights(result, output_str, {
-					scope = "tools",
-					line_start = output_start,
-					col_offset = 4,
-				})
-			elseif output_lang then
-				syntax.add_highlights(result, output_str, output_lang, {
-					scope = "tools",
-					line_start = output_start,
-					col_offset = 4,
-				})
-			end
-		end
-
-		if tool_error then
-			local error_str = type(tool_error) == "string" and tool_error or vim.inspect(tool_error)
-			add_hl_line("  Error: ", "ErrorMsg")
-			for _, eline in ipairs(vim.split(error_str, "\n", { plain = true })) do
-				add_hl_line("    " .. eline, "ErrorMsg")
-			end
-		end
-	end
-
+	style.add_border(result)
+	section("Input", input)
+	section("Output", output)
+	if failed then section("Error", error_text, nil, style.body_error_hl) end
+	style.add_border(result, true)
+	style.contain_background(result)
+	result.lines[#result.lines + 1] = ""
 	return result
 end
 

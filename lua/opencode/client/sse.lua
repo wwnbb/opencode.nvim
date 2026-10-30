@@ -18,6 +18,9 @@ M.opts = {
 	max_reconnects = false,
 	connect_timeout = 10000,
 	read_idle_timeout = 45000,
+	-- A stream that never terminates a line or an event is closed instead of
+	-- growing without bound.
+	max_event_bytes = 8 * 1024 * 1024,
 }
 
 local state = {
@@ -32,11 +35,15 @@ local state = {
 	manual_disconnect = false,
 	connected = false,
 	reconnect_count = 0,
-	event_buffer = "",
+	-- Unterminated line pieces; pending_cr skips the LF of a CR LF split across reads.
+	line_parts = {},
+	line_bytes = 0,
+	pending_cr = false,
 	current_event = {
 		id = nil,
 		event = "message",
 		data_lines = {},
+		data_bytes = 0,
 	},
 	directory = nil,
 }
@@ -91,7 +98,13 @@ local function reset_current_event()
 		id = nil,
 		event = "message",
 		data_lines = {},
+		data_bytes = 0,
 	}
+end
+
+local function reset_parser()
+	state.line_parts, state.line_bytes, state.pending_cr = {}, 0, false
+	reset_current_event()
 end
 
 ---@type fun(directory: string|nil): string|nil
@@ -175,38 +188,69 @@ local function emit_current_event()
 	reset_current_event()
 end
 
-local function process_buffer()
-	-- Process line-by-line because socket callbacks may split SSE frames arbitrarily.
-	-- Flush buffered data whenever we hit SSE's blank-line delimiter.
-	while true do
-		local newline = state.event_buffer:find("\n", 1, true)
-		if not newline then
-			break
-		end
-
-		local raw_line = state.event_buffer:sub(1, newline - 1)
-		state.event_buffer = state.event_buffer:sub(newline + 1)
-		local line = raw_line:gsub("\r$", "")
-
-		if line == "" then
-			emit_current_event()
-		elseif line:sub(1, 1) == ":" then
-			-- Comment line, ignore.
-		else
-			local field, value = line:match("^([^:]+):(.*)$")
-			field, value = field or line, value or ""
-			-- SSE removes at most one space after the colon. Fields may follow data.
-			value = value:gsub("^ ", "", 1)
-			if field == "event" then
-				state.current_event.event = value ~= "" and value or "message"
-			elseif field == "id" then
-				if not value:find("\0", 1, true) then
-					state.current_event.id = value ~= "" and value or nil
-				end
-			elseif field == "data" then
-				table.insert(state.current_event.data_lines, value)
+---@return string|nil error
+local function process_line(line)
+	if line == "" then
+		emit_current_event()
+	elseif line:sub(1, 1) == ":" then
+		-- Comment line, ignore.
+	else
+		local field, value = line:match("^([^:]+):(.*)$")
+		field, value = field or line, value or ""
+		-- SSE removes at most one space after the colon. Fields may follow data.
+		value = value:gsub("^ ", "", 1)
+		if field == "event" then
+			state.current_event.event = value ~= "" and value or "message"
+		elseif field == "id" then
+			if not value:find("\0", 1, true) then
+				state.current_event.id = value ~= "" and value or nil
 			end
+		elseif field == "data" then
+			local event = state.current_event
+			event.data_bytes = event.data_bytes + #value + 1
+			if event.data_bytes > M.opts.max_event_bytes then
+				return "SSE event exceeded " .. M.opts.max_event_bytes .. " bytes"
+			end
+			table.insert(event.data_lines, value)
 		end
+	end
+end
+
+-- Socket reads split frames arbitrarily. CR LF, CR and LF all end a line;
+-- a blank line dispatches the buffered event.
+---@return string|nil error
+local function process_data(stream, data)
+	local pos, len = 1, #data
+	if state.pending_cr then
+		state.pending_cr = false
+		if data:byte(1) == 10 then pos = 2 end
+	end
+	while pos <= len do
+		local stop = data:find("[\r\n]", pos)
+		local piece = data:sub(pos, (stop or len + 1) - 1)
+		state.line_bytes = state.line_bytes + #piece
+		if state.line_bytes > M.opts.max_event_bytes then
+			return "SSE line exceeded " .. M.opts.max_event_bytes .. " bytes"
+		end
+		if not stop then
+			table.insert(state.line_parts, piece)
+			return
+		end
+		local line = piece
+		if #state.line_parts > 0 then
+			table.insert(state.line_parts, piece)
+			line = table.concat(state.line_parts)
+		end
+		state.line_parts, state.line_bytes = {}, 0
+		pos = stop + 1
+		if data:byte(stop) == 13 then
+			if stop == len then state.pending_cr = true
+			elseif data:byte(pos) == 10 then pos = pos + 1 end
+		end
+		local err = process_line(line)
+		if err then return err end
+		-- A listener may have disconnected or replaced this stream.
+		if stream ~= state.stream then return end
 	end
 end
 
@@ -253,8 +297,7 @@ local function handle_stream_closed(reason, closed_stream, retryable)
 		return
 	end
 
-	state.event_buffer = ""
-	reset_current_event()
+	reset_parser()
 	stop_timer("reconnect_timer")
 	stop_timer("watchdog_timer")
 	state.handshake_deadline, state.last_read = nil, nil
@@ -377,8 +420,7 @@ function M.connect(resolved)
 
 	stop_timer("reconnect_timer")
 	state.manual_disconnect = false
-	state.event_buffer = ""
-	reset_current_event()
+	reset_parser()
 	state.connected = false
 
 	local headers = {
@@ -446,8 +488,11 @@ function M.connect(resolved)
 				return
 			end
 			state.last_read = uv.now()
-			state.event_buffer = state.event_buffer .. data
-			process_buffer()
+			local parse_err = process_data(stream, data)
+			if parse_err and stream == state.stream then
+				M.emit("error", parse_err)
+				if stream == state.stream then stream.close() end
+			end
 		end,
 		on_error = function(stream_err)
 			if stream ~= state.stream then return end
@@ -483,8 +528,7 @@ function M.disconnect()
 	state.reconnect_count = 0
 	local stream, was_connected = state.stream, state.connected
 	state.stream, state.connected = nil, false
-	state.event_buffer = ""
-	reset_current_event()
+	reset_parser()
 	if stream then stream.close() end
 	if was_connected then M.emit("disconnected", "closed") end
 end

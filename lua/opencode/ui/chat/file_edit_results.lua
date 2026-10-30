@@ -6,6 +6,8 @@ return cs.factory("file_edit_results", function(view)
 local M = {}
 
 local render = cs.module(view, require("opencode.ui.chat.render"))
+local style = cs.module(view, require("opencode.ui.chat.tool_style"))
+local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 local text_util = require("opencode.util.text")
 local tool_results = require("opencode.edit.tool_results")
 
@@ -27,13 +29,35 @@ local STATUS_ICON = {
 	unknown = "?",
 }
 
+-- Foreground-only groups: on the header they sit on the chat background, inside
+-- the frame they combine with its CursorLine background.
 local STATUS_HL = {
-	applied = "String",
-	partial = "Special",
-	rejected = "ErrorMsg",
-	failed = "ErrorMsg",
-	unknown = "Comment",
+	applied = "OpenCodeFileEditApplied",
+	partial = "OpenCodeFileEditPartial",
+	rejected = "OpenCodeFileEditFailed",
+	failed = "OpenCodeFileEditFailed",
 }
+local ADD_HL, DELETE_HL, WARNING_HL = "OpenCodeFileEditAdd", "OpenCodeFileEditDelete", "OpenCodeFileEditWarning"
+
+require("opencode.ui.highlights").register("opencode.ui.chat.file_edit_results", function()
+	local panel = require("opencode.ui.panel")
+	local function fg(sources)
+		for _, source in ipairs(sources) do
+			local value = panel.get_hl(source).fg
+			if value then return value end
+		end
+	end
+	for name, sources in pairs({
+		[STATUS_HL.applied] = { "String" },
+		[STATUS_HL.partial] = { "Special" },
+		[STATUS_HL.failed] = { "DiagnosticError", "ErrorMsg" },
+		[ADD_HL] = { "String", "Added", "DiagnosticOk" },
+		[DELETE_HL] = { "DiagnosticError", "Removed", "ErrorMsg" },
+		[WARNING_HL] = { "DiagnosticWarn", "WarningMsg" },
+	}) do
+		vim.api.nvim_set_hl(0, name, { fg = fg(sources) })
+	end
+end)
 
 local TYPE_MARKER = {
 	add = "A",
@@ -50,6 +74,12 @@ local TYPE_LABEL = {
 	move = "renamed",
 	write = "wrote",
 }
+
+---@param status string
+---@return string
+local function status_hl(status)
+	return STATUS_HL[status] or style.header_hl
+end
 
 ---@param file OpenCodeFileEditResultFile
 ---@return string
@@ -114,123 +144,97 @@ local function diagnostic_count(value)
 	return count
 end
 
+---Highlight `text` in the last row added, searching after `after` when given.
 ---@param result table
----@param text string
----@param hl_group string|nil
----@param opts table|nil
----@return number line_index
----@return string line
-local function add_line(result, text, hl_group, opts)
-	if text == "" then
-		return render.add_panel_blank(result, hl_group)
-	end
-	return render.add_panel_line(result, text, hl_group, opts)
-end
-
----@param result table
----@param line_index number
----@param line string
+---@param rows table[]
 ---@param text string
 ---@param hl_group string
-local function highlight_text(result, line_index, line, text, hl_group)
+---@param after? string
+local function highlight_text(result, rows, text, hl_group, after)
 	if text == "" then
 		return
 	end
-	local start_pos = line:find(text, 1, true)
-	if not start_pos then
-		return
+	for _, row in ipairs(rows or {}) do
+		---@type integer|nil
+		local from = 1
+		if after then
+			local marker = row.line:find(after, 1, true)
+			from = marker and (marker + #after) or nil
+		end
+		local start_pos = from and row.line:find(text, from, true)
+		if start_pos then
+			table.insert(result.highlights, {
+				line = row.line_index,
+				col_start = start_pos - 1,
+				col_end = start_pos + #text - 1,
+				hl_group = hl_group,
+			})
+			return
+		end
 	end
-	table.insert(result.highlights, {
-		line = line_index,
-		col_start = start_pos - 1,
-		col_end = start_pos + #text - 1,
-		hl_group = hl_group,
-	})
 end
 
 ---@param result table
----@param line_index number
----@param line string
+---@param rows table[]
 ---@param additions number
 ---@param deletions number
-local function highlight_stats(result, line_index, line, additions, deletions)
-	local add_text = "+" .. tostring(additions or 0)
-	local del_text = "-" .. tostring(deletions or 0)
-	highlight_text(result, line_index, line, add_text, "DiffAdd")
-	highlight_text(result, line_index, line, del_text, "DiffDelete")
-end
-
----@param result table
----@param line_index number
----@param line string
----@param text string
----@param hl_group string
----@param marker string
-local function highlight_text_after(result, line_index, line, text, hl_group, marker)
-	if text == "" then
-		return
-	end
-	local marker_pos = line:find(marker, 1, true)
-	if not marker_pos then
-		return
-	end
-	local start_pos = line:find(text, marker_pos + #marker, true)
-	if not start_pos then
-		return
-	end
-	table.insert(result.highlights, {
-		line = line_index,
-		col_start = start_pos - 1,
-		col_end = start_pos + #text - 1,
-		hl_group = hl_group,
-	})
+---@param after? string
+local function highlight_stats(result, rows, additions, deletions, after)
+	highlight_text(result, rows, "+" .. tostring(additions or 0), ADD_HL, after)
+	highlight_text(result, rows, "-" .. tostring(deletions or 0), DELETE_HL, after)
 end
 
 M.normalize_model = normalize_model
+
+---" ▸ ✓ <title> · N files · +A -D", the compact header for both states.
+---@param result table
+---@param model OpenCodeFileEditResult
+---@param expanded boolean
+local function add_header(result, model, expanded)
+	local additions, deletions = total_stats(model)
+	local icon = STATUS_ICON[model.status] or "?"
+	local header = table.concat({
+		tool_panel.fold_prefix(expanded) .. icon .. " " .. model.title,
+		file_count_label(#model.files),
+		stats_label(additions, deletions),
+	}, " · ")
+	local _, _, rows = render.add_panel_line(result, header, style.header_hl, { prefix = " " })
+	highlight_text(result, rows, icon, status_hl(model.status))
+	highlight_stats(result, rows, additions, deletions, " · ")
+end
 
 ---@param model OpenCodeFileEditResult
 ---@return table
 local function render_collapsed(model)
 	local result = { lines = {}, highlights = {} }
-	local additions, deletions = total_stats(model)
-	local header = string.format(
-		"%s %s  %s  %s",
-		STATUS_ICON[model.status] or "?",
-		model.title,
-		file_count_label(#model.files),
-		stats_label(additions, deletions)
-	)
-	local header_line_index, header_line = add_line(result, header, STATUS_HL[model.status] or "Comment")
-	highlight_stats(result, header_line_index, header_line, additions, deletions)
+	add_header(result, model, false)
 
 	for _, file in ipairs(model.files) do
 		local status = file.status or "unknown"
 		local status_icon = STATUS_ICON[status] or "?"
 		local type_marker = TYPE_MARKER[file.type] or "M"
-		local path = file_display_path(file)
 		local suffix
-		if status == "rejected" then
-			suffix = "rejected"
-		elseif status == "failed" then
-			suffix = "failed"
+		if status == "rejected" or status == "failed" then
+			suffix = status
 		else
 			suffix = stats_label(file.additions, file.deletions)
 			if status == "partial" or status == "unknown" then
-				suffix = suffix .. " " .. status
+				suffix = suffix .. " · " .. status
 			end
 		end
 
-		local prefix = string.format("  %s %s %s", status_icon, type_marker, path)
-		local line_index, line = add_line(result, prefix .. "  " .. suffix, "Comment")
-		highlight_text(result, line_index, line, status_icon, STATUS_HL[status] or "Comment")
+		local line = string.format("%s %s %s · %s", status_icon, type_marker, file_display_path(file), suffix)
+		local rows = select(3, render.add_panel_line(result, line, style.header_hl, { prefix = style.SUB_PREFIX }))
+		highlight_text(result, rows, status_icon, status_hl(status))
 		if status ~= "rejected" and status ~= "failed" then
-			highlight_stats(result, line_index, line, file.additions, file.deletions)
+			highlight_stats(result, rows, file.additions, file.deletions, " · ")
 		end
 		if status == "partial" or status == "rejected" or status == "failed" then
-			highlight_text(result, line_index, line, status, STATUS_HL[status] or "Comment")
+			highlight_text(result, rows, status, status_hl(status), " · ")
 		end
 	end
 
+	result.lines[#result.lines + 1] = ""
 	return result
 end
 
@@ -238,16 +242,9 @@ end
 ---@return table
 local function render_expanded(model)
 	local result = { lines = {}, highlights = {} }
-	local additions, deletions = total_stats(model)
-	local header = string.format(
-		"▾ %s  %s  %s",
-		model.title,
-		file_count_label(#model.files),
-		stats_label(additions, deletions)
-	)
-	local header_line_index, header_line = add_line(result, header, STATUS_HL[model.status] or "Comment")
-	highlight_stats(result, header_line_index, header_line, additions, deletions)
-	add_line(result, "", nil)
+	local panel = style.panel
+	add_header(result, model, true)
+	style.add_border(result)
 
 	for index, file in ipairs(model.files) do
 		local status = file.status or "unknown"
@@ -256,87 +253,66 @@ local function render_expanded(model)
 		if status == "applied" then
 			label = TYPE_LABEL[file.type] or "modified"
 		end
-		local path = file_display_path(file)
-		local file_line = string.format("  %s %s %s", STATUS_ICON[status] or "?", label, path)
-		local file_line_index, rendered_file_line = add_line(result, file_line, "Comment")
-		highlight_text(
-			result,
-			file_line_index,
-			rendered_file_line,
-			STATUS_ICON[status] or "?",
-			STATUS_HL[status] or "Comment"
-		)
-		highlight_text(result, file_line_index, rendered_file_line, label, STATUS_HL[status] or "Comment")
+		local icon = STATUS_ICON[status] or "?"
+		local _, _, rows = panel.add_line(result, string.format("%s %s %s", icon, label, file_display_path(file)))
+		highlight_text(result, rows, icon, status_hl(status))
+		highlight_text(result, rows, label, status_hl(status))
 
 		if status == "rejected" then
-			add_line(result, "    not applied", "Comment")
+			panel.add_line(result, "  not applied", style.border_hl)
 		elseif status == "failed" then
-			add_line(result, "    failed", "ErrorMsg")
+			panel.add_line(result, "  failed", style.body_error_hl)
 		elseif status == "partial" then
 			if
 				text_util.is_present(file.proposedDiff)
 				and text_util.is_present(file.diff)
 				and vim.trim(file.proposedDiff) ~= vim.trim(file.diff)
 			then
-				add_line(result, "    actual differs from proposed", "Comment")
+				panel.add_line(result, "  actual differs from proposed", style.border_hl)
 			else
-				add_line(result, "    partially applied", "Comment")
+				panel.add_line(result, "  partially applied", style.border_hl)
 			end
 
 			local proposed_additions, proposed_deletions = parse_diff_stats(file.proposedDiff)
-			local stats = "    actual "
-				.. stats_label(file.additions, file.deletions)
-				.. ", proposed "
-				.. stats_label(proposed_additions, proposed_deletions)
-			local stats_line_index, stats_line = add_line(result, stats, "Comment")
-			highlight_stats(result, stats_line_index, stats_line, file.additions, file.deletions)
-			highlight_text_after(
-				result,
-				stats_line_index,
-				stats_line,
-				"+" .. tostring(proposed_additions),
-				"DiffAdd",
-				", proposed "
-			)
-			highlight_text_after(
-				result,
-				stats_line_index,
-				stats_line,
-				"-" .. tostring(proposed_deletions),
-				"DiffDelete",
-				", proposed "
-			)
+			local _, _, stats_rows = panel.add_line(result, "  actual " .. stats_label(file.additions, file.deletions)
+				.. " · proposed " .. stats_label(proposed_additions, proposed_deletions), style.border_hl)
+			highlight_stats(result, stats_rows, file.additions, file.deletions)
+			highlight_stats(result, stats_rows, proposed_additions, proposed_deletions, " · proposed ")
 		else
-			local stats = "    actual " .. stats_label(file.additions, file.deletions)
-			local stats_line_index, stats_line = add_line(result, stats, "Comment")
-			highlight_stats(result, stats_line_index, stats_line, file.additions, file.deletions)
+			local _, _, stats_rows = panel.add_line(result, "  actual " .. stats_label(file.additions, file.deletions),
+				style.border_hl)
+			highlight_stats(result, stats_rows, file.additions, file.deletions)
 		end
 
 		local diagnostics = diagnostic_count(file.diagnostics)
 		if diagnostics > 0 then
-			add_line(result, "    " .. tostring(diagnostics) .. " diagnostics", "Comment")
+			panel.add_line(result, "  " .. tostring(diagnostics) .. " diagnostics", style.border_hl)
 			for _, diagnostic in ipairs(require("opencode.diagnostics").parse(file.diagnostics, file.filePath)) do
 				if diagnostic.path == file.filePath or diagnostic.path == file.relativePath then
-					local label = ({ "Error", "Warning", "Info", "Hint" })[diagnostic.severity] or "Diagnostic"
-					add_line(result, string.format("    %s [%d:%d] %s", label, diagnostic.line, diagnostic.character + 1,
-						diagnostic.message), diagnostic.severity == 1 and "DiagnosticError" or "DiagnosticWarn")
+					local severity = ({ "Error", "Warning", "Info", "Hint" })[diagnostic.severity] or "Diagnostic"
+					panel.add_line(result, string.format("  %s [%d:%d] %s", severity, diagnostic.line, diagnostic.character + 1,
+						diagnostic.message), diagnostic.severity == 1 and style.body_error_hl or style.border_hl)
 				end
 			end
-			add_line(result, "    /diagnostics: list and jump", "Comment")
+			panel.add_line(result, "  /diagnostics: list and jump", style.border_hl)
 		end
 
 		if index < #model.files then
-			add_line(result, "", nil)
+			panel.add_blank(result)
 		end
 	end
 
+	style.add_border(result, true)
+	style.contain_background(result)
+	result.lines[#result.lines + 1] = ""
 	return result
 end
 
 ---@return table
 local function render_pending()
 	local result = { lines = {}, highlights = {} }
-	add_line(result, "~ Preparing file changes...", "Comment", { prefix = "   " })
+	render.add_panel_line(result, "~ Preparing file changes… " .. tool_panel.anim_frame(), style.header_hl, { prefix = " " })
+	result.lines[#result.lines + 1] = ""
 	return result
 end
 

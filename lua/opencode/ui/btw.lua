@@ -53,8 +53,7 @@ end
 local clip = require("opencode.util.text").truncate
 
 local function binding(scope, action)
-	local label = keymaps.label(scope, action)
-	return label ~= "(disabled)" and label or ""
+	return keymaps.hint({ keymaps.label(scope, action) }, { omit_disabled = true }) or ""
 end
 
 local function header(view, width)

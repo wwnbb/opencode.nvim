@@ -139,7 +139,10 @@ local hooks = {
 	end,
 	in_flight = function(record) return records[record.id] == record and receiving(record) end,
 	fail = function(record, message) discard(record); notify(message) end,
-	unavailable = function(record) discard(record) end,
+	unavailable = function(record)
+		discard(record)
+		notify("Server is unavailable")
+	end,
 	resolve_model = function(lifecycle, feature_config) return lifecycle.resolve_completion_model(feature_config) end,
 	generate = function(...) return require("opencode.client").generate_completion(...) end,
 	update = function(snapshot, response)
@@ -150,7 +153,10 @@ local hooks = {
 		snapshot.text, snapshot.phase = text, text and "streaming" or "pending"
 		local displayed
 		if text then displayed = ui.show(snapshot, text) else displayed = ui.pending(snapshot) end
-		if displayed == false then discard(snapshot) end
+		if displayed == false then
+			discard(snapshot)
+			notify("Could not display completion")
+		end
 	end,
 	respond = function(snapshot, request_err, response)
 		if request_err then
@@ -165,7 +171,9 @@ local hooks = {
 			return
 		end
 		snapshot.text, snapshot.phase = text, "ready"
-		if ui.show(snapshot, text) == false then discard(snapshot)
+		if ui.show(snapshot, text) == false then
+			discard(snapshot)
+			notify("Could not display completion")
 		elseif snapshot.accept_requested then M.accept(snapshot.id) end
 	end,
 }

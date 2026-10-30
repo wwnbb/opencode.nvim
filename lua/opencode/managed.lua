@@ -83,10 +83,17 @@ function M.discover(attempt, context, callback, allow_start)
 	local current = context.current
 	local lookup
 	local function start_then_lookup()
-		return M.native_cli(context.opts(), { "service", "start" }, function(start_err)
-			if not current() then return end
+		-- Discovery handles expose cancel(); a cancelled start must not resume lookup.
+		local cancelled = false
+		local process = M.native_cli(context.opts(), { "service", "start" }, function(start_err)
+			if cancelled or not current() then return end
 			if start_err then callback(start_err) else lookup(false) end
 		end)
+		return { cancel = function()
+			if cancelled then return end
+			cancelled = true
+			if process and type(process.kill) == "function" then pcall(process.kill, process, 15) end
+		end }
 	end
 	lookup = function(can_start)
 		if not current() then return end

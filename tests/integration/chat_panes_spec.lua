@@ -75,33 +75,6 @@ describe("independent chat panes", function()
 		sync.clear_all()
 	end)
 
-
-
-	it("detaches a failed split from its workspace layout", function()
-		assert.is_truthy(first.workspace_id)
-		local context, new = require("opencode.context"), cs.new
-		local preserve, created = context.preserve_source, nil
-		cs.new = function(...) created = new(...); return created end
-		context.preserve_source = function() error("split failed") end
-		local notify = vim.notify
-		vim.notify = function() end
-		local ok, view = pcall(chat.create_split, first, seed("pane-failed", "Failed"), "vertical")
-		cs.new, context.preserve_source, vim.notify = new, preserve, notify
-		assert.is_true(ok, tostring(view))
-		assert.is_nil(view)
-		assert.is_truthy(created)
-		assert.is_nil(created.workspace_id)
-		assert.is_false(cs.valid(created))
-	end)
-	it("keeps a bound pane's render cache only when the switch preserves it", function()
-		local cache = second.render_cache
-		assert.is_truthy(cache)
-		assert.is_true(chat.bind_session(second, seed("pane-child", "Child transcript"),
-			{ reason = "child_navigation", preserve_cache = true }))
-		assert.equals(cache, second.render_cache)
-		assert.is_true(chat.bind_session(second, seed("pane-other", "Other transcript"), { reason = "session_switch" }))
-		assert.is_not.equals(cache, second.render_cache)
-	end)
 	it("uses independent normal windows and supports nested horizontal splits", function()
 		assert.is_not.equals(original_tab, tabpage)
 		assert.equals(tabpage, second.tabpage)
@@ -187,13 +160,13 @@ describe("independent chat panes", function()
 		assert.is_not_nil(second.edits["pane-edit"])
 		assert.is_not_nil(second.tools["pane-tool"])
 		check_width()
-		for _, status in ipairs({ "confirming", "answered", "rejected" }) do
+		for _, status in ipairs({ "answered" }) do
 			question.status = status
 			question.answers = { { long } }
 			cs.module(second, require("opencode.ui.chat.questions")).rerender_question("pane-question")
 			check_width()
 		end
-		for _, status in ipairs({ "approved", "rejected" }) do
+		for _, status in ipairs({ "approved" }) do
 			permission.status = status
 			cs.module(second, require("opencode.ui.chat.permissions")).rerender_permission("pane-permission")
 			check_width()

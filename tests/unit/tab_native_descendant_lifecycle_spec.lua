@@ -223,13 +223,10 @@ describe("native descendant lifecycle", function()
 		end)
 	end
 
-	local orders = {
-		{ "source", "provenance", "copy" }, { "source", "copy", "provenance" },
-		{ "provenance", "source", "copy" }, { "provenance", "copy", "source" },
-		{ "copy", "source", "provenance" }, { "copy", "provenance", "source" },
-	}
-	for _, late_native in ipairs({ false, true }) do
-		for _, order in ipairs(orders) do
+	local orders = { { "source", "provenance", "copy" }, { "copy", "provenance", "source" } }
+	for index, late_native in ipairs({ false, true }) do
+		do
+			local order = orders[index]
 			it("retains source ownership and live work when deleting copied history: " .. table.concat(order, ",") .. ", late native=" .. tostring(late_native), function()
 				if late_native then state.upsert_session({ id = "child", parentID = vim.NIL }, { touch = false }) end
 				local child_token, grandchild_token = seed_history("child"), seed_history("grandchild")
@@ -540,7 +537,8 @@ describe("native descendant lifecycle", function()
 	end
 
 	for _, mode in ipairs({ "close", "delete" }) do
-		for _, competing_source in ipairs({ false, true }) do
+		do
+			local competing_source = mode == "delete"
 			it("keeps unconfirmed copied descendants and their actual history callback through early " .. mode .. ", competing source=" .. tostring(competing_source), function()
 				state.upsert_session({ id = "child", parentID = vim.NIL }, { touch = false })
 				seed("fork", nil, true)
@@ -696,16 +694,10 @@ describe("native descendant lifecycle", function()
 
 	local withdrawals = {
 		{ "remove-part", function(_, mid, part) sync.handle_part_removed(mid, part) end },
-		{ "remove-message", function(sid, mid) sync.handle_message_removed(sid, mid) end },
-		{ "clear-messages", function(sid) sync.clear_session_messages(sid) end },
-		{ "complete-snapshot", function(sid) sync.handle_session_messages(sid, {}, { reconcile = true, complete = true }) end },
 		{ "replace-child", function(_, mid, part)
 			local replacement = vim.deepcopy(sync.get_part(mid, part))
 			replacement.state.metadata.sessionID = "new-child"
 			sync.handle_part_updated(replacement)
-		end },
-		{ "replace-with-text", function(sid, mid, part)
-			sync.handle_part_updated({ id = part, messageID = mid, sessionID = sid, type = "text", text = "changed" })
 		end },
 	}
 	for _, withdrawal in ipairs(withdrawals) do

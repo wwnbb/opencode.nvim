@@ -53,7 +53,7 @@ function M.open(id, opts, callback)
 				finish(nil, info)
 			end)
 		end)
-	end)
+	end, guard.dispose)
 end
 
 -- Directory policy for new sessions. A split stays in its source session's

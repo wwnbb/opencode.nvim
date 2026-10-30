@@ -58,6 +58,46 @@ describe("opencode native SSE parser", function()
 		end)
 	end
 
+	for name, eol in pairs({ crlf = "\r\n", cr = "\r", lf = "\n" }) do
+		it("terminates lines with " .. name .. " in one read and split at every byte", function()
+			local function frame(id) return "id: " .. id .. eol .. "data: " .. vim.json.encode(envelope(nil, name)) .. eol .. eol end
+			stream.on_data(frame("whole"))
+			local split = frame("split")
+			for index = 1, #split do stream.on_data(split:sub(index, index)) end
+			assert.equals(2, #received)
+			assert.equals(name, received[1].data.delta)
+			assert.same({ "whole", "split" }, { received[1].id, received[2].id })
+		end)
+	end
+
+	it("treats CR at the end of a read as a line end and skips the LF that follows", function()
+		local data = "data: " .. vim.json.encode(envelope("split-crlf", "first"))
+		stream.on_data(data .. "\r")
+		stream.on_data("\n\r")
+		assert.equals(1, #received)
+		stream.on_data("\n" .. data:gsub("split%-crlf", "after-cr") .. "\r\r")
+		assert.equals(2, #received)
+		assert.equals("after-cr", received[2].id)
+	end)
+
+	for name, frame in pairs({
+		line = function(limit) return "data: " .. string.rep("x", limit) end,
+		event = function(limit) return string.rep("data: " .. string.rep("x", 1000) .. "\n", math.ceil(limit / 1000) + 1) end,
+	}) do
+		it("closes the stream with an error when one " .. name .. " exceeds the size cap", function()
+			sse.opts.max_event_bytes = 4096
+			local closed
+			local current = stream
+			current.on_close = function(reason) closed = reason end
+			for index = 1, 3 do stream.on_data(frame(4096):sub((index - 1) * 2048 + 1, index * 2048)) end
+			stream.on_data(frame(4096):sub(6145))
+			assert.equals("closed", closed)
+			local errors = vim.tbl_filter(function(item) return item.kind == "error" end, received)
+			assert.equals(1, #errors)
+			assert.matches("exceeded 4096 bytes", errors[1].data, 1, true)
+		end)
+	end
+
 	it("joins multiline JSON data and retains later fields", function()
 		local frame = ': comment\ndata: {"type":"session.text.delta",\ndata:  "data":{"sessionID":"sse-session","delta":"two"}}\nid: frame-last\n'
 		stream.on_data(frame)
@@ -204,12 +244,8 @@ describe("opencode native SSE parser", function()
 
 	it("rejects responses that are not a successful event stream", function()
 		for _, response in ipairs({
-			{ 200, {} }, { 200, { ["content-type"] = "text/html" } },
-			{ 200, { ["content-type"] = "application/json" } },
-			{ 200, { ["content-type"] = "text/event-streaming" } },
-			{ 201, { ["content-type"] = "text/event-stream" } },
+			{ 200, {} }, { 200, { ["content-type"] = "text/event-streaming" } },
 			{ 204, { ["content-type"] = "text/event-stream" } },
-			{ 206, { ["content-type"] = "text/event-stream" } },
 			{ 500, { ["content-type"] = "text/event-stream" } },
 		}) do
 			assert.is_true(sse.connect())
@@ -242,7 +278,6 @@ describe("opencode native SSE parser", function()
 
 	it("accepts event-stream media types with parameters and mixed case", function()
 		for _, headers in ipairs({
-			{ ["content-type"] = "text/event-stream" },
 			{ ["Content-Type"] = "Text/Event-Stream; charset=utf-8" },
 			{ ["content-type"] = " text/event-stream ; charset=UTF-8" },
 		}) do

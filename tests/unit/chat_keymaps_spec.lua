@@ -117,7 +117,7 @@ describe("configurable chat controls", function()
 		assert.equals(4, selected, "disabling option selection leaves native counts available")
 	end)
 
-	it("renders aliases and disabled actions in question and permission hints", function()
+	it("renders aliases and omits disabled actions in question and permission hints", function()
 		chat.config = { keymaps = { confirm = { "<F3>", "<F4>" }, back = "<F5>",
 			custom_input = false, widget_message = "<F6>", select_1 = "<F1>" } }
 		local question = require("opencode.ui.question_widget").get_lines_for_question("q", {
@@ -125,7 +125,8 @@ describe("configurable chat controls", function()
 		}, { current_tab = 1, selections = {} }, "pending")
 		local rendered = text(question)
 		assert.is_truthy(rendered:find("<F3> / <F4> continue", 1, true))
-		assert.is_truthy(rendered:find("(disabled) custom", 1, true))
+		-- Unbound actions are left out of the hint rather than shown as "(disabled)".
+		assert.is_nil(rendered:find("(disabled)", 1, true))
 		assert.is_truthy(rendered:find("<F1> select", 1, true))
 		local permission = require("opencode.ui.permission_widget").get_lines_for_permission("p", {
 			permission_type = "bash", status = "pending", selected_option = 1,
@@ -161,8 +162,8 @@ describe("configurable chat controls", function()
 			questions = { { field_type = "external", question = "Authorize", url = url } },
 		}, { keymap_scope = "form", current_tab = 1, selections = {} }, "pending")
 		local rendered = text(lines)
-		assert.is_truthy(rendered:find("<F7>: open link", 1, true))
-		assert.is_truthy(rendered:find("<F8>: copy link", 1, true))
+		assert.is_truthy(rendered:find("<F7> open link", 1, true))
+		assert.is_truthy(rendered:find("<F8> copy link", 1, true))
 		assert.is_nil(rendered:find("<F3>", 1, true))
 		local notices = {}
 		replace(vim, "notify", function(message) notices[#notices + 1] = message end)

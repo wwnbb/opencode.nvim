@@ -141,6 +141,8 @@ function M.create_input_popup(opts)
 			},
 		}
 	else
+		local bottom = keymaps.hint({ { keymaps.label("popup", "submit"), "submit" },
+			{ keymaps.label("popup", "cancel"), "cancel" } }, { omit_disabled = true })
 		popup_opts.input = {
 			relative = relative,
 			position = { row = row, col = col },
@@ -151,7 +153,7 @@ function M.create_input_popup(opts)
 				text = {
 					top = opts.title or " Input ",
 					top_align = "center",
-					bottom = " " .. keymaps.label("popup", "submit") .. ":submit  " .. keymaps.label("popup", "cancel") .. ":cancel ",
+					bottom = bottom and (" " .. bottom .. " "),
 					bottom_align = "center",
 				},
 			},
@@ -210,10 +212,11 @@ function M.create_input_popup(opts)
 			local count = vim.fn.strchars(secret)
 			local current_width = vim.api.nvim_win_get_width(input.winid)
 			local title = vim.fn.strcharpart(vim.trim(opts.title or "Input"), 0, math.max(0, current_width - 9))
-			local cancel_label, submit_label = password_label("cancel"), password_label("submit")
+			local cancel_label = keymaps.hint({ password_label("cancel") }) or ""
 			local header = "  " .. title
 				.. string.rep(" ", math.max(1, current_width - vim.fn.strdisplaywidth(title) - vim.fn.strdisplaywidth(cancel_label) - 4)) .. cancel_label .. "  "
-			local footer = submit_label ~= "" and ("  " .. submit_label .. " submit") or ""
+			local footer = keymaps.hint({ { password_label("submit"), "submit" } })
+			footer = footer and ("  " .. footer) or ""
 			local value = count > 0 and secret or (opts.prompt or "Input")
 			-- Scroll only the field; moving the window's leftcol also hides the header/footer.
 			local field_width = math.max(0, current_width - 5)

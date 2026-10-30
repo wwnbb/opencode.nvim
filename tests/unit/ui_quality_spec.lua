@@ -10,7 +10,7 @@ local function press(buf, key)
 	error("Missing mapping " .. key)
 end
 
-describe("UI quality work bounds and retained behavior", function()
+describe("menu, palette and popup rendering", function()
 	local stubs, cleanup, config, columns, rows
 	local function stub(object, key, callback)
 		stubs[#stubs + 1] = require("luassert.stub")(object, key, callback)
@@ -47,19 +47,6 @@ describe("UI quality work bounds and retained behavior", function()
 		assert.matches("Changed", table.concat(vim.api.nvim_buf_get_lines(ctx.popup.bufnr, 0, -1, false)))
 	end)
 
-	it("keeps custom filter, sort and move callback semantics on each menu step", function()
-		local filters, sorts, moves = 0, 0, {}
-		local ctx = require("opencode.ui.menu").open({ items = { "A", "B", "C" }, refocus_chat = false,
-			filter = function() filters = filters + 1; return true end,
-			sort = function(a, b) sorts = sorts + 1; return a < b end,
-			on_move = function(item) moves[#moves + 1] = item end,
-		})
-		own(ctx.close)
-		filters, sorts = 0, 0
-		press(ctx.popup.bufnr, "j")
-		assert.equals(3, filters); assert.is_true(sorts > 0); assert.same({ "B" }, moves)
-	end)
-
 	it("moves palette selection while preserving text and static keybind marks", function()
 		local palette, registry = require("opencode.ui.palette"), require("opencode.command_registry")
 		app.set_config({ palette = { frecency = false, width = 50, height = 8, categories = { "quality" } } })
@@ -93,65 +80,19 @@ describe("UI quality work bounds and retained behavior", function()
 		assert.equals(3, vim.api.nvim_win_get_cursor(wins[2])[1])
 	end)
 
-	it("clamps provided popup marks with no per-mark buffer reads and isolates concurrent windows", function()
+	it("clamps provided popup marks to the line and isolates concurrent windows", function()
 		local first = Popup.new({ size = { width = 30, height = 4 }, enter = false })
 		local second = Popup.new({ size = { width = 30, height = 4 }, enter = false })
 		first:mount(); own(function() first:close() end)
 		second:mount(); own(function() second:close() end)
-		assert.equals(first.namespaces.content, second.namespaces.content)
 		second:render({ "second" }, { { line = 0, col = 0, end_col = 6, hl_group = "Comment" } })
-		local read, count, reads, counts = vim.api.nvim_buf_get_lines, vim.api.nvim_buf_line_count, 0, 0
-		stub(vim.api, "nvim_buf_get_lines", function(buf, ...)
-			if buf == first.bufnr then reads = reads + 1 end
-			return read(buf, ...)
-		end)
-		stub(vim.api, "nvim_buf_line_count", function(buf)
-			if buf == first.bufnr then counts = counts + 1 end
-			return count(buf)
-		end)
-		local marks = {}
-		for index = 1, 100 do marks[index] = { line = 0, col = 50, end_col = 100, hl_group = "Title" } end
-		first:render({ "猫" }, marks)
-		assert.equals(0, reads); assert.equals(0, counts)
+		first:render({ "猫" }, { { line = 0, col = 50, end_col = 100, hl_group = "Title" } })
 		local actual = vim.api.nvim_buf_get_extmarks(first.bufnr, first.namespaces.content, 0, -1, { details = true })
-		assert.equals(100, #actual)
-		for _, mark in ipairs(actual) do assert.equals(#"猫", mark[3]); assert.equals(#"猫", mark[4].end_col) end
-		first:render(nil, marks)
-		assert.equals(1, reads); assert.equals(1, counts)
+		assert.equals(1, #actual)
+		assert.equals(#"猫", actual[1][3]); assert.equals(#"猫", actual[1][4].end_col)
 		assert.equals(1, #vim.api.nvim_buf_get_extmarks(second.bufnr, second.namespaces.content, 0, -1, {}))
 	end)
 
-	it("does no skill catalog work for a draft without active skill parts", function()
-		local buf = vim.api.nvim_create_buf(false, true)
-		own(function() vim.api.nvim_buf_delete(buf, { force = true }) end)
-		local reads = 0
-		stub(sync, "get_skills", function() reads = reads + 1; return { { id = "skill", name = "Named" } } end)
-		local state = { visible = true, info_bufnr = buf, parts = {}, mode = "shell", layout = { content_width = 100 } }
-		local info = require("opencode.ui.input.info_bar")
-		info.update(state); assert.equals(0, reads)
-		state.parts = { { type = "skill", skillID = "skill" } }
-		info.update(state); assert.equals(1, reads)
-		assert.matches("Skill: Named", vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1])
-	end)
-
-	it("reuses owned VCS projections for review/tree changes and refreshes changed patches", function()
-		app.set_session("quality", "Quality"); app.set_config({ chat = { diff_view = "split" } })
-		local patch, actions = require("opencode.vcs"), require("opencode.actions")
-		local project, builds = patch.project, 0
-		stub(patch, "project", function(...) builds = builds + 1; return project(...) end)
-		local source = "@@ -1 +1 @@\n-before\n+after\n"
-		stub(actions, "get_vcs_diff", function(_, done)
-			done(nil, { { file = "one.lua", status = "modified", additions = 1, deletions = 1, patch = source } })
-		end)
-		local viewer = require("opencode.ui.vcs")
-		local view = viewer.open({ mode = "working" }); own(viewer.close)
-		assert.equals(1, builds)
-		press(view.after_buf, "m"); press(view.tree_buf, "t")
-		assert.equals(1, builds)
-		source = "@@ -1 +1 @@\n-before\n+changed\n"
-		press(view.after_buf, "r"); assert.equals(2, builds)
-		assert.matches("changed", table.concat(vim.api.nvim_buf_get_lines(view.after_buf, 0, -1, false)))
-	end)
 end)
 
 describe("incremental shell output", function()

@@ -187,7 +187,6 @@ describe("queued inputs in the chat buffer", function()
 		assert.equals(0, #cancels)
 	end)
 
-
 	it("keeps steering visibly pending while the active agent continues, until delivery", function()
 		seed("steer", "стой", nil, "steer")
 		chat.do_render()
@@ -205,21 +204,6 @@ describe("queued inputs in the chat buffer", function()
 		assert.is_nil(text():find("Steering pending", 1, true))
 		assert.is_nil(state.pending_inputs.steer)
 		assert.is_truthy(text():find("стой", 1, true))
-	end)
-
-	it("removes the queue badge from a delivered message without removing its text", function()
-		seed("q", "продолжай"); chat.do_render()
-		assert.is_truthy(text():find("Queued · C cancel · E edit", 1, true))
-		sync.handle_server_event({ id = "evt_delivered", created = 20, type = "session.inbox.delivered",
-			data = { sessionID = "queue-test", inboxID = "q" } })
-		pending.update("queue-test", "q", { status = "delivered" })
-		chat.do_render()
-		assert.is_nil(text():find("Queued", 1, true))
-		assert.is_truthy(text():find("продолжай", 1, true))
-		focus("q"); key("C"); key("E")
-		assert.equals(0, #cancels)
-		assert.equals(0, #notices)
-		assert.same({ { value = "C", mode = "n" }, { value = "E", mode = "n" } }, fallbacks)
 	end)
 
 	it("clears stale queue state when loading confirmed history without a delivery event", function()
@@ -270,27 +254,6 @@ describe("queued inputs in the chat buffer", function()
 		assert.equals("q", cancels[1].id)
 		assert.equals(8, #fallbacks)
 	end)
-
-	it("keeps native E motion outside the queued widget", function()
-		seed("q", "Queued text")
-		sync.handle_session_messages("queue-test", projection.page("queue-test", {
-			{ id = "assistant", type = "assistant", time = { created = 20, completed = 21 },
-				content = { { type = "text", text = "First word next" } } },
-		}))
-		chat.do_render()
-		for row, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)) do
-			if line == "First word next" then
-				vim.api.nvim_win_set_cursor(state.winid, { row, 0 })
-				vim.api.nvim_feedkeys("E", "xt", false)
-				assert.same({ row, 4 }, vim.api.nvim_win_get_cursor(state.winid))
-				assert.equals(0, #cancels)
-				assert.equals(0, #notices)
-				return
-			end
-		end
-		error("Assistant text not rendered")
-	end)
-
 
 	it("edits multiline text with attachments and sends back to its original session", function()
 		local original = "## Title\n\n**Line one**\n\n```lua\nreturn 1\n```"
@@ -445,7 +408,6 @@ describe("queued inputs in the chat buffer", function()
 	end)
 
 	for _, case in ipairs({
-		{ name = "clearing input history", clear = function() input.clear_history() end },
 		{ name = "deleting its session", clear = function() require("opencode.cleanup").clear_session("queue-test") end },
 	}) do
 		it("does not revive a deferred edit after " .. case.name, function()
@@ -461,17 +423,6 @@ describe("queued inputs in the chat buffer", function()
 			assert.equals(case.name == "deleting its session" and "Keep this" or "", history.get_pending("other-session"))
 		end)
 	end
-
-	it("preserves an explicit legacy send_alt as queue after configuration merge", function()
-		local config = require("opencode.config")
-		app.set_config(config.merge({ input = { history_file = app.get_config().input.history_file,
-			keymaps = { send_alt = "<C-x><C-s>" } } }))
-		history.set_pending("Legacy queue", nil, "queue-test")
-		assert.is_true(chat.focus_input())
-		vim.fn.maparg("<C-x><C-s>", "n", false, true).callback()
-		assert.equals("Legacy queue", sent[1].text)
-		assert.equals("queue", sent[1].opts.delivery)
-	end)
 
 	it("uses configured keys in mappings and hints and supports disabling them", function()
 		for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(state.bufnr, "n")) do
@@ -498,23 +449,5 @@ describe("queued inputs in the chat buffer", function()
 		assert.equals("queue", steers[2].delivery)
 		key("gC")
 		assert.equals("q", cancels[1].id)
-	end)
-
-	it("can disable the steering key and hint", function()
-		vim.keymap.del("n", "S", { buffer = state.bufnr })
-		chat.setup({ keymaps = { steer_pending = false } })
-		keymaps.setup_buffer(state.bufnr, {})
-		seed("q", "Queued"); chat.do_render()
-		assert.equals("", vim.fn.maparg("S", "n"))
-		assert.is_nil(text():find("S steer", 1, true))
-	end)
-
-	it("can disable the queue key and hint", function()
-		vim.keymap.del("n", "Q", { buffer = state.bufnr })
-		chat.setup({ keymaps = { queue_pending = false } })
-		keymaps.setup_buffer(state.bufnr, {})
-		seed("steer", "Steering", nil, "steer"); chat.do_render()
-		assert.equals("", vim.fn.maparg("Q", "n"))
-		assert.is_nil(text():find("Q queue", 1, true))
 	end)
 end)

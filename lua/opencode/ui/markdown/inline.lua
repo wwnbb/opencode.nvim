@@ -346,7 +346,9 @@ local function parse_table(source, references)
 	return chunks, false
 end
 
-function M.parse(source, base, language, context)
+---A transient source (the growing tail of a streamed part) reuses a cached
+---result but is never admitted: each delta would add an entry nobody reads.
+function M.parse(source, base, language, context, transient)
 	language = language or "markdown_inline"
 	local generation = refresh_cache(context)
 	local available = parser_available(language)
@@ -361,12 +363,13 @@ function M.parse(source, base, language, context)
 	M.invalidate_context(context)
 	-- The first full computation may have loaded one or both vendor queries.
 	signature = available and not retry and query_signature(language, generation, context)
-	if signature then inline_cache:put(owner, signature, chunks) else inline_cache:delete(owner) end
+	if not signature then inline_cache:delete(owner)
+	elseif not transient then inline_cache:put(owner, signature, chunks) end
 	-- Neither first-build results nor hits expose the retained snapshot.
 	return copy_chunks(chunks), retry, signature ~= nil and signature ~= false
 end
 
-function M.table(source, references, context)
+function M.table(source, references, context, transient)
 	local generation = refresh_cache(context)
 	local available = parser_available("markdown_inline")
 	local references_key = reference_signature(references)
@@ -375,7 +378,7 @@ function M.table(source, references, context)
 	if cached then return copy_chunks(cached), false, true end
 	local chunks, retry = parse_table(source, references)
 	M.invalidate_context(context)
-	if available and signature and not retry then table_cache:put(source, signature, chunks) end
+	if available and signature and not retry and not transient then table_cache:put(source, signature, chunks) end
 	-- Table cells traverse their AST directly with injections disabled; they
 	-- do not execute the vendor highlight query's predicates or directives.
 	return copy_chunks(chunks), retry, not retry

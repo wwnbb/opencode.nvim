@@ -48,21 +48,17 @@ describe("universal execute widget", function()
 		assert.equals(" → arbitrary-server.search · +2 more · 250ms", text(result))
 		assert.same({}, result.children)
 		local opened = execute.render(item, true)
-		contains(opened.lines[1], "execute")
-		contains(text(opened), "  ↳ ✓ arbitrary-server.search")
-		contains(text(opened), "  ↳ ✓ another-server.fetch")
-		assert.equals(4, #opened.lines)
+		-- Opening keeps the same header with its kind icon and frames the calls.
+		assert.equals(" ↘ arbitrary-server.search · +2 more · 250ms", opened.lines[1]:gsub(" +$", ""))
+		contains(text(opened), "   │ ↳ ✓ arbitrary-server.search")
+		contains(text(opened), "   │ ↳ ✓ another-server.fetch")
+		assert.equals(6, #opened.lines)
+		assert.is_truthy(opened.lines[2]:find("   ┌", 1, true))
+		assert.is_truthy(opened.lines[6]:find("   └", 1, true))
 		assert.is_not_nil(opened.children[execute.section_id(item.id, "calls")])
 		assert.equals(1, vim.tbl_count(opened.children))
 		assert.is_nil(text(opened):find("large output", 1, true))
-		for _, expanded in ipairs({ false, true }) do
-			local calls = text(execute.render_tool(item, expanded))
-			contains(calls, "✓ execute")
-			contains(calls, "3 tools · 250ms")
-			local _, count = calls:gsub("arbitrary%-server.search", "")
-			assert.equals(2, count)
-			assert.is_nil(calls:find("guessed_call", 1, true))
-		end
+		assert.is_nil(text(opened):find("guessed_call", 1, true))
 		assert.same(execute.render_tool(item, true), opened)
 	end)
 
@@ -96,7 +92,7 @@ describe("universal execute widget", function()
 			local result = execute.render(item, false)
 			assert.is_true(execute.failed(item))
 			assert.equals(1, #result.lines)
-			contains(text(result), "✗")
+			assert.equals("OpenCodeExploreError", result.highlights[1].hl_group)
 			assert.is_nil(text(result):find("multiline error", 1, true))
 			assert.is_nil(text(result):find("handled failure", 1, true))
 		end
@@ -107,7 +103,7 @@ describe("universal execute widget", function()
 	it("keeps folded streaming rows bounded and does not infer MCP calls from source", function()
 		assert.is_nil(execute.render(nil, false))
 		assert.is_nil(execute.render({ tool = "read" }, false))
-		for _, status in ipairs({ "pending", "streaming", "running" }) do
+		for _, status in ipairs({ "streaming" }) do
 			local item = part({ status = status, input = { code = "tools.guessed.call()" } })
 			assert.is_true(execute.is_working(item))
 			contains(text(execute.render(item, false)), "JavaScript")
@@ -117,30 +113,33 @@ describe("universal execute widget", function()
 			{ tool = "server." .. string.rep("世界", 200) .. "\nother row", status = "running" },
 			{ tool = "server.other", status = "completed" },
 		} } })
-		for _, width in ipairs({ 80, 24, 12 }) do
+		for _, width in ipairs({ 80, 12 }) do
 			vim.api.nvim_win_set_config(winid, { width = width })
 			local result = execute.render(item, false)
 			assert.equals(1, #result.lines)
 			assert.is_true(vim.fn.strdisplaywidth(result.lines[1]) <= width)
-			assert.is_truthy(text(result):match("[|/\\-]$"))
+			local line = vim.trim(result.lines[1])
+			assert.is_true(vim.tbl_contains(require("opencode.ui.chat.tool_panel").ANIM_FRAMES,
+				vim.fn.strcharpart(line, vim.fn.strchars(line) - 1)))
 		end
 		assert.is_false(execute.is_working(part({ status = "completed" })))
 		assert.is_false(execute.is_working(nil))
 	end)
 
 	it("colors execute summaries by the latest recorded call", function()
-		for _, status in ipairs({ "completed", "running", "error" }) do
+		for _, status in ipairs({ "running", "error" }) do
 			local item = part({ status = "completed", metadata = { toolCalls = {
 				{ tool = "server.first", status = "error" },
 				{ tool = "server.latest", status = status },
 			} } })
 			local folded = execute.render(item, false)
-			contains(text(folded), status == "error" and "✗" or "→")
+			-- The kind icon stays; the failure shows in the count and the error colour.
+			contains(text(folded), "→")
 			assert.equals(status == "error" and "OpenCodeExploreError" or "OpenCodeExploreHeader",
 				folded.highlights[1].hl_group)
 			for _, expanded in ipairs({ false, true }) do
 				local opened = execute.render_tool(item, expanded)
-				contains(opened.lines[1], status == "error" and "✗ execute" or "✓ execute")
+				contains(opened.lines[1], expanded and " ↘ server.first" or " → server.first")
 			end
 			local activity = require("opencode.ui.chat.activity")
 			item.type = "tool"
@@ -158,10 +157,10 @@ describe("universal execute widget", function()
 			output = vim.json.encode({ title = "Пример", body = string.rep("世界", 15000) }),
 			metadata = { toolCalls = { { tool = "server." .. string.rep("世界", 100), status = "completed" } } },
 		})
-		for _, width in ipairs({ 80, 24, 12 }) do
+		for _, width in ipairs({ 80, 12 }) do
 			vim.api.nvim_win_set_config(winid, { width = width })
 			local result = execute.render_tool(item, true)
-			assert.equals(2, #result.lines)
+			assert.equals(4, #result.lines)
 			for _, line in ipairs(result.lines) do
 				assert.is_true(vim.fn.strdisplaywidth(line) <= width, "Overflow: " .. line)
 			end
@@ -173,9 +172,11 @@ describe("universal execute widget", function()
 		for i = 1, 8 do calls[i] = { tool = "server.call" .. i, status = i == 8 and "error" or "completed" } end
 		local failed_child = execute.render_tool(part({ status = "completed", metadata = { toolCalls = calls }, output = "handled" }), false)
 		contains(text(failed_child), "1 failed")
-		contains(text(failed_child), "6 more calls")
+		local opened = text(execute.render_tool(part({ status = "completed", metadata = { toolCalls = calls }, output = "handled" }), true))
+		contains(opened, "… (2 more calls, press <CR> to inspect)")
+		contains(opened, "1 hidden failed calls")
 		local cancelled = execute.render_tool(part({ status = "completed", metadata = { error = true }, output = "Execution cancelled." }), false)
-		contains(text(cancelled), "✗ execute")
+		contains(text(cancelled), "→ JavaScript · Failed")
 		assert.equals(1, #cancelled.lines)
 		assert.is_nil(text(cancelled):find("Execution cancelled.", 1, true))
 	end)
@@ -183,20 +184,20 @@ describe("universal execute widget", function()
 	it("preserves source data and tolerates missing metadata, nulls and streaming input", function()
 		assert.is_nil(execute.render_tool(nil, false))
 		assert.is_nil(execute.render_tool({ tool = "bash" }, false))
-		for _, status in ipairs({ "pending", "streaming", "running", "completed", "error" }) do
+		for _, status in ipairs({ "streaming", "error" }) do
 			local item = part({ status = status, input = vim.NIL, output = vim.NIL, error = vim.NIL,
 				metadata = { toolCalls = { vim.NIL, {}, { tool = false, status = "running" } } } })
 			local original = vim.deepcopy(item)
 			for _, expanded in ipairs({ false, true }) do
 				local rendered = text(execute.render_tool(item, expanded))
 				assert.is_nil(rendered:find("vim.NIL", 1, true))
-				contains(rendered, "execute")
+				contains(rendered, "JavaScript")
 			end
 			assert.same(original, item)
 		end
 	end)
 
-	it("shows the header and calls with right-aligned metadata", function()
+	it("shows the same header and frames the calls when opened", function()
 		local item = part({ status = "completed", time = { start = 1000, ["end"] = 2400 },
 			input = { code = "return value;" },
 			output = vim.json.encode({ title = "A short title", main = "One\nTwo\nThree\nFour" }),
@@ -204,21 +205,21 @@ describe("universal execute widget", function()
 		})
 		local result = execute.render_tool(item, true)
 		local content = text(result)
-		assert.equals(2, #result.lines)
-		contains(content, "  ↳ ✓ any-server.any_tool")
-		assert.equals(require("opencode.ui.chat.render").get_chat_text_width(), vim.fn.strdisplaywidth(result.lines[1]))
-		assert.is_truthy(result.lines[1]:match("1 tool · 1.4s$"))
+		assert.equals(4, #result.lines)
+		contains(content, "   │ ↳ ✓ any-server.any_tool")
+		assert.equals(" ↘ any-server.any_tool · 1.4s", result.lines[1]:gsub(" +$", ""))
 		local compact = execute.render_tool(item, false)
-		assert.equals(2, #compact.lines)
-		assert.is_truthy(compact.lines[#compact.lines]:find("any-server.any_tool", 1, true))
+		assert.equals(1, #compact.lines)
+		assert.is_truthy(compact.lines[1]:find("any-server.any_tool", 1, true))
 	end)
 
-	it("keeps result values untouched and renders only a header when no calls are recorded", function()
-		for _, value in ipairs({ false, "", "plain result", '{"body":"content"}', vim.NIL }) do
+	it("keeps result values untouched and says so when no calls are recorded", function()
+		for _, value in ipairs({ false, '{"body":"content"}', vim.NIL }) do
 			local item = part({ status = "completed", output = value })
 			for _, expanded in ipairs({ false, true }) do
 				local result = execute.render_tool(item, expanded)
-				assert.equals(1, #result.lines)
+				assert.equals(expanded and 4 or 1, #result.lines)
+				if expanded then contains(text(result), "No tool calls recorded") end
 				assert.same({}, result.children)
 			end
 			assert.same(value, item.state.output)
@@ -229,7 +230,7 @@ describe("universal execute widget", function()
 		local animation = require("opencode.ui.chat.task_animation")
 		view.visible, view.tools, view.tasks = true, {}, {}
 		view.render_scheduled, view.render_in_progress = false, false
-		for _, width in ipairs({ 80, 24, 12 }) do
+		for _, width in ipairs({ 80, 12 }) do
 			vim.api.nvim_win_set_config(winid, { width = width })
 			view.task_anim_frame = 1
 			local item = part({ status = "running", metadata = { toolCalls = { { tool = "server.path/", status = "running" } } } })

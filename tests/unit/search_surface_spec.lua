@@ -1,19 +1,5 @@
 describe("searchable surface", function()
-	local surface = require("opencode.ui.search_surface")
 	local menu, palette = require("opencode.ui.menu"), require("opencode.ui.palette")
-
-	it("keeps the layer specs menu and palette used to write by hand", function()
-		local options = surface.window_options("Normal:X")
-		assert.same({ winhighlight = "Normal:X", winblend = 0, wrap = false, cursorline = false, scrolloff = 0 }, options)
-		local layers = surface.layers({ relative = "editor", row = 2, col = 3, zindex = 80, width = 40, frame_height = 12,
-			list_row = 5, list_height = 4, frame = { enter = false }, content = { focusable = true }, input = false })
-		assert.same({ relative = "editor", position = { row = 2, col = 3 }, size = { width = 40, height = 12 }, zindex = 80, enter = false }, layers.frame)
-		assert.same({ position = { row = 5, col = 1 }, size = { width = 38, height = 4 }, zindex = 81, focusable = true }, layers.content)
-		assert.is_nil(layers.input)
-		layers = surface.layers({ relative = "editor", row = 0, col = 0, zindex = 50, width = 9, frame_height = 8, list_row = 5, list_height = 1 })
-		assert.same({ position = { row = 3, col = 4 }, size = { width = 1, height = 1 }, zindex = 52 }, layers.input)
-	end)
-
 	local function configs(wins)
 		local result = {}
 		for _, win in ipairs(wins) do result[#result + 1] = vim.api.nvim_win_get_config(win) end

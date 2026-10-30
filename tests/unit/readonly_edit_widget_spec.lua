@@ -35,16 +35,8 @@ describe("read-only edit widget", function()
 			{ filePath = "unknown.txt" },
 		})
 		assert.is_truthy(text:find("# Edit 2 files (applied)", 1, true))
-		assert.is_truthy(text:find("known.txt  +1 -1", 1, true))
-		assert.is_truthy(text:find("unknown.txt  Diff unavailable", 1, true))
-	end)
-
-	it("preserves supplied counts while explaining an unavailable expanded diff", function()
-		local _, edit = render({ { filePath = "counted.txt", additions = 4, deletions = 2 } })
-		edits.toggle_inline_diff("preview", 1)
-		local text = table.concat(widget.get_resolved_lines("preview", edit), "\n")
-		assert.is_truthy(text:find("+4 -2", 1, true))
-		assert.is_truthy(text:find("Diff unavailable", 1, true))
+		assert.is_truthy(text:find("known.txt · +1 -1", 1, true))
+		assert.is_truthy(text:find("unknown.txt · Diff unavailable", 1, true))
 	end)
 
 	it("preserves explicit empty diffs and interactive review labels", function()

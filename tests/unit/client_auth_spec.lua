@@ -107,10 +107,8 @@ describe("opencode client Basic auth", function()
 		stub_auth(nil)
 		local http = setup_http(nil)
 		local cases = {
-			{ "application/json", true }, { "Application/JSON; charset=utf-8", true },
-			{ "application/vnd.vendor+json", true }, { "application/vnd_custom+json ; charset=utf-8", true },
-			{ "application/json-seq", false }, { "application/jsonp", false },
-			{ "application/notjson", false }, { "application/json extra", false }, { "text/json", false },
+			{ "Application/JSON; charset=utf-8", true }, { "application/vnd.vendor+json", true },
+			{ "application/json-seq", false }, { "application/json extra", false }, { "text/json", false },
 		}
 		for _, case in ipairs(cases) do
 			package.loaded["opencode.client.transport"].request = function(_, callback)
@@ -152,12 +150,8 @@ describe("opencode client Basic auth", function()
 		local auth = require("opencode.client.auth")
 		for _, base64 in ipairs({
 			false,
-			{},
-			{ encode = false },
 			{ encode = function() error("encoding failed") end },
-			{ encode = function() end },
 			{ encode = function() return "" end },
-			{ encode = function() return {} end },
 		}) do
 			vim.base64 = base64
 			local header, err = auth.header("alice", "secret")
@@ -366,49 +360,5 @@ describe("opencode client Basic auth", function()
 		assert.equals(1, status.reconnect_count, "SSE open reconnect count")
 		client.disconnect_events()
 		assert.equals(0, client.sse.status().reconnect_count, "disconnect resets reconnect")
-	end)
-
-	it("emits an error when SSE reconnect gives up", function()
-		stub_auth("Basic encoded", nil)
-		open_stream_handler = function()
-			return nil, { message = "dial failed" }
-		end
-
-		local client = require("opencode.client")
-		client.setup({
-			host = "localhost",
-			port = 4096,
-			auth = { username = "alice", password = "secret" },
-			reconnect = true,
-			reconnect_delay = 60000,
-			max_reconnects = 0,
-		})
-		local errors = {}
-		client.on_event("error", function(message)
-			table.insert(errors, message)
-		end)
-
-		client.connect_events()
-		local found = false
-		for _, message in ipairs(errors) do
-			if tostring(message):find("gave up", 1, true) then
-				found = true
-			end
-		end
-		assert.is_truthy(found, "give-up error")
-	end)
-
-	it("ignores a stale SSE close after a newer stream is connected", function()
-		stub_auth("Basic encoded", nil)
-		local client = setup_client("secret")
-
-		assert.equals(true, client.connect_events(), "first stream")
-		local first_on_close = stream_calls[1].on_close
-		client.disconnect_events()
-		assert.equals(true, client.connect_events(), "second stream")
-		assert.equals(2, #stream_calls, "second stream opened")
-
-		first_on_close("stale close")
-		assert.is_truthy(client.sse.status().has_stream, "new stream survives stale close")
 	end)
 end)

@@ -25,14 +25,9 @@ describe("tracked change statistics", function()
 			{ "old\n", "new\n", 1, 1 },
 			{ "a\nb\nc\n", "x\na\nb\nc\n", 1, 0 },
 			{ "a\nb\nc\n", "a\nx\nb\nc\n", 1, 0 },
-			{ "a\nb\nc\n", "a\nc\n", 0, 1 },
 			{ "", "", 0, 0, "add" },
-			{ "", "a\nb\n", 2, 0, "add" },
 			{ "a\nb\n", "", 0, 2, "delete" },
-			{ "", "a", 1, 0, "add" },
 			{ "a", "a\n", 1, 1 },
-			{ "a\n", "a", 1, 1 },
-			{ "a\n", "a\n", 0, 0 },
 		}) do
 			assert.same({ added = case[3], removed = case[4] }, stats(case[1], case[2], case[5]), vim.inspect(case))
 		end

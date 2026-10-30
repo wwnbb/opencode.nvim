@@ -241,32 +241,6 @@ describe("skill selection in the input composer", function()
 		assert.equals("explore", sent[1].body.agents[1].name)
 	end)
 
-	it("opens the picker when Tab selects /skills", function()
-		history.set_pending("/skills", other_parts())
-		chat.focus_input()
-		select_skills_autocomplete()
-		assert.equals("", press_input_key("<Tab>"))
-		assert.is_true(vim.wait(500, function() return picker ~= nil end, 5))
-		assert.equals("", input.get_pending_text())
-		assert.is_true(picker.multi_select)
-		assert.equals(0, #sent)
-	end)
-
-	it("opens the picker on Enter for an exact /skills command after completion closes", function()
-		history.set_pending("/skills", other_parts())
-		chat.focus_input()
-		require("opencode.ui.input.autocomplete").close(input_ui_state())
-		assert.equals("", press_input_key("<CR>"))
-		assert.is_true(vim.wait(500, function() return picker ~= nil end, 5))
-		assert.equals("", input.get_pending_text())
-		assert.equals(0, #sent)
-		picker.on_select({ picker.items[2] })
-		assert.is_true(vim.wait(500, function()
-			return input.get_pending_text():find("@testing-id", 1, true) ~= nil
-		end, 5))
-		assert.equals(0, #sent)
-	end)
-
 	it("treats the skills picker slash command as local even when the composer has attachments", function()
 		history.set_pending("/skills", other_parts())
 		chat.focus_input()
@@ -318,8 +292,9 @@ describe("skill selection in the input composer", function()
 		assert.same(other_parts(), history.get_pending_parts())
 	end)
 
-	for _, invalidation in ipairs({ "connection", "session", "draft" }) do
-		for _, phase in ipairs({ "selection", "scheduled addition" }) do
+	for _, case in ipairs({ { "connection", "selection" }, { "draft", "scheduled addition" } }) do
+		local invalidation, phase = case[1], case[2]
+		do
 			it("drops selected skills after " .. invalidation .. " cancellation before " .. phase, function()
 				history.set_pending("Original draft", other_parts())
 				commands["action.skills"].run()

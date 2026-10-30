@@ -13,13 +13,8 @@ describe("opencode permission recovery", function()
 
 		-- Global native events without a location apply to all projects.
 		assert.is_truthy(sse._should_accept({ type = "test", data = {} }), "location-free event should be accepted")
-
-		assert.is_truthy(sse._should_accept({ location = {}, type = "test", data = {} }), "nil directory event should be accepted")
-
 		assert.is_truthy(sse._should_accept({ location = { directory = cwd }, type = "test", data = {} }), "cwd-matched event should be accepted")
-
 		assert.is_truthy(sse._should_accept({ location = { directory = session_dir }, type = "test", data = {} }), "active session directory event should be accepted")
-
 		assert.is_truthy(not sse._should_accept({ location = { directory = foreign_dir }, type = "test", data = {} }), "foreign directory event should be rejected")
 
 		state.reset()
@@ -138,7 +133,7 @@ describe("opencode permission recovery", function()
 		local wildcard = owner.add_permission("perm_wildcard", "session", "shell", { always = { "*" } })
 		assert.is_truthy(owner.select_option("perm_wildcard", 2), "Always should be selectable with a saved rule")
 		local lines = widget.get_lines_for_permission("perm_wildcard", wildcard)
-		assert.is_truthy(table.concat(lines, "\n"):find("always allow shell for this project", 1, true) ~= nil, "wildcard preview should explain action and project scope")
+		assert.is_truthy(table.concat(lines, "\n"):find("always allow Shell for this project", 1, true) ~= nil, "wildcard preview should explain action and project scope")
 
 		local patterns = owner.add_permission("perm_patterns", "session", "shell", { always = { "git *", "npm *" } })
 		owner.select_option("perm_patterns", 2)

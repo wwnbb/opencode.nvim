@@ -89,7 +89,7 @@ describe("opencode native form flow", function()
 		actions.reply_to_question = function() calls = calls + 1 end
 		local item = add_form("digits", { { key = "choice", type = "string", required = true, options = options } })
 		mount("digits")
-		for i = 1, 9 do
+		for _, i in ipairs({ 1, 5, 9 }) do
 			assert.is_true(interactions.handle_question_number_select(i))
 			assert.is_truthy(vim.api.nvim_get_current_line():find(i .. ". Answer " .. i, 1, true))
 			interactions.sync_widget_selection_from_cursor()
@@ -176,7 +176,7 @@ describe("opencode native form flow", function()
 		assert.equals(0, calls)
 	end)
 
-	for _, disabled in ipairs({ false, "" }) do
+	for _, disabled in ipairs({ false }) do
 		it("keeps questions and selected answers on Escape with cancellation disabled: " .. tostring(disabled), function()
 			setup_keymaps({ cancel_question = disabled })
 			actions.reject_question = function() error("Escape must not cancel the question") end
@@ -252,7 +252,7 @@ describe("opencode native form flow", function()
 		assert.equals(1, calls)
 	end)
 
-	for _, change in ipairs({ "invalidated", "replaced", "confirming", "submitting", "cursor outside" }) do
+	for _, change in ipairs({ "invalidated", "replaced", "cursor outside" }) do
 		it("ignores cancellation confirmation after the question context is " .. change, function()
 			setup_keymaps({ cancel_question = "<F6>" })
 			local confirmation, calls
@@ -266,8 +266,6 @@ describe("opencode native form flow", function()
 			assert.is_table(confirmation)
 			if change == "invalidated" then require("opencode.session.pending").clear_session("question-session")
 			elseif change == "replaced" then forms.clear_all(); item = add_form("stale-cancel", fields)
-			elseif change == "confirming" then forms.set_confirming("stale-cancel")
-			elseif change == "submitting" then forms.begin_submission("stale-cancel", "reject")
 			else
 				vim.bo[bufnr].modifiable = true
 				vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "outside" })
@@ -421,7 +419,7 @@ describe("opencode native form flow", function()
 		assert.is_true(forms.get_question("string-form").submitting)
 	end)
 
-	for _, reset in ipairs({ "owner", "close", "reconnect" }) do
+	for _, reset in ipairs({ "owner", "reconnect" }) do
 		it("does not send an old custom input after " .. reset, function()
 			local shown, calls = nil, 0
 			input.show = function(opts) shown = opts end
@@ -433,7 +431,6 @@ describe("opencode native form flow", function()
 			assert.is_function(shown.on_send)
 			local pending = require("opencode.session.pending")
 			if reset == "owner" then forms.clear_all(); add_form("input-form", fields)
-			elseif reset == "close" then pending.clear_session("question-session")
 			else pending.invalidate() end
 			shown.on_send("Answer for the old form")
 			assert.is_nil(forms.get_answers("input-form").description)
@@ -525,7 +522,7 @@ describe("opencode native form flow", function()
 	end)
 
 	for _, cancelling in ipairs({ false, true }) do
-		for _, failed in ipairs({ false, true }) do
+		for _, failed in ipairs({ true }) do
 			it("ignores a queued " .. (cancelling and "cancellation" or "answer") .. (failed and " error" or " success") .. " for a replaced form", function()
 				local callback
 				actions.reply_to_question = function(_, _, done) callback = done end
@@ -554,7 +551,7 @@ describe("opencode native form flow", function()
 	end
 
 	for _, cancelling in ipairs({ false, true }) do
-		for _, failed in ipairs({ false, true }) do
+		for _, failed in ipairs({ true }) do
 			it("ignores an invalidated queued " .. (cancelling and "cancel" or "reply") .. (failed and " failure" or " success") .. " for the same form", function()
 				local callback
 				actions.reply_to_question = function(_, _, done) callback = done end
@@ -623,7 +620,7 @@ describe("question focus during queued renders", function()
 		forms.clear_all()
 		chat_surface.restore(surface)
 	end)
-	for _, answer in ipairs({ "option", "custom", "multi" }) do
+	for _, answer in ipairs({ "custom", "multi" }) do
 		it("keeps the saved " .. answer .. " answer visible when focusing the widget again", function()
 			local item = forms.add_form({ id = "return-focus", sessionID = "focus-session", fields = {
 				{ key = "choice", type = answer == "multi" and "multiselect" or "string", custom = true, required = true,

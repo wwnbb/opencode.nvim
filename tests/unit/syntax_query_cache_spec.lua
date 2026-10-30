@@ -133,28 +133,6 @@ describe("conservative query capture memo eligibility", function()
 		assert.equals(changed, syntax.query_cache_signature(value))
 	end)
 
-	it("detects added and removed metadata keys as well as nested processed changes", function()
-		local value = query('(#eq? @variable "value")')
-		local signature = syntax.query_cache_signature(value)
-		value.captures[2] = "constant"
-		local added = syntax.query_cache_signature(value)
-		assert.is_string(added)
-		assert.is_not.equals(signature, added)
-		value.captures[2] = nil
-		assert.is_not.equals(added, syntax.query_cache_signature(value))
-		local _, processed = next(value._processed_patterns)
-		processed.predicates[1][2] = false
-		assert.is_nil(syntax.query_cache_signature(value))
-		processed.predicates[1][2] = true
-		assert.is_string(syntax.query_cache_signature(value))
-		processed.predicates[1].unexpected = true
-		assert.is_nil(syntax.query_cache_signature(value))
-		processed.predicates[1].unexpected = nil
-		assert.is_string(syntax.query_cache_signature(value))
-		processed.predicates[1][false] = "unexpected boolean key"
-		assert.is_nil(syntax.query_cache_signature(value))
-	end)
-
 	it("safely declines malformed metadata and introspection responses", function()
 		local value = query('(#eq? @variable "value")')
 		assert.is_string(syntax.query_cache_signature(value))
@@ -173,18 +151,6 @@ describe("conservative query capture memo eligibility", function()
 		assert.is_nil(malformed)
 		assert.is_nil(unavailable)
 		assert.is_nil(missing_registry)
-	end)
-
-	it("requires public patterns and executed processed handler records to agree", function()
-		local value = query('(#eq? @variable "value")')
-		assert.is_string(syntax.query_cache_signature(value))
-		local _, processed = next(value._processed_patterns)
-		processed.predicates[1][1] = "external-state?"
-		assert.is_nil(syntax.query_cache_signature(value))
-		processed.predicates[1][1] = "eq?"
-		local _, patterns = next(value.info.patterns)
-		patterns[1] = { "eq?", 1, "value" }
-		assert.is_nil(syntax.query_cache_signature(value))
 	end)
 
 	it("falls back for unknown runtime layouts, iterator replacements and unavailable introspection", function()

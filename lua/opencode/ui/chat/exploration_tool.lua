@@ -1,7 +1,7 @@
 local cs = require("opencode.ui.chat.state")
 return cs.factory("exploration_tool", function(view)
 -- Each exploration leaf owns its compact and expanded presentation.
-local M = {}
+local M = { animation_line = 0 }
 
 local style = cs.module(view, require("opencode.ui.chat.tool_style"))
 local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
@@ -13,15 +13,17 @@ local renderers = {
 	rg = cs.module(view, require("opencode.ui.chat.rg")).render_tool,
 }
 
-local function add_line(result, text, hl, prefix)
-	cs.module(view, require("opencode.ui.chat.render")).add_panel_line(result, text, hl, { prefix = " " .. (prefix or "") })
+local text = require("opencode.util.text")
+
+local function add_line(result, value, hl)
+	cs.module(view, require("opencode.ui.chat.render")).add_panel_line(result, value, hl, { prefix = " " })
 end
 
 local function path(value)
-	return type(value) == "string" and vim.fn.fnamemodify(value, ":~:.") or "unknown"
+	return text.is_present(value) and text.normalize_path(value) or "unknown"
 end
 
-local function render_summary(part, expanded)
+local function render_summary(part, expanded, opts)
 	local result = { lines = {}, highlights = {} }
 	local state = part.state or {}
 	local input = type(state.input) == "table" and state.input or {}
@@ -46,7 +48,7 @@ local function render_summary(part, expanded)
 			.. ' "'
 			.. tostring(input.pattern or metadata.pattern or "")
 			.. '"'
-		if input.path then
+		if text.is_present(input.path) then
 			label = label .. " in " .. path(input.path)
 		end
 		if input.include then
@@ -54,39 +56,43 @@ local function render_summary(part, expanded)
 		end
 		local count = tonumber(metadata.matches or metadata.count or state.matches or state.count)
 		if count then
-			label = label .. string.format(" (%d %s)", count, count == 1 and "match" or "matches")
+			-- Glob counts files; grep counts matching lines.
+			local noun = part.tool == "glob" and (count == 1 and "file" or "files") or (count == 1 and "match" or "matches")
+			label = label .. string.format(" (%d %s)", count, noun)
 		end
 	end
 	local failed = tool_group.failed(part)
+	-- Inside a group the group header carries the spinner.
+	if not failed and not (opts or {}).grouped and tool_group.is_working(part) then
+		label = label .. " " .. cs.module(view, require("opencode.ui.chat.tool_panel")).anim_frame()
+	end
 	add_line(result, label, failed and style.error_hl or style.header_hl)
 	if expanded then
 		return result
 	end
 	if failed then
 		local err = type(state.error) == "table" and state.error.message or state.error
-		for _, line in ipairs(vim.split(tostring(err or "Tool failed"), "\n", { plain = true })) do
-			add_line(result, line, style.error_hl, "    ")
-		end
+		style.add_error_lines(result, type(err) == "string" and err or nil)
 	end
 	if state.status == "completed" then
 		for _, loaded in ipairs(type(metadata.loaded) == "table" and metadata.loaded or {}) do
 			if type(loaded) == "string" then
-				add_line(result, "↳ Loaded " .. path(loaded), style.header_hl, "    ")
+				style.add_sub_line(result, "↳ Loaded " .. path(loaded))
 			end
 		end
 	end
 	return result
 end
 
-function M.render(part, expanded)
+function M.render(part, expanded, opts)
 	local renderer = renderers[part.tool]
 	if not renderer then
 		return nil
 	end
 	if part.tool == "rg" then
-		return renderer(part, expanded, { exploration = true })
+		return renderer(part, expanded, { exploration = true, grouped = (opts or {}).grouped })
 	end
-	local result = render_summary(part, expanded)
+	local result = render_summary(part, expanded, opts)
 	if not expanded then
 		return result
 	end

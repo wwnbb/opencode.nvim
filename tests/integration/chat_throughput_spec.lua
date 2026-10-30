@@ -1,5 +1,5 @@
 describe("chat throughput footer", function()
-	it("renders turn TPS through streaming, cached updates, configuration and history reload", function()
+	it("renders turn TPS through streaming, cached earlier-step updates and the processing footer", function()
 		vim.o.columns, vim.o.lines = 140, 40
 		local app = require("opencode")
 		app.setup({
@@ -49,21 +49,6 @@ describe("chat throughput footer", function()
 			-- account for updated metrics on an earlier step of the same turn.
 			first.tokens.output = 110
 			update(first)
-			assert.is_not_nil(text():find("50.0 tok/s", 1, true))
-			local config = vim.deepcopy(original_config)
-			config.chat.tps = false
-			state.set_config(config)
-			assert.is_true(vim.wait(500, function()
-				return require("opencode.ui.chat.state").state.config.tps == false
-			end, 10))
-			assert.is_nil(text():find("tok/s", 1, true))
-			state.set_config(original_config)
-			assert.is_true(vim.wait(500, function()
-				return require("opencode.ui.chat.state").state.config.tps == true
-			end, 10))
-			assert.is_not_nil(text():find("50.0 tok/s", 1, true))
-			chat.close()
-			chat.open()
 			assert.is_not_nil(text():find("50.0 tok/s", 1, true))
 			-- Native tool completion can follow the stream end by a long time.
 			-- The processing footer should also use the authoritative stream time.

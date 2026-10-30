@@ -38,6 +38,14 @@ local function strip_bom(content)
 	return content or ""
 end
 
+-- Review payloads carry text without the BOM plus a flag; tracked changes hold exact file bytes.
+---@param content string
+---@param bom boolean
+---@return string
+local function join_bom(content, bom)
+	return bom and BOM .. content or content
+end
+
 ---@param filepath string
 ---@return table|nil state {exists=boolean, content=string}
 ---@return string|nil err
@@ -319,9 +327,10 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 	for i, fd in ipairs(files_data) do
 		local filepath = fd.filePath or ""
 		local file_type = changes.normalize_file_type(fd.type)
-		local relative_path = fd.relativePath or vim.fn.fnamemodify(filepath, ":.")
+		local relative_path = fd.relativePath or require("opencode.util.text").normalize_path(filepath)
 		local before = fd.before or ""
 		local after = fd.after or ""
+		local before_bom, bom = fd.before_bom == true, fd.bom == true
 		local additions = fd.additions
 		local deletions = fd.deletions
 		if type(additions) ~= "number" or type(deletions) ~= "number" then
@@ -332,9 +341,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 
 		local change_id = nil
 		if review_mode ~= "readonly" and apply_mode == "client" then
-			change_id = changes.add_change(filepath, before, after, {
-				bom = fd.bom == true,
-				before_bom = fd.before_bom,
+			change_id = changes.add_change(filepath, join_bom(before, before_bom), join_bom(after, bom), {
 				file_type = file_type,
 				metadata = {
 					source = "edit_widget",
@@ -350,8 +357,8 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 			file_id = fd.fileID,
 			apply_mode = apply_mode,
 			exact_bytes = opts.transport == "review_rpc",
-			before_bom = fd.before_bom == true,
-			bom = fd.bom == true,
+			before_bom = before_bom,
+			bom = bom,
 			filepath = filepath,
 			relative_path = relative_path,
 			move_path = fd.movePath,

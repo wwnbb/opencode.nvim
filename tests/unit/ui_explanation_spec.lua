@@ -149,43 +149,74 @@ describe("selection explanation popup", function()
 		assert.is_true(explanation.is_open())
 	end)
 
-	it("asks follow-up questions in its own input and appends answers below the conversation", function()
+	it("docks a question composer on ask and appends answers below the conversation", function()
+		local app = require("opencode.state")
+		local old_config = app.set_config({ explanation = { model = { modelID = "explain-model" } },
+			input = { min_height = 1, max_height = 20 } })
 		local asked, notices = {}, {}
 		local original_notify = vim.notify
 		vim.notify = function(message) notices[#notices + 1] = message end
 		local view = explanation.open({ bufnr = source }, function() end, function(question) asked[#asked + 1] = question end)
 		local function text() return table.concat(vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false), "\n") end
-		local function input() return vim.api.nvim_buf_get_lines(view.input_bufnr, 0, -1, false) end
+		local function input() return vim.api.nvim_buf_get_lines(view.composer.input.bufnr, 0, -1, false) end
+		local function border() return vim.api.nvim_buf_get_lines(view.popup.frame.border.bufnr, 0, -1, false) end
+		local frame = view.popup.frame.winid
+		local frame_top, frame_height = vim.api.nvim_win_get_position(frame)[1], vim.api.nvim_win_get_height(frame)
+		-- The composer takes its input rows plus four from the bottom of the frame.
+		local function assert_docked(rows)
+			local field = view.composer.input
+			assert.equals(frame, vim.api.nvim_win_get_config(field.border.winid).win)
+			assert.equals(vim.api.nvim_win_get_width(frame), vim.api.nvim_win_get_width(field.border.winid))
+			assert.equals(rows, vim.api.nvim_win_get_height(field.winid))
+			assert.equals(frame_top + frame_height - rows - 3, vim.api.nvim_win_get_position(field.winid)[1])
+			assert.equals(frame_height - rows - 4, vim.api.nvim_win_get_height(view.winid))
+		end
+		local function assert_answer_only()
+			assert.is_true(vim.wait(500, function() return view.composer == nil end, 5))
+			assert.equals(view.winid, vim.api.nvim_get_current_win())
+			assert.equals("n", vim.fn.mode())
+			assert.equals(frame_height, vim.api.nvim_win_get_height(view.winid))
+			assert.is_truthy(border()[#border()]:find("i ask · c copy · q / <Esc> close", 1, true))
+		end
 		assert.equals(view.winid, vim.api.nvim_get_current_win())
-		assert.is_nil(text():find("close", 1, true))
-		local border = table.concat(vim.api.nvim_buf_get_lines(view.popup.frame.border.bufnr, 0, -1, false), "\n")
-		assert.is_truthy(border:find("Explanation", 1, true))
-		assert.is_nil(border:find("ask", 1, true))
-		assert.is_nil(border:find("copy", 1, true))
-		-- The input sits on the frame's last row, below a separator and the answer.
-		local frame = vim.api.nvim_win_get_config(view.popup.frame.winid)
-		local content, field = vim.api.nvim_win_get_config(view.winid), vim.api.nvim_win_get_config(view.input_winid)
-		assert.equals(view.popup.frame.winid, field.win)
-		assert.equals(frame.height - 1, field.row)
-		assert.equals(frame.width, field.width)
-		assert.equals(frame.height - 2, content.height)
-		assert.equals(string.rep("─", frame.width), vim.api.nvim_buf_get_lines(view.popup.frame.bufnr, -3, -2, false)[1])
+		assert.is_truthy(text():find("q / <Esc> close", 1, true))
+		assert.is_truthy(border()[1]:find("Explanation", 1, true))
+		assert_answer_only()
 
 		explanation.show("Defines a value.", { streaming = true })
-		keys("iToo early?<CR>")
-		assert.equals(view.input_winid, vim.api.nvim_get_current_win())
+		keys("iToo early?")
+		assert.equals(view.composer.input.winid, vim.api.nvim_get_current_win())
+		assert_docked(1)
+		local info
+		for _, winid in ipairs(vim.api.nvim_list_wins()) do
+			local line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(winid), 0, 1, false)[1]
+			if line == "Ask explain-model" then info = winid end
+		end
+		assert.equals(frame_top + frame_height - 2, vim.api.nvim_win_get_position(info)[1])
+		assert.is_truthy(border()[#border()]:find("<C-g> ask · <Esc> / <C-c> back", 1, true))
+		keys("<C-g>")
+		assert.equals(view.composer.input.winid, vim.api.nvim_get_current_win())
 		assert.same({}, asked)
 		assert.same({ "Too early?" }, input())
 		assert.is_truthy(notices[1]:find("wait for the current answer", 1, true))
+		keys("oand why")
+		vim.api.nvim_exec_autocmds("TextChanged", { buffer = view.composer.input.bufnr })
+		assert.is_true(vim.wait(500, function() return vim.api.nvim_win_get_height(view.winid) == frame_height - 6 end, 5))
+		assert_docked(2)
 		keys("<Esc>")
-		assert.equals(view.winid, vim.api.nvim_get_current_win())
-		assert.equals("n", vim.fn.mode())
+		assert_answer_only()
+
 		assert.is_true(explanation.show("Defines a value."))
-		keys("i<C-u>Why?<CR>")
+		keys("i")
+		assert.same({ "Too early?", "and why" }, input())
+		assert_docked(2)
+		keys("ggdGiWhy?<C-g>")
+		assert_answer_only()
 		assert.same({ "Why?" }, asked)
+		keys("i")
 		assert.same({ "" }, input())
-		assert.equals(view.winid, vim.api.nvim_get_current_win())
-		assert.equals("n", vim.fn.mode())
+		keys("<Esc>")
+		assert_answer_only()
 
 		assert.is_true(explanation.pending("Defines a value.\n\n> Why?"))
 		assert.is_truthy(text():find("Answering question", 1, true))
@@ -208,13 +239,16 @@ describe("selection explanation popup", function()
 		keys("c")
 		assert.equals("Because callers use it.", copied["+"])
 
+		-- Leaving the composer for another window closes both.
 		vim.api.nvim_exec_autocmds("VimResized", {})
 		keys("i")
-		assert.equals(view.input_winid, vim.api.nvim_get_current_win())
-		vim.cmd("stopinsert")
+		local composer = view.composer.input.winid
+		assert.equals(composer, vim.api.nvim_get_current_win())
 		vim.api.nvim_set_current_win(previous_win)
 		assert.is_true(vim.wait(500, function() return not explanation.is_open() end, 5))
+		assert.is_false(vim.api.nvim_win_is_valid(composer))
 		vim.notify = original_notify
+		app.set_config(old_config)
 	end)
 
 	it("shows errors in the popup and closes through q, Esc, or window closure", function()

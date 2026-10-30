@@ -265,7 +265,7 @@ function M.render(kind, refs, expanded, expansions)
 	end
 	local header = expanded and "↘" or "→"
 	if working then header = header .. " " .. cs.module(view, require("opencode.ui.chat.task_animation")).get_task_anim_frame() end
-	header = header .. " " .. (working and definition.active or definition.completed) .. " — " .. table.concat(labels, ", ")
+	header = header .. " " .. (working and definition.active or definition.completed) .. " · " .. table.concat(labels, ", ")
 	if failed > 0 then header = header .. " · " .. failed .. " failed" end
 	local latest = refs[#refs]
 	render.add_panel_line(result, header, latest and M.latest_failed(latest.part)

@@ -26,7 +26,7 @@ local function display_width(text)
 end
 
 local function truncate_to_width(text, width)
-	return require("opencode.util.text").truncate(text, width, width > 3 and "..." or "")
+	return require("opencode.util.text").truncate(text, width, width > 1 and "…" or "")
 end
 
 local function item_label(item)
@@ -73,7 +73,7 @@ local function build_footer(opts, keys, mode, labels)
 		for _, action in ipairs(type(actions) == "table" and actions or { actions }) do
 			local values = keymaps.keys(labels[action])
 			if #values > 0 then
-				pieces[#pieces + 1] = table.concat(values, ", ") .. ":" .. description
+				pieces[#pieces + 1] = { table.concat(values, " / "), description }
 				return
 			end
 		end
@@ -94,7 +94,8 @@ local function build_footer(opts, keys, mode, labels)
 		end
 	end
 	hint(mode == "i" and { "close_insert", "close" } or { "close_normal", "close" }, "close")
-	return " " .. table.concat(pieces, "  ") .. " "
+	local text = keymaps.hint(pieces, { omit_disabled = true })
+	return text and (" " .. text .. " ") or ""
 end
 
 local function default_sort(a, b)
@@ -230,7 +231,8 @@ function M.open(opts)
 		local next_footer_lines = wrap_footer(footer, current_width - 8)
 		local next_message_lines = opts.message and wrap_footer(tostring(opts.message), current_width - 8) or {}
 		local next_list_row = base_list_row + (#next_message_lines > 0 and #next_message_lines + 1 or 0)
-		local next_frame_extra = next_list_row + #next_footer_lines + 2
+		-- The footer and its trailing blank row disappear together.
+		local next_frame_extra = next_list_row + 1 + (#next_footer_lines > 0 and #next_footer_lines + 1 or 0)
 		detail_rows = opts.item_detail and math.min(3, math.max(0,
 			vim.o.lines - vim.o.cmdheight - next_frame_extra - border_height - 2)) or 0
 		if detail_rows > 0 then next_frame_extra = next_frame_extra + detail_rows + 1 end
@@ -336,7 +338,7 @@ function M.open(opts)
 			end
 			for index = 1, detail_rows do
 				local text = detail_lines[index] or ""
-				if index == detail_rows and #detail_lines > detail_rows then text = truncate_to_width(text, width - 11) .. "..." end
+				if index == detail_rows and #detail_lines > detail_rows then text = truncate_to_width(text, width - 9) .. "…" end
 				table.insert(lines, "    " .. text)
 			end
 			table.insert(lines, "")
@@ -345,7 +347,7 @@ function M.open(opts)
 		for _, line in ipairs(footer_lines) do
 			table.insert(lines, "    " .. line)
 		end
-		table.insert(lines, "")
+		if #footer_lines > 0 then table.insert(lines, "") end
 		local marks = {
 			{ line = 1, col = 4, end_col = 4 + #title, hl_group = "OpenCodeMenuTitle" },
 		}

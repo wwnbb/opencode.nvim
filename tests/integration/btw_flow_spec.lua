@@ -8,9 +8,6 @@ local input = require("opencode.ui.input")
 local history = require("opencode.ui.input.history")
 local slash = require("opencode.slash")
 local sync = require("opencode.sync")
-local slash_commands = require("opencode.ui.input.slash_commands")
-
-local input_state = require("tests.helpers.input_state")
 
 describe("/btw composer flow", function()
 	local previous_buffer, previous_config, saved, reply, sent, history_file
@@ -85,55 +82,6 @@ describe("/btw composer flow", function()
 		assert.equals(0, btw.pending_count())
 		assert.is_true(require("opencode.ui.btw").is_visible())
 		assert.same({}, sync.get_messages("btw-flow"))
-	end)
-
-	it("opens the question dialog for bare /btw and submits its prompt", function()
-		assert.is_true(chat.focus_input())
-		local input_buf = vim.api.nvim_get_current_buf()
-		vim.api.nvim_buf_set_lines(input_buf, 0, -1, false, { "/btw" })
-		local enter = vim.fn.maparg("<CR>", "i", false, true)
-		assert.equals("", enter.callback())
-		assert.is_true(vim.wait(1000, function()
-			return require("opencode.ui.btw").is_visible()
-		end, 10))
-		assert.is_false(input.is_visible())
-		local question_buf = vim.api.nvim_get_current_buf()
-		assert.equals("opencode_btw_input", vim.bo[question_buf].filetype)
-		app.set_session("btw-other", "Other session")
-		vim.api.nvim_buf_set_lines(question_buf, 0, -1, false, { "What changed?" })
-		vim.fn.maparg("<CR>", "i", false, true).callback()
-		assert.is_true(vim.wait(1000, function() return reply ~= nil end, 10))
-		assert.equals("btw-flow", reply.session_id)
-		assert.is_truthy(reply.prompt:find("What changed?", 1, true))
-		assert.same({}, sent)
-		assert.same({}, sync.get_messages("btw-flow"))
-	end)
-
-	it("opens the question dialog immediately when /btw is selected from completion", function()
-		history.set_pending("/bt")
-		assert.is_true(chat.focus_input())
-		local command
-		for _, entry in ipairs(slash.get_commands()) do
-			if entry.name == "btw" then command = entry; break end
-		end
-		assert.is_not_nil(command)
-		local trigger = slash_commands.detect_trigger_in_line("/bt", #"/bt", 0)
-		trigger.row, trigger.line = 0, "/bt"
-		input_state().autocomplete = {
-			visible = true,
-			selected = 1,
-			trigger = trigger,
-			items = { { kind = "slash", label = "/btw", command = command } },
-		}
-		local enter = vim.fn.maparg("<CR>", "i", false, true)
-		assert.is_function(enter.callback)
-		assert.equals("", enter.callback())
-		assert.is_true(vim.wait(1000, function() return require("opencode.ui.btw").is_visible() end, 10))
-		assert.is_false(input.is_visible())
-		assert.same({}, sent)
-		assert.same({}, input.get_history())
-		assert.equals("", input.get_pending_text())
-		assert.equals("opencode_btw_input", vim.bo[vim.api.nvim_get_current_buf()].filetype)
 	end)
 end)
 

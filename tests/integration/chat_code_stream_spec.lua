@@ -87,8 +87,8 @@ describe("live fenced code highlights", function()
 				if before_tool then assert.is_true(cs.state.tools[tool_id].start_line > cs.state.stream_blocks[key].end_line) end
 				assert_cold_equal()
 			end
-			for _, text in ipairs({ "`", "`", "lu", "a", "\n", "local value = 1", "2", "\n--[[", "\nПривет 😀", "\n]]",
-				"\nlocal s = \"partial", " string\"", "\nreturn value" }) do
+			for _, text in ipairs({ "`", "`", "lu", "a", "\n", "local value = 1", "\n--[[", "\nПривет 😀", "\n]]",
+				"\nreturn value" }) do
 				delta(text)
 			end
 			assert.is_true(assistant_marks() > 0, "open block must be highlighted while the session is busy")

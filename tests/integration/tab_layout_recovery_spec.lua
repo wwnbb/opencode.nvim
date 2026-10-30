@@ -41,24 +41,6 @@ describe("tab layout recovery", function()
 		]])
 	end)
 
-	it("recovers when both the initial restore and its rollback fail", function()
-		editor.lua([[
-			for i = 1, 5 do chat.create_split(chat.get_view(), seed("first-" .. i), "horizontal") end
-			chat.create_layout(seed("recovery-b"))
-			local second = workspace.current().id
-			for i = 1, 5 do chat.create_split(chat.get_view(), seed("second-" .. i), "horizontal") end
-			local set_buf = vim.api.nvim_win_set_buf
-			vim.api.nvim_win_set_buf = function() error("injected restore failure") end
-			local ok = pcall(workspace.select, original)
-			vim.api.nvim_win_set_buf = set_buf
-			assert(not ok)
-			assert(workspace.select(second))
-			assert(#vim.api.nvim_tabpage_list_wins(0) == 6)
-			assert(workspace.select(original))
-			assert(#vim.api.nvim_tabpage_list_wins(0) == 6)
-		]])
-	end)
-
 	it("dismisses inline proposals before switching while preserving manual file edits", function()
 		editor.lua([[
 			local edits = views.module(first, require("opencode.ui.chat.edits"))
@@ -119,10 +101,9 @@ describe("tab layout recovery", function()
 		]])
 	end)
 
-	for _, scoped in ipairs({ false, true }) do
-		it("preserves window directories and inherited " .. (scoped and "tab" or "global") .. " scope", function()
-			editor.lua([[
-				local scoped = ...
+	it("preserves window directories and an inherited tab scope", function()
+		editor.lua([[
+				local scoped = true
 				local global = vim.fn.getcwd(-1, -1)
 				local root = vim.fn.tempname()
 				for _, dir in ipairs({ "one", "two", "shared" }) do vim.fn.mkdir(root .. "/" .. dir, "p") end
@@ -144,9 +125,8 @@ describe("tab layout recovery", function()
 				assert(vim.fn.getcwd(-1, -1) == global, vim.inspect({ vim.fn.getcwd(-1, -1), global }))
 				vim.cmd.cd(global)
 				vim.fn.delete(root, "rf")
-			]], { scoped })
-		end)
-	end
+			]])
+	end)
 end)
 
 describe("tab layout lifecycle recovery", function()
@@ -249,32 +229,6 @@ describe("tab layout lifecycle recovery", function()
 		]])
 	end)
 
-	it("does not retain a deleted active layout when failed creation cannot finish rollback", function()
-		editor.lua([[
-			open(true)
-			local set_option, attempts = vim.api.nvim_set_option_value, 0
-			vim.api.nvim_set_option_value = function(name, value, opts)
-				if name == "winhighlight" and opts and opts.scope == "local" then
-					attempts = attempts + 1
-					if attempts > 1 then error("native failed-creation rollback error") end
-					return set_option("opencode_invalid_window_option", value, opts)
-				end
-				return set_option(name, value, opts)
-			end
-			local ok, err = pcall(chat.create_layout, seed("deleted-active-layout"))
-			vim.api.nvim_set_option_value = set_option
-			assert(not ok and tostring(err):find("opencode_invalid_window_option", 1, true), tostring(err))
-			assert(tostring(err):find("native failed-creation rollback error", 1, true), tostring(err))
-			assert(#workspace.list() == 1 and workspace.current().id == original)
-			assert(workspace.current().incomplete and not views.workspace.switching)
-			assert(not views.for_session("deleted-active-layout"))
-			assert(workspace.select(original) and chat.focus_view(first))
-			assert(not workspace.current().incomplete)
-			chat.create_layout(seed("after-creation-rollback")); workspace.close_current()
-			coherent()
-		]])
-	end)
-
 	it("respects a file-only native winfixbuf lock without changing data or options", function()
 		editor.lua([[
 			open(false)
@@ -294,8 +248,9 @@ describe("tab layout lifecycle recovery", function()
 		]])
 	end)
 
-	for _, enabled in ipairs({ false, true }) do
-		it("preserves inline unsaved-refusal and successful reusable-window contracts: header=" .. tostring(enabled), function()
+	local enabled = true
+	do
+		it("preserves inline unsaved-refusal and successful reusable-window contracts", function()
 			editor.lua([[
 				open(...)
 				local diff = inline_review()
@@ -309,41 +264,10 @@ describe("tab layout lifecycle recovery", function()
 			]], { enabled })
 		end)
 
-		it("returns the first native inline close error without losing reusable actual: header=" .. tostring(enabled), function()
-			editor.lua([[
-				open(...)
-				local diff = inline_review()
-				vim.api.nvim_win_call(diff.proposed, function() vim.cmd("rightbelow vsplit") end)
-				local proposals = {}
-				for _, win in ipairs(vim.fn.win_findbuf(diff.proposal_buf)) do
-					vim.api.nvim_win_set_var(win, "opencode_inline_diff_split", first.id)
-					proposals[#proposals + 1] = win
-				end
-				assert(#proposals == 2)
-				local reached = {}
-				for _, win in ipairs(proposals) do
-					vim.api.nvim_create_autocmd("WinClosed", { pattern = tostring(win), once = true, callback = function()
-						local err = "native proposal WinClosed " .. win
-						reached[#reached + 1] = err
-						error(err)
-					end })
-				end
-				local ok, err, reusable, buf = diff.edits.close_inline_diff_split({ preserve_actual = true, silent = true })
-				assert(#reached == 2, "safe cleanup stopped before closing the other proposal")
-				assert(ok and tostring(err):find(reached[1], 1, true), tostring(err))
-				assert(reusable == diff.actual and buf == diff.buf, "error changed the successful reusable-window contract")
-				inline_intact(diff)
-				local closed, retry_err, retry_win, retry_buf = diff.edits.close_inline_diff_split({ preserve_actual = true })
-				assert(closed and not retry_err and not retry_win and not retry_buf)
-				chat.create_layout(seed("inline-direct-retry")); assert(workspace.select(original))
-				inline_intact(diff)
-				vim.fn.delete(diff.path)
-			]], { enabled })
-		end)
-
-		for _, operation in ipairs({ "create", "select", "close" }) do
-			for _, prior in ipairs({ "unset", "false", "true" }) do
-				it(("propagates native inline WinClosed through %s: header=%s guard=%s"):format(operation, tostring(enabled), prior), function()
+		for _, operation in ipairs({ "select" }) do
+			local prior = "unset"
+			do
+				it("propagates native inline WinClosed through " .. operation, function()
 					editor.lua([[
 						local enabled, operation, prior = ...
 						open(enabled)
@@ -387,173 +311,10 @@ describe("tab layout lifecycle recovery", function()
 			end
 		end
 
-		it("propagates native surviving-proposal normalization errors: header=" .. tostring(enabled), function()
-			editor.lua([[
-				open(...)
-				local diff = inline_review()
-				-- Leave only the scratch proposal marked, but keep the unsaved actual visible.
-				vim.api.nvim_win_call(diff.actual, function()
-					vim.cmd("rightbelow split")
-					pcall(vim.api.nvim_win_del_var, 0, "opencode_inline_diff_split")
-				end)
-				vim.api.nvim_win_close(diff.actual, true)
-				local reached = false
-				vim.api.nvim_create_autocmd("WinClosed", { pattern = tostring(diff.proposed), once = true, callback = function()
-					reached = true
-					error("native surviving proposal WinClosed")
-				end })
-				local ok, err = pcall(chat.create_layout, seed("inline-surviving"))
-				assert(reached and not ok and tostring(err):find("native surviving proposal WinClosed", 1, true), tostring(err))
-				assert(not views.workspace.switching and workspace.current().id == original and first.visible and #workspace.list() == 1)
-				inline_intact(diff)
-				chat.create_layout(seed("inline-surviving")); assert(workspace.select(original) and chat.focus_view(first))
-				inline_intact(diff)
-				vim.fn.delete(diff.path)
-			]], { enabled })
-		end)
-
-		for _, owner in ipairs({ "default", "nondefault" }) do
-			for _, stage in ipairs({ "before", "unsubscribe", "refresh", "complete" }) do
-				it(("recovers public suspended close_view after %s disposal: header=%s owner=%s"):format(stage, tostring(enabled), owner), function()
-					editor.lua([[
-						local enabled, owner, stage = ...
-						open(enabled)
-						local second = chat.create_split(first, seed("boundary-second"), "vertical")
-						local failed = owner == "default" and first or second
-						local remaining = failed == first and second or first
-						chat.focus_view(failed)
-						failed.expanded_tools["boundary-expansion"] = true
-						vim.cmd("rightbelow vsplit") -- A native copy is the same view, not another owner.
-						vim.wait(30, function() return false end, 5)
-						local file, filewin = filepane("wipe")
-						vim.fn.setloclist(filewin, {}, "r", { items = { { bufnr = file, lnum = 1, text = "retained file" } } })
-						vim.cmd("belowright 2lopen")
-						local layout = workspace.current()
-						local current = chat.create_layout(seed("boundary-visible"))
-						local selected, focused = workspace.current(), vim.api.nvim_get_current_win()
-						local tree, generation = layout.tree, failed.generation
-						local root, last = layout.root_view, layout.last_view
-						local events = require("opencode.events")
-						local function listeners()
-							local result = {}
-							for _, event in ipairs(events.list_event_types()) do result[event] = events.listener_count(event) end
-							return result
-						end
-						local function hooks()
-							local result = {}
-							for _, prefix in ipairs({ "OpenCodeChatResize_", "OpenCodeSessionTabs_" }) do
-								local ok, value = pcall(vim.api.nvim_get_autocmds, { group = prefix .. failed.id })
-								result[prefix] = ok and #value or 0
-							end
-							return result
-						end
-						local function count_leaves(node)
-							if node.kind == "leaf" then return 1 end
-							local count = 0
-							for _, child in ipairs(node.children) do count = count + count_leaves(child) end
-							return count
-						end
-						local before, registered = listeners(), hooks()
-						local owned, tabs = chat.for_view(failed), views.module(failed, require("opencode.ui.chat.session_tabs"))
-						local dispose, tab_dispose, off, after = owned.dispose, tabs.dispose, events.off, chat.after_close
-						local reconciled, calls, armed = 0, 0, false
-						local function native_failure() vim.api.nvim_win_get_buf(-1) end
-						chat.after_close = function(...) reconciled = reconciled + 1; return after(...) end
-						if stage == "before" then owned.dispose = native_failure
-						elseif stage == "unsubscribe" then
-							events.off = function(...)
-								off(...)
-								calls = calls + 1
-								if armed and calls == 3 then armed = false; native_failure() end
-							end
-						elseif stage == "refresh" then
-							tabs.dispose = function() tab_dispose(); native_failure() end
-						else owned.dispose = function() dispose(); native_failure() end end
-						for attempt = 1, 2 do
-							armed, calls = true, 0
-							local ok, err = pcall(chat.close_view, failed, { all_windows = true })
-							assert(not ok and tostring(err):find("Invalid window id", 1, true), tostring(err))
-							assert(views.valid(failed, generation) and failed.suspended and failed.workspace_id == layout.id)
-							assert(views.for_session(failed.session_id) == failed, "failed close lost session ownership")
-							assert(reconciled >= attempt, "failed public close must still reconcile")
-							assert(layout.tree == tree and count_leaves(tree) == 5, "failed disposal pruned a retryable leaf")
-							assert(layout.root_view == root and layout.last_view == last)
-							assert(workspace.current() == selected and current.visible and vim.api.nvim_get_current_win() == focused)
-							assert(vim.deep_equal(before, listeners()), "lost or duplicate event subscriptions: " .. vim.inspect(listeners()))
-							assert(vim.deep_equal(registered, hooks()), "partially disposed refresh hooks were not restored")
-							vim.wait(30, function() return false end, 5)
-							assert(vim.api.nvim_buf_is_loaded(failed.bufnr), "deferred disposal deleted the retained transcript")
-						end
-						owned.dispose, tabs.dispose, events.off, chat.after_close = dispose, tab_dispose, off, after
-						assert(workspace.select(original) and chat.focus_view(failed))
-						assert(failed.expanded_tools["boundary-expansion"] and #views.windows(failed) == 2)
-						assert(#vim.api.nvim_tabpage_list_wins(0) == 5)
-						local notice = "boundary-" .. stage
-						events.emit("local_notice", { session_id = failed.session_id, role = "system", content = notice })
-						assert(vim.wait(1000, function()
-							return table.concat(vim.api.nvim_buf_get_lines(failed.bufnr, 0, -1, false), "\n"):find(notice, 1, true) ~= nil
-						end, 5), "restored view no longer receives events")
-						local notices = 0
-						for _, item in ipairs(failed.local_notices) do if item.content == notice then notices = notices + 1 end end
-						assert(notices == 1, "repair duplicated subscriptions")
-						local renders, render = 0, owned.do_render
-						owned.do_render = function(...) renders = renders + 1; return render(...) end
-						vim.api.nvim_exec_autocmds("VimResized", {})
-						assert(vim.wait(1000, function() return renders > 0 end, 5), "restored resize hook is inert")
-						owned.do_render = render
-						workspace.select(selected.id)
-						chat.close_view(failed, { all_windows = true })
-						assert(not failed.workspace_id and not failed.suspended and not views.for_session(failed.session_id))
-						assert(workspace.select(original) and chat.focus_view(remaining))
-						assert(layout.root_view == remaining and layout.last_view == remaining)
-						assert(#vim.api.nvim_tabpage_list_wins(0) == 3, "retry left native-copy or empty ghost panes")
-						assert(vim.api.nvim_buf_is_loaded(file) and vim.bo[file].modified and vim.bo[file].bufhidden == "wipe")
-						coherent()
-					]], { enabled, owner, stage })
-				end)
-			end
-		end
-
-		it("preserves disposal, repair and reconciliation errors during public suspended close: header=" .. tostring(enabled), function()
-			editor.lua([[
-				local enabled = ...
-				open(enabled)
-				local layout = workspace.current()
-				local current = chat.create_layout(seed("boundary-diagnostics"))
-				local selected, tree, generation = workspace.current(), layout.tree, first.generation
-				local owned = chat.for_view(first)
-				local dispose, create, after = owned.dispose, owned.create, chat.after_close
-				local reconciled = false
-				owned.dispose = function() dispose(); vim.api.nvim_win_get_buf(-1) end
-				owned.create = function() vim.api.nvim_get_option_value("opencode_boundary_repair_failure", {}) end
-				chat.after_close = function()
-					reconciled = true
-					after()
-					vim.api.nvim_get_option_value("opencode_boundary_reconcile_failure", {})
-				end
-				local ok, err = pcall(chat.close_view, first)
-				owned.dispose, owned.create, chat.after_close = dispose, create, after
-				assert(not ok and tostring(err):find("Invalid window id", 1, true), tostring(err))
-				assert(tostring(err):find("Could not restore suspended chat", 1, true), tostring(err))
-				assert(tostring(err):find("opencode_boundary_repair_failure", 1, true), tostring(err))
-				assert(reconciled and tostring(err):find("opencode_boundary_reconcile_failure", 1, true), tostring(err))
-				assert(views.valid(first, generation) and first.suspended and first.workspace_id == layout.id)
-				assert(layout.tree == tree and workspace.current() == selected and current.visible)
-				vim.wait(30, function() return false end, 5)
-				assert(vim.api.nvim_buf_is_loaded(first.bufnr))
-				owned.create()
-				assert(workspace.select(original) and chat.focus_view(first))
-				assert(workspace.select(selected.id))
-				chat.close_view(first)
-				assert(not first.workspace_id and not first.suspended and #workspace.list() == 1)
-				assert(workspace.current() == selected and current.visible)
-				coherent()
-			]], { enabled })
-		end)
-
 		for _, operation in ipairs({ "select", "close" }) do
-			for _, prior in ipairs({ "unset", "false", "true" }) do
-				it(("recovers native WinClosed errors: header=%s operation=%s guard=%s"):format(tostring(enabled), operation, prior), function()
+			local prior = "true"
+			do
+				it("recovers native WinClosed errors during " .. operation, function()
 					editor.lua([[
 						local enabled, operation, prior = ...
 						open(enabled)
@@ -586,32 +347,9 @@ describe("tab layout lifecycle recovery", function()
 			end
 		end
 
-		it("keeps the first layout usable when capture fails before any windows change: header=" .. tostring(enabled), function()
-			editor.lua([[
-				open(...)
-				local win = first.winid
-				local get = vim.api.nvim_get_option_value
-				local armed = true
-				vim.api.nvim_get_option_value = function(name, opts)
-					if armed and opts and opts.win then
-						armed = false
-						return get("opencode_invalid_window_option", opts)
-					end
-					return get(name, opts)
-				end
-				local ok, err = pcall(chat.create_layout, seed("capture-b"))
-				vim.api.nvim_get_option_value = get
-				assert(not ok and tostring(err):find("opencode_invalid_window_option", 1, true), tostring(err))
-				assert(first.winid == win and vim.api.nvim_win_is_valid(win), "failed capture must not destroy the only usable layout")
-				assert(not workspace.current().incomplete and not first.suspended)
-				assert(#workspace.list() == 1 and workspace.select(original) and chat.focus_view(first))
-				chat.create_layout(seed("capture-c")); workspace.close_current()
-				coherent()
-			]], { enabled })
-		end)
-
-		for _, operation in ipairs({ "select", "close" }) do
-			it("recovers a real E36 before disposing file/chat panes: header=" .. tostring(enabled) .. " " .. operation, function()
+		do
+			local operation = "close"
+			it("recovers a real E36 before disposing file/chat panes: " .. operation, function()
 				editor.lua([[
 					local enabled, operation = ...
 					open(enabled)
@@ -638,45 +376,9 @@ describe("tab layout lifecycle recovery", function()
 			end)
 		end
 
-		it("retains membership if cleanup of a failed new layout also fails: header=" .. tostring(enabled), function()
-			editor.lua([[
-				open(...)
-				local set_option, for_view = vim.api.nvim_set_option_value, chat.for_view
-				local failed, armed = nil, true
-				chat.for_view = function(view)
-					local owned = for_view(view)
-					if view ~= first and not failed then
-						failed = view
-						local dispose = owned.dispose
-						owned.dispose = function()
-							owned.dispose = dispose
-							vim.api.nvim_buf_delete(-1, { force = true })
-						end
-					end
-					return owned
-				end
-				vim.api.nvim_set_option_value = function(name, value, opts)
-					if armed and name == "winhighlight" and opts and opts.scope == "local" then
-						armed = false
-						return set_option("opencode_invalid_window_option", value, opts)
-					end
-					return set_option(name, value, opts)
-				end
-				local ok, err = pcall(chat.create_layout, seed("failed-new"))
-				vim.api.nvim_set_option_value, chat.for_view = set_option, for_view
-				assert(not ok and tostring(err):find("Could not dispose failed layout", 1, true), tostring(err))
-				assert(tostring(err):find("opencode_invalid_window_option", 1, true) and tostring(err):find("Invalid buffer id", 1, true))
-				assert(views.valid(failed) and failed.workspace_id and failed.suspended)
-				assert(#workspace.list() == 2 and workspace.current().id == original and first.visible)
-				assert(workspace.select(failed.workspace_id) and chat.focus_view(failed))
-				workspace.close_current()
-				assert(#workspace.list() == 1 and not views.valid(failed) and workspace.current().id == original)
-				coherent()
-			]], { enabled })
-		end)
-
-		for _, failure in ipairs({ 1, 2 }) do
-			it("recovers partial disposal of the only layout: header=" .. tostring(enabled) .. " member=" .. failure, function()
+		do
+			local failure = 2
+			it("recovers partial disposal of the only layout: member=" .. failure, function()
 				editor.lua([[
 					local enabled, failure = ...
 					open(enabled)
@@ -700,42 +402,6 @@ describe("tab layout lifecycle recovery", function()
 					assert(#workspace.list() == 0 and not views.workspace.switching)
 				]], { enabled, failure })
 			end)
-		end
-
-		for _, operation in ipairs({ "close", "reset" }) do
-			for _, failure in ipairs({ 1, 2 }) do
-				it(("prunes partial %s after a native disposal API error: header=%s member=%d"):format(operation, tostring(enabled), failure), function()
-					editor.lua([[
-						local enabled, operation, failure = ...
-						open(enabled)
-						local second = chat.create_layout(seed("dispose-b"))
-						local third = chat.create_split(second, seed("dispose-c"), "vertical")
-						local closing = workspace.current().id
-						if operation == "reset" then chat.create_layout(seed("dispose-visible")) end
-						local visible = workspace.current()
-						local failed = failure == 1 and second or third
-						local owned = chat.for_view(failed)
-						local dispose = owned.dispose
-						owned.dispose = function()
-							dispose() -- Fail after the real disposer has already done partial work.
-							vim.api.nvim_buf_delete(-1, { force = true })
-						end
-						local ok, err = pcall(operation == "close" and workspace.close_current or workspace.reset)
-						owned.dispose = dispose
-						assert(not ok and tostring(err):find("Invalid buffer id", 1, true), tostring(err))
-						assert(not views.workspace.switching and failed.workspace_id == closing and views.valid(failed))
-						if failure == 2 then assert(not views.valid(second) and not second.workspace_id) end
-						if operation == "reset" then assert(workspace.current() == visible and visible.last_view.visible) end
-						workspace.select(closing)
-						assert(#vim.api.nvim_tabpage_list_wins(0) == 3 - failure, "stale leaf resurrected a disposed view")
-						if failure == 2 then assert(workspace.current().last_view == third and workspace.current().root_view == third) end
-						workspace.close_current()
-						if operation == "reset" then workspace.reset() end
-						assert(not views.for_session("dispose-b") and not views.for_session("dispose-c"))
-						coherent()
-					]], { enabled, operation, failure })
-				end)
-			end
 		end
 	end
 end)

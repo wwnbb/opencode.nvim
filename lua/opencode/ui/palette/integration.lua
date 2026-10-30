@@ -40,11 +40,13 @@ local function attempt(integration, method, answer, opts)
 		if value.url then lines[#lines + 1] = value.url end
 		if value.message then vim.list_extend(lines, vim.split(value.message, "\n", { plain = true })) end
 		if value.error then lines[#lines + 1] = value.error end
-		lines[#lines + 1] = ""
-		lines[#lines + 1] = keymaps.label("integration", "open") .. ": open authorization URL   "
-				.. keymaps.label("integration", "code") .. ": enter code   " .. keymaps.label("integration", "close") .. ": close / cancel"
-		lines[#lines + 1] = keymaps.label("integration", "copy_url") .. ": copy URL   "
-				.. keymaps.label("integration", "copy_instructions") .. ": copy authorization instructions / code"
+		local function hint(items) return keymaps.hint(items, { omit_disabled = true }) end
+		local controls = hint({ { keymaps.label("integration", "open"), "open authorization URL" },
+			{ keymaps.label("integration", "code"), "enter code" }, { keymaps.label("integration", "close"), "close / cancel" } })
+		if controls then
+			vim.list_extend(lines, { "", controls, hint({ { keymaps.label("integration", "copy_url"), "copy URL" },
+				{ keymaps.label("integration", "copy_instructions"), "copy authorization instructions / code" } }) })
+		end
 		popup:render(lines)
 		if value.status == "complete" then notify("Connected to " .. integration.name); close() end
 	end
@@ -71,7 +73,7 @@ local function attempt(integration, method, answer, opts)
 		end)
 	end
 	apply()
-	popup:render({ "Starting authorization…", keymaps.label("integration", "close") .. ": cancel" })
+	popup:render({ "Starting authorization…", keymaps.hint({ { keymaps.label("integration", "close"), "cancel" } }) })
 	id = actions.start_integration_attempt(integration.id, method, answer, opts, render)
 end
 

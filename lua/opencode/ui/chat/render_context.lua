@@ -180,6 +180,12 @@ function Context:add_nui_lines(lines, kind)
 	self:append_relative_highlights(lines._opencode_highlights, base_line)
 end
 
+---@param index integer 0-based line
+---@return string|nil
+function Context:line_text(index)
+	return self.raw_lines[index + 1]
+end
+
 ---Remove a trailing blank separator, so lines attached to the block above go
 ---before it; the caller adds the separator back after them.
 ---@return boolean removed

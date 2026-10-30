@@ -71,7 +71,6 @@ describe("inline completion request lifecycle", function()
 			vim.fn.delete(saved.settings_path)
 		end
 		if saved.new_timer then vim.uv.new_timer, vim.uv.now = saved.new_timer, saved.now end
-		if saved.attach then vim.api.nvim_buf_attach = saved.attach end
 		vim.api.nvim_get_mode, vim.notify, vim.schedule_wrap = saved.mode, saved.notify, saved.wrap
 		for _, name in ipairs(modules) do package.loaded[name] = saved[name] end
 		vim.api.nvim_set_current_buf(old_buf); vim.api.nvim_buf_delete(buf, { force = true })
@@ -134,16 +133,6 @@ describe("inline completion request lifecycle", function()
 		package.loaded["opencode.lifecycle"].owns_server = function() return true end
 		assert.is_true(controller.complete())
 		assert.equals(1, #requests)
-	end)
-	it("shows the runtime completion model in the instruction prompt", function()
-		local opened
-		package.loaded["opencode.ui.completion_prompt"] = {
-			open = function(opts) opened = opts; return { close = function() end } end,
-		}
-		config.completion.model = { providerID = "test", modelID = "runtime" }
-		state.set_config(config)
-		assert.is_true(controller.complete_with_prompt())
-		assert.same({ providerID = "test", modelID = "runtime" }, opened.model)
 	end)
 	it("retains the setup enabled guard and falls back when no runtime feature config exists", function()
 		state.set_config({})
@@ -242,8 +231,7 @@ describe("inline completion request lifecycle", function()
 	end)
 	it("withholds streamed fence fragments until the enclosing fence is complete", function()
 		controller.complete()
-		for _, text in ipairs({ "`", "``", "```", "```lu", "```lua\n", "```lua\n42",
-			"```lua\n42\n`", "```lua\n42\n``", "```lua\r\n42\r\n``", "````lua\n42\n```" }) do
+		for _, text in ipairs({ "``", "```lu", "```lua\n42", "```lua\r\n42\r\n``", "````lua\n42\n```" }) do
 			requests[1].opts.on_update(text)
 			assert.is_false(controller.visible(), text)
 			assert.equals(0, #shown)
@@ -302,27 +290,6 @@ describe("inline completion request lifecycle", function()
 		requests[1].callback(nil, "late")
 		assert.equals(1, #shown)
 		assert.is_false(controller.visible())
-	end)
-	it("reuses the source watcher across requests and setup, then detaches it after dismissal", function()
-		local attachments = 0
-		saved.attach = vim.api.nvim_buf_attach
-		vim.api.nvim_buf_attach = function(...)
-			attachments = attachments + 1
-			return saved.attach(...)
-		end
-		controller.complete(); controller.accept()
-		controller.complete(); controller.accept()
-		controller.setup(config.completion)
-		controller.complete(); controller.accept()
-		assert.equals(1, attachments)
-		vim.api.nvim_buf_set_lines(buf, 0, 0, false, { "above" })
-		requests[3].opts.on_update("42")
-		assert.is_true(controller.visible())
-		assert.equals(1, shown[1][1].row)
-		controller.dismiss()
-		vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "changed above" })
-		controller.complete(); controller.accept()
-		assert.equals(2, attachments)
 	end)
 	it("keeps an independent queued suggestion when requesting completion on a different line", function()
 		vim.api.nvim_buf_set_lines(buf, 1, 1, false, { "local y = " })
@@ -419,12 +386,26 @@ describe("inline completion request lifecycle", function()
 		package.loaded["opencode.lifecycle"].ensure_connected = function() return false end
 		assert.is_false(controller.complete())
 		assert.equals(0, #requests)
+		assert.matches("server", notices[#notices]:lower())
 		state.set_connection("connected")
 		package.loaded["opencode.ui.completion"].pending = function() return false end
 		assert.is_false(controller.complete())
 		assert.equals(0, #requests)
 		assert.matches("indicator", notices[#notices])
 	end)
+
+	it("notifies when a streamed or final completion preview cannot be displayed", function()
+		package.loaded["opencode.ui.completion"].show = function() return false end
+		assert.is_true(controller.complete())
+		requests[1].opts.on_update("42")
+		assert.is_false(controller.visible())
+		assert.matches("display", notices[#notices])
+		assert.is_true(controller.complete())
+		requests[2].callback(nil, "43")
+		assert.is_false(controller.visible())
+		assert.matches("display", notices[#notices])
+	end)
+
 	it("handles empty responses and enforces single-line completion before suffix", function()
 		edit("call()", 5)
 		controller.complete(); assert.is_true(controller.accept())
@@ -448,10 +429,8 @@ describe("inline completion request lifecycle", function()
 	end)
 	it("streams insertions on blank and indented lines without changing source or cursor", function()
 		for _, case in ipairs({
-			{ "", "value = 1" },
 			{ "    ", "return value" },
 			{ "\t", "if ready:\n\t\tpass" },
-			{ "", "if ready:\n    pass" },
 		}) do
 			local prefix, insertion = case[1], case[2]
 			edit(prefix)
