@@ -9,7 +9,7 @@ local M = {
 		focus_input = "i", scroll_up = "<C-u>", scroll_down = "<C-d>", goto_top = "gg", goto_bottom = "G", abort = "<C-c>",
 		prev_user_message = "[a", next_user_message = "]a", prev_message = "[m", next_message = "]m",
 		prev_permission = "[p", next_permission = "]p", toggle_auto_scroll = "a", help = "?", command_palette = "<C-p>",
-		timeline = "T", message_actions = "ga", new_session = "N", next_session = "gt", prev_session = "gT",
+		timeline = "T", message_actions = "ga", new_session = "<leader>N", next_session = "gt", prev_session = "gT",
 		widget_next = { "j", "<Down>" }, widget_prev = { "k", "<Up>" }, confirm = "<CR>",
 		next_question = "<Tab>", prev_question = "<S-Tab>", back = "<Esc>", custom_input = "c", widget_message = "m", toggle_selection = "<Space>",
 		accept_edit = "<C-a>", reject_edit = "<C-x>", resolve_edit = "<C-m>", toggle_diff = "=",

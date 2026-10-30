@@ -46,7 +46,7 @@ or `require("opencode").split("horizontal")`. Each pane keeps its session, scrol
 widgets, and draft. The composer opens for one pane at a time and saves its
 text, attachments, and cursor when you switch panes. Model, agent, and reasoning
 choices belong to each session. Selecting a session already visible in another
-pane restores its layout and focuses that pane. `N` starts a new session in a
+pane restores its layout and focuses that pane. `<leader>N` starts a new session in a
 new OpenCode tab. `gt`, `gT`, and `Ngt` switch whole layouts. Opening a session
 from history also creates a layout when it is not already open.
 Numbered selection uses native Vim counts: `1gt` selects the first layout,

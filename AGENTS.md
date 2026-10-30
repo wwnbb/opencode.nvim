@@ -511,7 +511,7 @@ client.on_event("*", function(event_type, data) end) -- native envelope via data
 | `i` | Focus input |
 | `<C-c>` | Abort generation |
 | `<C-p>` | Command palette |
-| `N` | New session |
+| `<leader>N` | New session |
 | `x` | Close session tab |
 | `gt` / `gT` | Next / previous session |
 | `Ngt` | Go to session N |

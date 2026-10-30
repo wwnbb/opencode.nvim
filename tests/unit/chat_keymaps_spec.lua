@@ -41,11 +41,11 @@ describe("configurable chat controls", function()
 
 	it("prioritizes a configured close key over the default new-session key", function()
 		local closed = 0
-		setup({ close = "N" }, { close = function() closed = closed + 1 end })
+		setup({ close = "<leader>N" }, { close = function() closed = closed + 1 end })
 		assert.is_nil(mapping("q"))
-		mapping("N").callback()
+		mapping("<leader>N").callback()
 		assert.equals(1, closed)
-		assert.equals("N", keymaps.label("chat", "close", chat.config.keymaps))
+		assert.equals("<leader>N", keymaps.label("chat", "close", chat.config.keymaps))
 		assert.equals("(disabled)", keymaps.label("chat", "new_session", chat.config.keymaps))
 	end)
 
