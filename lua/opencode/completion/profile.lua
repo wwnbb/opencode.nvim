@@ -130,16 +130,41 @@ function M.prepare(config, existing, kind)
 	return overlay, snapshot
 end
 
+-- Temporary explanation sessions select this hidden agent: its system prompt
+-- replaces the coding-agent harness prompt, which invites tool use and chat replies.
+M.EXPLANATION_AGENT = "__opencode_nvim_explanation"
+M.EXPLANATION_SYSTEM = [[You explain source code to a developer inside their editor. The user message holds the instructions, the selected code and its editor context. Follow those instructions and their output format exactly. You have no tools; answer only from the given context.]]
+
+---Add the hidden explanation agent to an overlay.
+---@return string|nil overlay Unchanged when the existing overlay cannot be merged
+---@return boolean installed
+function M.prepare_agent(existing)
+	local ok, overlay = pcall(function()
+		local document = vim.empty_dict()
+		if existing and existing:match("%S") then document = require("opencode.util.jsonc").decode(existing) end
+		if not is_object(document) or vim.islist(document) then error("Expected configuration object") end
+		ensure_object(document, "agents")[M.EXPLANATION_AGENT] = { system = M.EXPLANATION_SYSTEM, hidden = true }
+		return vim.json.encode(document)
+	end)
+	if not ok then return existing, false end
+	return overlay, true
+end
+
 ---Install every feature profile into one overlay, completion first.
 ---@param configs table { completion?: table, explanation?: table }
 ---@return string|nil overlay
----@return table profiles { [kind] = { active?: table, error?: string } }
+---@return table profiles { [kind] = { active?: table, error?: string, agent?: string } }
 function M.prepare_all(configs, existing)
 	local overlay, profiles = existing, {}
 	for _, kind in ipairs({ "completion", "explanation" }) do
 		local active, err
 		overlay, active, err = M.prepare(configs[kind], overlay, kind)
 		profiles[kind] = { active = active, error = err }
+	end
+	if configs.explanation and configs.explanation.enabled then
+		local installed
+		overlay, installed = M.prepare_agent(overlay)
+		if installed then profiles.explanation.agent = M.EXPLANATION_AGENT end
 	end
 	return overlay, profiles
 end

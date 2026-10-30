@@ -1080,6 +1080,14 @@ function M.resolve_explanation_model(config)
 	return resolve_feature_model(config, "explanation")
 end
 
+---The hidden explanation agent, when this plugin spawned the server with it.
+---@return string|nil
+function M.explanation_agent()
+	local feature = current_attempt and not current_attempt.external
+		and current_attempt.profiles and current_attempt.profiles.explanation
+	return feature and feature.agent or nil
+end
+
 function M.status()
 	return {
 		connection = state.get_connection(),

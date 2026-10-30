@@ -373,17 +373,15 @@ function M.generate_text(session_id, prompt, callback)
 	api.request("generate", { path = { sessionID = session_id }, body = { prompt = prompt }, timeout = 0 }, callback)
 end
 
--- Generate editor completion; progress uses an isolated temporary session.
+-- Generate editor completion through the sessionless endpoint, so the prompt
+-- reaches the model without a session's agent system prompt, AGENTS.md or
+-- environment instructions. Streaming callbacks are ignored.
 ---@param prompt string
 ---@param model? table Native Model.Ref: { providerID, id, variant? }.
 ---@param callback function(err, text)
----@param opts? table { timeout?: number, directory?: string, on_update?: fun(text: string), on_progress?: fun(tokens: number) } Updates contain accumulated output; tokens are estimated.
+---@param opts? table { timeout?: number }
 ---@return table|nil request Handle with cancel() and is_active().
 function M.generate_completion(prompt, model, callback, opts)
-	if opts and (type(opts.on_update) == "function" or type(opts.on_progress) == "function") then
-		return require("opencode.client.explanation").generate(prompt, model, callback,
-			vim.tbl_extend("force", opts, { title = "Completion" }), M.endpoint_config)
-	end
 	return api.request("completion", {
 		body = { prompt = prompt, model = model },
 		timeout = opts and opts.timeout,

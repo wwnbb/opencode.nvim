@@ -28,6 +28,7 @@ local TOOL_LEAF_RENDERERS = { skill = chat_skill, write = cs.module(view, requir
 local function leaf_widget(part)
 	if part.shell_notification then return cs.module(view, require("opencode.ui.chat.shell_notification")) end
 	if part._editor_context then return cs.module(view, require("opencode.ui.chat.editor_context")) end
+	if part.system_reminder then return cs.module(view, require("opencode.ui.chat.system_reminder")) end
 	return part.type == "skill" and chat_skill or TOOL_LEAF_RENDERERS[part.tool]
 end
 
@@ -53,7 +54,7 @@ function M.is_tool_leaf(part)
 end
 
 function M.tool_animation_line(part)
-	if part.type == "skill" or part.shell_notification then return nil end
+	if part.type == "skill" or part.shell_notification or part.system_reminder then return nil end
 	local widget = leaf_widget(part)
 	if widget then return widget.animation_line end
 	return tool_group.animation_line(part)

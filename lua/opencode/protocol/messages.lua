@@ -74,7 +74,7 @@ function M.project(session_id, message)
 		local part = vim.deepcopy(content)
 		part.type = kind
 		if message.type ~= "synthetic" then
-			part.shell_notification, part.subagent_notification = nil, nil
+			part.shell_notification, part.subagent_notification, part.system_reminder = nil, nil, nil
 		end
 		part.id = M.part_id(session_id, message.id, kind, kind == "tool" and content.id or ordinal)
 		part.messageID, part.sessionID = message.id, session_id
@@ -125,6 +125,10 @@ function M.project(session_id, message)
 				and (metadata.state == "completed" or metadata.state == "cancelled" or metadata.state == "error")
 				and { description = message.description, metadata = metadata } or nil
 			local part = { type = "text", text = text, synthetic = true, shell_notification = shell_notification }
+			if message.type == "synthetic" and not shell_notification then
+				-- Model-facing reminders (plan mode, etc.) carry no metadata; keep the exact text.
+				part.system_reminder = text:match("^%s*<system%-reminder>\n?(.-)\n?</system%-reminder>%s*$")
+			end
 			if message.type == "synthetic" and metadata.source == "subagent"
 				and type(metadata.childID) == "string" and metadata.childID ~= ""
 				and (metadata.state == "completed" or metadata.state == "cancelled" or metadata.state == "error") then

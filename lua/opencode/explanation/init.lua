@@ -14,6 +14,12 @@ end
 
 local stop_timer = request.stop_timer
 
+local function scratch_directory()
+	local directory = vim.fs.joinpath(vim.fn.stdpath("cache"), "opencode.nvim", "explanation")
+	vim.fn.mkdir(directory, "p")
+	return directory
+end
+
 local function source_unchanged(record)
 	return vim.api.nvim_buf_is_valid(record.bufnr) and vim.api.nvim_buf_is_loaded(record.bufnr)
 		and vim.api.nvim_buf_get_changedtick(record.bufnr) == record.changedtick
@@ -79,7 +85,13 @@ local function hooks(owner, feature_config, follow_up)
 		fail = function(record, message) if live(record) then fail(record, message) end end,
 		unavailable = function(record) if live(record) then fail(record, "OpenCode server is unavailable") end end,
 		resolve_model = function(lifecycle, value) return lifecycle.resolve_explanation_model(value) end,
-		generate = function(...) return require("opencode.client").generate_explanation(...) end,
+		-- The temporary session runs outside the project so AGENTS.md discovery
+		-- does not prepend repository instructions to the explanation prompt.
+		generate = function(prompt, model, callback, opts)
+			opts.directory = scratch_directory()
+			opts.agent = require("opencode.lifecycle").explanation_agent()
+			return require("opencode.client").generate_explanation(prompt, model, callback, opts)
+		end,
 		update = function(record, text)
 			if not valid(record) then return end
 			local visible = response_text.display(text, display_config, { streaming = true })

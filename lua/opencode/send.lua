@@ -288,6 +288,7 @@ local function create_bound_session(body, token, text, opts, on_created)
 	client().create_session(body, function(err, info)
 		if not pending.is_current(token) then return end
 		if err then fail_before_send(err.message or "Session creation failed", text, opts); return end
+		info.title = require("opencode.util.session").displayTitle(info.title) or "New session"
 		session_actions.remember(info)
 		bind_created_session(info, opts)
 		on_created(info)

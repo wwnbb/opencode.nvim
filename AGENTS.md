@@ -135,6 +135,7 @@ lua/opencode/ui/chat/execute_details.lua → Execute details inspector float (re
 lua/opencode/ui/chat/execute_output.lua → Execute output decoding and readable JSON/fence formatting
 lua/opencode/ui/chat/shell_notification.lua → Native shell completion notices as expandable tool panels
 lua/opencode/ui/chat/subagent_notification.lua → Subagent completion notice widget
+lua/opencode/ui/chat/system_reminder.lua → Folded <system-reminder> synthetic notices (plan mode etc.), literal text when expanded
 lua/opencode/ui/chat/tasks.lua       → Task and tool widget facade
 lua/opencode/ui/chat/task_animation.lua → Task spinner animation frames/timer
 lua/opencode/ui/chat/task_children.lua → Task → child-session ID resolution

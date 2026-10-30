@@ -255,6 +255,16 @@ describe("OpenCode tabs with independent layouts", function()
 		assert.equals("layout-delayed", views.session(chat.get_view()).id)
 	end)
 
+	it("labels an untitled new layout as a new session instead of its ID", function()
+		press("<leader>N")
+		assert.equals(1, #creates)
+		creates[1].callback(nil, { id = "layout-untitled", directory = "/tmp/layout-project" }); settle()
+		assert.equals("layout-untitled", views.session(chat.get_view()).id)
+		local text = vim.api.nvim_eval_statusline(vim.o.tabline, { use_tabline = true, maxwidth = vim.o.columns }).str
+		assert.is_truthy(text:find("New session", 1, true))
+		assert.is_nil(text:find("layout-untitled", 1, true))
+	end)
+
 	for _, destination in ipairs({ "editor" }) do
 		it("drops a delayed palette opening after switching to another " .. destination, function()
 			local connected

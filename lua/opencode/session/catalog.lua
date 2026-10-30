@@ -3,6 +3,7 @@ local M = {}
 local state = require("opencode.state")
 local pending = require("opencode.session.pending")
 local focus = require("opencode.session.focus")
+local session_util = require("opencode.util.session")
 local schedule = require("opencode.util.schedule").schedule_callback
 local opens, renames = setmetatable({}, { __mode = "k" }), {}
 
@@ -87,6 +88,8 @@ function M.create(opts, bind, done)
 					vim.notify(opts.error_message(err), vim.log.levels.ERROR)
 					return
 				end
+				-- Native sessions stay untitled until the first prompt; never label one by its ID.
+				created.title = session_util.displayTitle(created.title) or "New session"
 				require("opencode.session").remember(created)
 				if not pending.is_current(opts.token) or not live(true) then return end
 				if focus.with_session_focus(opts.view, function() return bind(created) end, opts.initial_input) == false then return end

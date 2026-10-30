@@ -17,7 +17,15 @@ describe("completion editor context", function()
 			root = "/tmp/opencode-completion-context", filetype = vim.bo[buf].filetype,
 			prefix = line:sub(1, col), suffix = line:sub(col + 1) }
 	end
-	local function decoded(prompt) return vim.json.decode(prompt:match("Context %(JSON%):\n(.*)$")) end
+	local function file(prompt) return prompt:match('<file path="[^"]*" language="[^"]*">\n(.-)</file>\n') end
+	local function related(prompt)
+		local found = {}
+		for path, start, body in prompt:gmatch('<related path="([^"]*)" start_line="(%d+)">\n(.-)</related>\n') do
+			found[#found + 1] = { path = path, start_line = tonumber(start), body = body }
+		end
+		return found
+	end
+	local function has(prompt, text) return prompt:find(text, 1, true) ~= nil end
 	before_each(function() buffers = {}; original_buf = vim.api.nvim_get_current_buf() end)
 	local diagnostic_ns = vim.api.nvim_create_namespace("opencode_completion_context_test")
 	after_each(function()
@@ -56,10 +64,9 @@ describe("completion editor context", function()
 		assert.is_true(ok)
 		assert.equals('print("При', snap.prefix)
 		assert.equals('вет")', snap.suffix)
-		local data = decoded(assert(context.build(snap, defaults.merge().completion)))
-		assert.equals(1, data.max_lines)
-		assert.same({ "local before = true" }, data.before)
-		assert.same({ "return value" }, data.after)
+		local prompt = assert(context.build(snap, defaults.merge().completion))
+		assert.is_true(has(prompt, "Output a single line without a newline."))
+		assert.equals('local before = true\nprint("При<|cursor|>вет")\nreturn value\n', file(prompt))
 		assert.equals(vim.api.nvim_buf_get_changedtick(buf), snap.changedtick)
 	end)
 
@@ -73,11 +80,15 @@ describe("completion editor context", function()
 		local scratch = buffer("/tmp/opencode-completion-context/scratch.lua", { "scratch_secret" })
 		vim.bo[scratch].buftype = "nofile"
 		local prompt = assert(context.build(snapshot(buf, 1, #"local result = "), defaults.merge().completion))
-		local data = decoded(prompt)
-		assert.equals("util/helper.lua", data.related[1].path)
-		assert.same({ "return { unsaved = true }" }, data.related[1].lines)
-		assert.equals("sibling.lua", data.related[2].path)
+		local found = related(prompt)
+		assert.equals(2, #found)
+		assert.same({ path = "util/helper.lua", start_line = 1, body = "return { unsaved = true }\n" }, found[1])
+		assert.equals("sibling.lua", found[2].path)
+		assert.is_true(prompt:find("<related path=", 1, true) < prompt:find("<file path=", 1, true))
 		assert.is_nil(prompt:find("secret", 1, true))
+		local opts = defaults.merge().completion
+		opts.context.max_bytes = #prompt
+		assert.equals(prompt, context.build(snapshot(buf, 1, #"local result = "), opts))
 	end)
 	it("includes non-overlapping file header and obeys total serialized byte budget", function()
 		local content = { "local dependency = require('library')" }
@@ -87,18 +98,26 @@ describe("completion editor context", function()
 		local opts = defaults.merge({ completion = { context = { before_lines = 3, after_lines = 3, header_lines = 2, max_bytes = 1800 } } }).completion
 		local prompt = assert(context.build(snapshot(buf, 219, 5), opts, "previous"))
 		assert.is_true(#prompt <= 1800)
-		local data = decoded(prompt)
-		assert.equals("previous", data.previous_suggestion)
-		assert.equals(content[1], data.header[1])
-		assert.equals(content[219], data.before[#data.before])
-		assert.equals(content[221], data.after[1])
+		assert.is_true(has(prompt, "<previous_suggestion>\nprevious\n</previous_suggestion>\n"))
+		local source = file(prompt)
+		assert.equals(content[1] .. "\n" .. content[2] .. "\n...\n", source:sub(1, #content[1] + #content[2] + 6))
+		assert.is_true(has(source, content[219] .. "\ncall(<|cursor|>)\n" .. content[221] .. "\n"))
+	end)
+	it("marks omitted source only between a header and distant lines before the cursor", function()
+		local buf = buffer("/tmp/opencode-completion-context/gap.lua", { "a", "b", "c", "d", "e", "f" })
+		local function source(before_lines)
+			local opts = defaults.merge({ completion = { context = { before_lines = before_lines, after_lines = 0, header_lines = 2 } } }).completion
+			return file(assert(context.build(snapshot(buf, 5, 0), opts)))
+		end
+		assert.equals("a\nb\n...\nd\ne\n<|cursor|>f\n", source(2))
+		assert.equals("a\nb\nc\nd\ne\n<|cursor|>f\n", source(3))
 	end)
 	it("never cuts UTF-8 or exceeds a small budget when source lines are huge", function()
 		local buf = buffer("/tmp/opencode-completion-context/huge.lua", { string.rep("é", 2000), "x", string.rep("z", 4000) })
 		local opts = defaults.merge({ completion = { context = { max_bytes = 1024 } } }).completion
 		local prompt = assert(context.build(snapshot(buf, 1, 1), opts))
 		assert.is_true(#prompt <= 1024)
-		assert.same({}, decoded(prompt).before)
+		assert.equals("x<|cursor|>\n", file(prompt))
 		local result, err = context.build(snapshot(buf, 0, 2), opts)
 		assert.is_nil(result)
 		assert.matches("budget", err)
@@ -109,21 +128,21 @@ describe("completion editor context", function()
 		local opts = defaults.merge().completion
 		local instruction = 'return "é🙂" with a \\ separator'
 		local prompt = assert(context.build(snap, opts, nil, instruction))
-		assert.equals(instruction, decoded(prompt).instruction)
-		assert.equals(snap.prefix, decoded(prompt).prefix)
+		assert.is_true(has(prompt, "<request>\n" .. instruction .. "\n</request>\n"))
+		assert.equals("local value = <|cursor|>\n", file(prompt))
 		opts.context.max_bytes = #prompt
 		assert.equals(prompt, context.build(snap, opts, nil, instruction))
 		opts.context.max_bytes = #prompt - 1
 		local result, err = context.build(snap, opts, nil, instruction)
 		assert.is_nil(result)
 		assert.matches("instruction exceed", err, 1, true)
-		assert.is_nil(decoded(assert(context.build(snap, defaults.merge().completion))).instruction)
+		assert.is_false(has(assert(context.build(snap, defaults.merge().completion)), "<request>"))
 	end)
 	it("allows opting out of related files and rejects invalid numeric configuration", function()
 		local buf = buffer("/tmp/opencode-completion-context/a.lua", { "x" })
 		buffer("/tmp/opencode-completion-context/b.lua", { "related" })
 		local opts = defaults.merge({ completion = { context = { max_related_buffers = 0 } } }).completion
-		assert.same({}, decoded(context.build(snapshot(buf, 0, 1), opts)).related)
+		assert.same({}, related(assert(context.build(snapshot(buf, 0, 1), opts))))
 		for _, invalid in ipairs({ { timeout_ms = -1 }, { max_lines = -1 }, { context = { max_bytes = 10 } },
 			{ keymaps = { trigger = "<Tab>" } }, { keymaps = { trigger = "<C-i>", accept = "<Tab>" } } }) do
 			assert.is_false(pcall(defaults.merge, { completion = invalid }))
@@ -134,8 +153,7 @@ describe("completion editor context", function()
 		local snap = snapshot(buf, 1, #"print(")
 		local opts = defaults.merge().completion
 		local clean = assert(context.build(snap, opts))
-		assert.is_nil(decoded(clean).diagnostics)
-		assert.is_nil(clean:find("diagnostics are", 1, true))
+		assert.is_false(has(clean, "diagnostics"))
 		vim.diagnostic.set(diagnostic_ns, buf, {
 			{ lnum = 0, col = 0, severity = 1, message = "Above cursor" },
 			{ lnum = 1, col = 6, end_lnum = 1, end_col = 13, severity = 2, source = "lua_ls", code = "undefined-global",
@@ -144,13 +162,10 @@ describe("completion editor context", function()
 			{ lnum = 2, col = 0, severity = 1, message = "Below cursor" },
 		}, { virtual_text = false, signs = false, underline = false })
 		local prompt = assert(context.build(snap, opts))
-		assert.is_truthy(prompt:find("diagnostics are the editor's linter/LSP messages", 1, true))
-		assert.same({
-			{ line = 2, column = 1, end_line = 2, end_column = 1, severity = "ERROR", message = "Error first" },
-			{ line = 2, column = 7, end_line = 2, end_column = 14, severity = "WARN", source = "lua_ls",
-				code = "undefined-global", message = "Undefined global `missing`." },
-		}, decoded(prompt).diagnostics)
-		assert.equals(snap.prefix, decoded(prompt).prefix)
+		assert.is_true(has(prompt, "<diagnostics> are the editor's linter/LSP messages"))
+		assert.is_true(has(prompt, "<diagnostics>\nline 2:1 ERROR: Error first\n"
+			.. "line 2:7 WARN lua_ls undefined-global: Undefined global `missing`.\n</diagnostics>\n"))
+		assert.is_true(has(file(prompt), "print(<|cursor|>missing)\n"))
 		opts.context.max_bytes = #clean
 		local fitted = assert(context.build(snap, opts))
 		assert.equals(clean, fitted)
