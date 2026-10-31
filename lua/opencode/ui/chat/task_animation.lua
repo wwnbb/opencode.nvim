@@ -106,6 +106,9 @@ function M.is_animating_tool_part(tool_part)
 	end
 	local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
 	if chat_tasks().is_tool_leaf(tool_part) then return tool_group.is_working(tool_part) end
+	-- A completed call may have left its command running in the background.
+	local background = tool_part.tool == "bash" and cs.module(view, require("opencode.ui.chat.bash")).background(tool_part)
+	if background then return background.status == "running" end
 	return (tool_part.activity_group ~= nil or is_animated_regular_tool(tool_part.tool)) and M.is_task_working(status)
 end
 

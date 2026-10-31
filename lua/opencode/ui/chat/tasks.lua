@@ -63,6 +63,7 @@ end
 function M.tool_cache_key(part)
 	local widget = leaf_widget(part)
 	if widget then return widget.cache_key and widget.cache_key(part) or "" end
+	if part.tool == "bash" then return chat_bash.cache_key(part) end
 	return tool_group.cache_key(part)
 end
 

@@ -1,4 +1,33 @@
 local cs = require("opencode.ui.chat.state")
+local sync = require("opencode.sync")
+
+-- Shell completion notices by shell and job ID, rebuilt when the session changes.
+local notice_indexes = setmetatable({}, { __mode = "k" })
+
+---@param session_id string
+---@param shell_id string
+---@return table|nil notice the projected part's shell_notification
+local function completion_notice(session_id, shell_id)
+	local messages = sync.get_messages(session_id)
+	local revision = sync.get_session_revision(session_id)
+	local index = notice_indexes[messages]
+	if not index or index.revision ~= revision then
+		index = { revision = revision, notices = {} }
+		for _, message in ipairs(messages) do
+			---@type table|nil
+			local part = message.role == "system" and sync.get_parts(message.id)[1] or nil
+			local notice = part and part.shell_notification
+			if notice then
+				for _, id in ipairs({ notice.metadata.shellID, notice.metadata.jobID }) do
+					if type(id) == "string" and not index.notices[id] then index.notices[id] = notice end
+				end
+			end
+		end
+		notice_indexes[messages] = index
+	end
+	return index.notices[shell_id]
+end
+
 return cs.factory("bash", function(view)
 -- Bash tool widget renderer for the chat buffer.
 
@@ -125,6 +154,94 @@ local function add_command(result, command_lines, expanded)
 	end
 end
 
+local BACKGROUND_STATUS = {
+	running = { label = "running in background", hl = "OpenCodeBashCommand" },
+	finished = { label = "finished in background", hl = "OpenCodeBashMuted" },
+	failed = { label = "failed in background", hl = "OpenCodeBashError" },
+	cancelled = { label = "cancelled in background", hl = "OpenCodeBashWarning" },
+}
+
+---A command the server moved to the background, with the outcome of its completion notice.
+---The tool call itself completes at once; its text output is addressed to the model.
+---@param tool_part table
+---@return { shell_id: string, file: string|nil, status: string, exit: number|nil, timeout: boolean, signal: string|nil }|nil
+function M.background(tool_part)
+	if type(tool_part) ~= "table" or tool_part.tool ~= "bash" then
+		return nil
+	end
+	local ctx = tool_panel.context(tool_part)
+	local shell_id = ctx.metadata.shellID
+	if ctx.status ~= "completed" or ctx.metadata.status ~= "running" or type(shell_id) ~= "string" then
+		return nil
+	end
+	local background = {
+		shell_id = shell_id,
+		file = first_nonempty_text(ctx.output):match("\nOutput is streaming to: ([^\n]+)"),
+		status = "running",
+		timeout = false,
+	}
+	local notice = type(tool_part.sessionID) == "string" and completion_notice(tool_part.sessionID, shell_id)
+	if notice then
+		local metadata = notice.metadata
+		background.exit = tool_panel.normalize_number(metadata.exit)
+		background.timeout = metadata.timeout == true
+		background.signal = type(metadata.signal) == "string" and metadata.signal or nil
+		if metadata.state == "cancelled" then
+			background.status = "cancelled"
+		elseif metadata.state == "error" or background.timeout or background.signal
+			or (background.exit ~= nil and background.exit ~= 0) then
+			background.status = "failed"
+		else
+			background.status = "finished"
+		end
+	end
+	return background
+end
+
+---Render cache dependency beyond the part itself: the completion notice of a background command.
+---@param tool_part table
+---@return string
+function M.cache_key(tool_part)
+	local background = M.background(tool_part)
+	if not background then
+		return ""
+	end
+	return table.concat({ "background", background.status, tostring(background.exit or ""),
+		tostring(background.timeout), background.signal or "" }, ":")
+end
+
+---@param result table
+---@param description string
+---@param command_lines string[]
+---@param background table
+---@param expanded boolean
+---@return table
+local function render_background(result, description, command_lines, background, expanded)
+	local status = BACKGROUND_STATUS[background.status]
+	local header = "# " .. description .. " · " .. status.label
+	if background.exit ~= nil and background.exit ~= 0 then
+		header = header .. " · exit " .. tostring(background.exit)
+	end
+	if background.timeout then header = header .. " · timed out" end
+	if background.signal then header = header .. " · " .. background.signal end
+	header = tool_panel.header(header, { fold = true, expanded = expanded, working = background.status == "running" })
+	add_panel_line(result, render.expand_tabs(header, PANEL_PREFIX_WIDTH), status.hl)
+	add_panel_blank(result)
+	add_command(result, command_lines, expanded)
+	-- The rest of the tool output tells the model how to wait; the result arrives as a shell notice.
+	local details = {}
+	if background.file then details[#details + 1] = "Output: " .. text_util.normalize_path(background.file) end
+	if expanded then details[#details + 1] = "Shell ID: " .. background.shell_id end
+	if #details > 0 then
+		add_panel_blank(result)
+		for _, detail in ipairs(details) do
+			add_panel_line(result, detail, "OpenCodeBashMuted")
+		end
+	end
+	add_panel_blank(result)
+	return result
+end
+
 ---Command a bash row shows, and whether the row folds part of it behind the overflow line.
 ---@param tool_part table
 ---@param expanded boolean
@@ -187,6 +304,12 @@ function M.render_tool(tool_part, expanded, opts)
 		description = description .. " in " .. shown_workdir
 	end
 
+	local command_lines = vim.split(command, "\n", { plain = true })
+	local background = M.background(tool_part)
+	if background then
+		return render_background(result, description, command_lines, background, expanded)
+	end
+
 	local exit_code = tool_panel.normalize_number(metadata.exit)
 		or tool_panel.normalize_number(tool_state.exit)
 	local output = first_nonempty_text(ctx.output)
@@ -194,7 +317,6 @@ function M.render_tool(tool_part, expanded, opts)
 	local output_body = strip_echoed_command(output, command, workdir)
 	local error_body = trim_edge_newlines(error_text)
 	local has_error = status == "error" or error_body ~= "" or (exit_code ~= nil and exit_code ~= 0)
-	local command_lines = vim.split(command, "\n", { plain = true })
 	local has_command_overflow = #command_lines > MAX_COLLAPSED_COMMAND_LINES
 	local entries = {}
 	tool_panel.append_entries(entries, output_body, "OpenCodeBashOutput")
