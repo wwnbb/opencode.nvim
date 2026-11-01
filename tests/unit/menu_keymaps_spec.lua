@@ -124,6 +124,27 @@ describe("configurable menu and popup controls", function()
 		assert.is_nil(mapping(ctx.popup.bufnr, "n", "/"))
 	end)
 
+	it("maps insert action keys while searching and hints them in both modes", function()
+		local deleted, undone = 0, 0
+		ctx = menu.open({ items = { "First", "Second" }, searchable = true, sort = false, refocus_chat = false,
+			keymap_scope = "queue_menu", confirm_label = "steer",
+			keys = {
+				{ action = "delete", label = "delete", insert = true, handler = function() deleted = deleted + 1 end },
+				{ action = "undo", label = "undo", insert = true, handler = function() undone = undone + 1 end },
+			},
+		})
+		local function frame() return table.concat(vim.api.nvim_buf_get_lines(ctx.frame.bufnr, 0, -1, false), " "):gsub("%s+", " ") end
+		for _, hint in ipairs({ "<CR> steer", "<C-d> delete", "<C-u> undo" }) do assert.is_truthy(frame():find(hint, 1, true)) end
+		mapping(ctx.input.bufnr, "i", "<C-d>").callback()
+		mapping(ctx.input.bufnr, "i", "<C-u>").callback()
+		mapping(ctx.popup.bufnr, "n", "<C-d>").callback()
+		assert.equals(2, deleted)
+		assert.equals(1, undone)
+		mapping(ctx.input.bufnr, "i", "<Esc>").callback()
+		assert.is_truthy(frame():find("<C-d> delete", 1, true))
+		assert.is_nil(mapping(ctx.popup.bufnr, "i", "<C-d>"))
+	end)
+
 	it("keeps insert labels when a normal-only action displaces the same default key", function()
 		state.set_config(config.merge({ session_menu = { keymaps = { rename = "<CR>" } } }))
 		ctx = menu.open({ items = { "First" }, searchable = true, keymap_scope = "session_menu", refocus_chat = false,

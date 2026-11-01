@@ -282,18 +282,16 @@ describe("OpenCode tabs with independent layouts", function()
 	end
 
 	for _, suspended in ipairs({ false, true }) do
-		it("opens a delayed queue only while its owning pane is visible (suspended=" .. tostring(suspended) .. ")", function()
-			local reply
-			client.get_inbox = function(_, callback) reply = callback end
+		it("opens the queue only while its owning pane is visible (suspended=" .. tostring(suspended) .. ")", function()
+			require("opencode.session.pending").admit({ id = "queued-a", sessionID = "layout-a", type = "user", delivery = "queue",
+				payload = { text = "Prompt for A" }, time = { created = 1 } })
 			require("opencode.ui.menu").open = function(opts) picker = saved.menu(opts); return picker end
-			require("opencode.ui.palette.queue").show({ view = first })
 			if suspended then chat.create_layout(seed("layout-b"))
 			else chat.create_split(first, seed("layout-b"), "vertical") end
 			settle()
 			local focused = vim.api.nvim_get_current_win()
-			reply(nil, { { id = "queued-a", sessionID = "layout-a", type = "user", delivery = "queue",
-				payload = { text = "Prompt for A" }, time = { created = 1 } } }); settle()
-			assert.equals("queued", require("opencode.session.pending").get("layout-a", "queued-a").status)
+			-- The list comes from the synced queue, as the dock does, without a server read.
+			require("opencode.ui.palette.queue").show({ view = first }); settle()
 			if suspended then
 				assert.is_nil(picker)
 				assert.equals(focused, vim.api.nvim_get_current_win())

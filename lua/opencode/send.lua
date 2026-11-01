@@ -167,7 +167,9 @@ local function submit(session_id, payload, selection, text, opts, known_session)
 		started = true
 		require("opencode.local").message_agent.set(session_id, payload.id, selection.agent)
 		pending.begin({ session_id = session_id, message_id = payload.id, status = "submitting",
-			text = text, options = opts, payload = payload, selection = selection, token = token })
+			text = text, options = opts, payload = payload, selection = selection, token = token,
+			-- An idle session delivers a queued prompt at once: it never waits in the queue dock.
+			immediate = payload.delivery == "queue" and not require("opencode.session.status").is_busy(previous_status) })
 		seed(session_id, payload)
 		session_actions.set_status("streaming", { session_id = session_id, reason = "send_started" })
 	end

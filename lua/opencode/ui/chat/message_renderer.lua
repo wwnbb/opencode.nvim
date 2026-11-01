@@ -8,6 +8,7 @@ local NuiText = require("nui.text")
 local state = view
 local render = cs.module(view, require("opencode.ui.chat.render"))
 local sync = require("opencode.sync")
+local selectors = require("opencode.selectors")
 local app_state = require("opencode.state")
 local local_state = require("opencode.local")
 local activity = cs.module(view, require("opencode.ui.chat.activity"))
@@ -16,6 +17,7 @@ local processing_footer = require("opencode.ui.chat.processing_footer")
 local history_metadata = require("opencode.ui.chat.history_metadata")
 local widget_renderer = cs.module(view, require("opencode.ui.chat.widget_renderer"))
 local tool_renderer = cs.module(view, require("opencode.ui.chat.tool_renderer"))
+local instructions = cs.module(view, require("opencode.ui.chat.instructions"))
 local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 local tree = require("opencode.ui.chat.widget_tree")
 
@@ -104,10 +106,14 @@ local function select_messages(ctx, index)
 	end
 	-- Inbox echoes are not conversation history yet. Keep them below all
 	-- output, independently of their timestamps and the history render limit.
+	-- Queued prompts wait in the queue dock instead.
 	local history_messages, pending_messages = {}, {}
 	for _, message in ipairs(all_messages) do
-		local target = message.role == "user" and message.provisional and pending_messages or history_messages
-		target[#target + 1] = message
+		if not (message.role == "user" and message.provisional) then
+			history_messages[#history_messages + 1] = message
+		elseif not selectors.prompt_docked(ctx.current_session.id, message.id) then
+			pending_messages[#pending_messages + 1] = message
+		end
 	end
 	all_messages = history_messages
 	local messages = all_messages
@@ -269,7 +275,10 @@ local function render_hidden_history_notice(ctx, skipped_messages)
 	end
 	ctx:begin_block("hidden_history")
 	local history_line = NuiLine()
-	history_line:append(NuiText(string.format("... %d earlier messages hidden · use Load Full Session History in the palette", skipped_messages), "Comment"))
+	local keymaps = require("opencode.util.keymap")
+	local hint = keymaps.hint({ { keymaps.label("chat", "confirm", (ctx.chat_config or {}).keymaps), "load full history" } })
+	history_line:append(NuiText(string.format("... %d earlier messages hidden", skipped_messages)
+		.. (hint and (" · " .. hint) or ""), "Comment"))
 	ctx:add_line(history_line)
 	ctx:add_raw_line("")
 end
@@ -330,6 +339,31 @@ local function render_retry_status_if_needed(ctx, messages, msg_idx)
 	ctx:unsign_block()
 end
 
+---Status row of a pending prompt: only unconfirmed outcomes are labeled, and
+---the extra pending keys the record accepts are hints.
+local function add_pending_status(ctx, label, record)
+	local keymaps = require("opencode.util.keymap")
+	local items = {}
+	if label then items[1] = { status = label } end
+	if record then
+		local configured = keymaps.get("chat", (ctx.chat_config or {}).keymaps)
+		for _, command in ipairs(cs.module(view, require("opencode.ui.chat.pending_inputs")).commands) do
+			local action = command.name .. "_pending"
+			if #keymaps.keys(configured[action]) > 0
+				and (command.name ~= "steer" or record.status == "queued")
+				and (command.name ~= "queue" or record.status == "accepted") then
+				items[#items + 1] = { keymaps.label("chat", action, configured), command.name }
+			end
+		end
+	end
+	local status = keymaps.hint(items)
+	if not status then return end
+	local status_line = NuiLine()
+	status_line:append(NuiText(status, "Comment"))
+	ctx:add_line(status_line)
+	ctx:unsign_block()
+end
+
 local function render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
 	local start_line = ctx:line_count()
 	local agent = message.agent or local_state.message_agent.get(ctx.current_session.id, message.id)
@@ -347,6 +381,8 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 		end
 	end
 
+	-- A prompt not yet in history has the TUI's neutral pending border.
+	local provisional = message.provisional == true
 	local cache_key = ctx:render_cache_key(
 		"user",
 		ctx.current_session.id,
@@ -355,7 +391,8 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 		ctx.chat_width,
 		agent or "",
 		ctx.metadata_agent_revision,
-		max_user_message_lines
+		max_user_message_lines,
+		provisional and "pending" or ""
 	)
 	ctx:begin_block("user", message.id, cache_key)
 	local msg_lines = ctx:cached_nui_lines(
@@ -364,32 +401,14 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 			return render.render_user_message(render_parts.content, agent, file_parts, {
 				max_lines = max_user_message_lines,
 				highlight_code = ctx:code_highlighter(message.id),
+				border_hl = provisional and "OpenCodePendingPromptBorder" or nil,
 			})
 		end,
 		ctx:render_owner_key("user", message.id)
 	)
 	ctx:add_nui_lines(msg_lines)
-	local prompt_status, pending_input = require("opencode.selectors").prompt_status(ctx.current_session.id, message.id)
-	if prompt_status then
-		local keymaps = require("opencode.util.keymap")
-		local items = { { status = prompt_status } }
-		if pending_input then
-			local configured = keymaps.get("chat", (ctx.chat_config or {}).keymaps)
-			for _, command in ipairs(cs.module(view, require("opencode.ui.chat.pending_inputs")).commands) do
-				local action = command.name .. "_pending"
-				if #keymaps.keys(configured[action]) > 0
-					and (command.name ~= "steer" or pending_input.status == "queued")
-					and (command.name ~= "queue" or pending_input.status == "accepted") then
-					items[#items + 1] = { keymaps.label("chat", action, configured), command.name }
-				end
-			end
-		end
-		prompt_status = keymaps.hint(items)
-		local status_line = NuiLine()
-		status_line:append(NuiText(prompt_status, "Comment"))
-		ctx:add_line(status_line)
-		ctx:unsign_block()
-	end
+	local label, pending_input = selectors.prompt_status(ctx.current_session.id, message.id)
+	add_pending_status(ctx, label, pending_input)
 	if pending_input then
 		state.pending_inputs[message.id] = widget_support.mark_render_generation({
 			session_id = ctx.current_session.id,
@@ -518,6 +537,13 @@ local function render_messages(
 
 	render_hidden_history_notice(ctx, skipped_messages)
 
+	local function synthetic_part(message, field)
+		if message.type ~= "synthetic" then return nil end
+		local part = (ctx:get_message_render_parts(message.id).parts or {})[1]
+		return part and part[field] and part or nil
+	end
+	local instruction_group_end = 0
+
 	for msg_idx, message in ipairs(messages) do
 		local message_start_line = ctx:line_count()
 		local render_parts = ctx:get_message_render_parts(
@@ -535,19 +561,30 @@ local function render_messages(
 			or has_reasoning
 			or has_tools
 			or message.error_message ~= nil)
+		local instruction = synthetic_part(message, "instruction_load")
+		local notice = synthetic_part(message, "notice")
+		-- Folded into the instruction row of an earlier load in the same run.
+		if instruction and msg_idx <= instruction_group_end then should_render = false end
 
 		if should_render then
 			if message.role == "user" then
 				if ctx:line_count() > 0 then ctx:ensure_single_blank_separator() end
 				message_start_line = ctx:line_count()
 				render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
-			elseif message.type == "system" then
+			elseif instruction then
+				local group
+				group, instruction_group_end = instructions.group(messages, msg_idx, function(candidate)
+					return synthetic_part(candidate, "instruction_load")
+				end)
+				message_start_line = ctx:line_count()
+				tool_renderer.render_tool_part(ctx, group, render_parts.message_revision)
+			elseif message.type == "system" or notice then
 				-- System text is model-facing; only its description belongs in the chat.
 				ctx:begin_block("system", message.id)
 				ctx:ensure_single_blank_separator()
 				message_start_line = ctx:line_count()
 				local result = { lines = {}, highlights = {} }
-				render.add_panel_line(result, message.description or "Instructions updated", "Comment", {
+				render.add_panel_line(result, notice and notice.notice or message.description or "Instructions updated", "Comment", {
 					prefix = " ◈ ", prefix_hl_group = "Comment",
 				})
 				local base_line = ctx:add_render_result(result, "non_tool")
@@ -723,6 +760,26 @@ local function render_processing_footer(ctx, presentation, render_metadata_foote
 	end
 end
 
+-- The TUI shows queued prompts in a dock above its composer: here, the last
+-- rows of the chat. Chat keys find it among the pending input positions.
+local function render_queue_dock(ctx)
+	local queued = selectors.queued_prompts(ctx.current_session.id)
+	if #queued == 0 then return end
+	if ctx:line_count() > 0 then ctx:ensure_single_blank_separator() end
+	ctx:begin_block("queue")
+	local start_line = ctx:line_count()
+	ctx:add_nui_lines(render.render_queue_dock(queued))
+	add_pending_status(ctx, nil, selectors.pending_input(ctx.current_session.id, queued[1].id))
+	state.pending_inputs[cs.module(view, require("opencode.ui.chat.pending_inputs")).QUEUE_DOCK] =
+		widget_support.mark_render_generation({
+			kind = "queue",
+			session_id = ctx.current_session.id,
+			start_line = start_line,
+			end_line = ctx:line_count() - 1,
+		})
+	ctx:add_raw_line("")
+end
+
 local function render_empty_state(ctx, chrome_lines)
 	if ctx:line_count() > chrome_lines then
 		return
@@ -805,6 +862,7 @@ function M.render(ctx, index)
 			register_message_range(message, start_line, ctx:line_count() - 1)
 		end
 	end
+	render_queue_dock(ctx)
 
 	render_empty_state(ctx, chrome_lines)
 

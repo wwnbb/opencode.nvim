@@ -446,6 +446,9 @@ function M.position_key(map_name, id, pos)
 	if map_name == "tools" and pos.kind == "activity" then
 		return M.key("activity", id)
 	end
+	if map_name == "pending_inputs" and pos.kind == "queue" then
+		return M.key("queue")
+	end
 	local kind = POSITION_KINDS[map_name]
 	return kind and M.key(kind, id) or nil
 end

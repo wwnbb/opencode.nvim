@@ -10,6 +10,9 @@ local registered = {}
 function M.setup_message_backgrounds()
 	vim.api.nvim_set_hl(0, "OpenCodeUserMessageBg", { link = "CursorLine", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputBg", { link = "OpenCodeUserMessageBg", default = true })
+	-- Prompts not yet delivered (pending steers, the queue dock) use a neutral border.
+	vim.api.nvim_set_hl(0, "OpenCodePendingPromptBorder", { link = "NonText", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeQueueDockMuted", { link = "Comment", default = true })
 end
 
 -- Cursor groups a window maps to OpenCodeHiddenCursor to hide its cursor.

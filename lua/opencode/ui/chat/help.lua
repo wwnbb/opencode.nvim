@@ -26,7 +26,7 @@ local function sections(config)
 	end
 	local edit_confirm = overlapping == 0 and "Open file in editor"
 		or (overlapping == #confirm_keys and "Resolve file manually (shared key)" or "Open file; shared resolve key resolves")
-	local pending = {}
+	local pending = { { key("confirm"), "Pending steer or queued prompts menu" } }
 	for _, command in ipairs(cs.module(view, require("opencode.ui.chat.pending_inputs")).commands) do
 		table.insert(pending, { key(command.name .. "_pending"), command.description })
 	end
@@ -71,8 +71,8 @@ local function sections(config)
 		{
 			"Input Mode",
 			{
-				{ input_key("send"), "Send to queue" },
-				{ input_key("send_steer"), "Steer active agent" },
+				{ input_key("send"), "Steer active agent" },
+				{ input_key("send_queue"), "Send to queue" },
 				{ input_key("cancel"), "Cancel" },
 				{ input_key("history_prev") .. " / " .. input_key("history_next"), "Navigate history" },
 				{ input_key("history_search"), "Search prompt history in input" },
@@ -88,6 +88,7 @@ local function sections(config)
 					keymaps.label("execute_details", "code"), keymaps.label("execute_details", "calls") }, " / "),
 					"Execute details: Result / Raw / Code / Calls" },
 				{ key("enter_subagent"), "Enter subagent output" },
+				{ key("family_sessions"), "Show running subagent sessions" },
 				{ key("leave_subagent"), "Go back to parent" },
 			},
 		},

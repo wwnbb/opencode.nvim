@@ -53,12 +53,15 @@ function M.setup(bufnr, cfg, handlers)
 	end
 
 	local send_options = { expr = true, replace_keycodes = false, aliases = { "autocomplete_confirm", "command_enter" } }
-	map("i", "send", send_or_confirm(queue_send), send_options)
-	map("n", "send", queue_send)
+	map("i", "send", send_or_confirm(steer_send), send_options)
+	map("n", "send", steer_send)
+	map("i", "send_queue", send_or_confirm(queue_send), send_options)
+	map("n", "send_queue", queue_send)
+	-- An optional extra steer key.
 	map("i", "send_steer", send_or_confirm(steer_send), vim.tbl_extend("force", send_options, { filter = steer_key }))
 	map("n", "send_steer", steer_send, { filter = steer_key })
 	-- An explicitly retained legacy send_alt binding keeps its queue behavior
-	-- even when it shares the new default steer key.
+	-- even when it shares the send_steer key.
 	map("i", "send_alt", send_or_confirm(queue_send), send_options)
 	map("n", "send_alt", queue_send)
 

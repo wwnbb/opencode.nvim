@@ -83,6 +83,9 @@ local function build_footer(opts, keys, mode, labels)
 	if opts.multi_select then hint(mode == "i" and { "toggle_insert", "toggle" } or "toggle", "toggle") end
 	hint("select", opts.confirm_label or (opts.multi_select and "confirm" or "select"))
 	if mode == "i" then
+		for _, key in ipairs(keys) do
+			if key.insert and key.action and key.label and key.label ~= "" then hint(key.action, key.label) end
+		end
 		hint("normal_mode", "actions")
 	else
 		if opts.searchable then hint("search", "search") end
@@ -428,10 +431,11 @@ function M.open(opts)
 		end
 	end
 
-	function ctx.set_items(next_items)
+	function ctx.set_items(next_items, set_opts)
 		if is_closed then return end
 		items = next_items
-		render_list({ preserve_selection = false })
+		-- Search providers pass their loading flag here; only a table holds options.
+		render_list({ preserve_selection = type(set_opts) == "table" and set_opts.preserve_selection == true })
 	end
 
 	function ctx.current()
@@ -590,8 +594,9 @@ function M.open(opts)
 			if searchable and vim.tbl_contains(modes, "i") then map("i", customized.toggle and not customized.toggle_insert and "toggle" or "toggle_insert", toggle_current) end
 		end
 		for index, key in ipairs(keys) do
-			map("n", key.action or ("custom_" .. index), function() handle_key(key) end,
-				key.action and nil or { keys = key.key })
+			-- An insert key also works while typing a search.
+			map(key.insert and vim.tbl_contains(modes, "i") and { "n", "i" } or "n", key.action or ("custom_" .. index),
+				function() handle_key(key) end, key.action and nil or { keys = key.key })
 		end
 		if not searchable then
 			for index = 1, math.min(9, #items) do

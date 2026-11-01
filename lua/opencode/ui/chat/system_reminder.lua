@@ -1,6 +1,7 @@
 local cs = require("opencode.ui.chat.state")
 return cs.factory("system_reminder", function(view)
--- Model-facing <system-reminder> notices fold to one row; the text is shown literally.
+-- Model-facing synthetic notices without a description (<system-reminder> and
+-- plain text) fold to one row; the text is shown literally.
 local M = {}
 local render = cs.module(view, require("opencode.ui.chat.render"))
 local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
@@ -13,10 +14,10 @@ local function summary(body)
 end
 
 function M.render_tool(part, expanded)
-	local body = part.system_reminder
+	local body = part.system_reminder.text
 	local result = style.panel.result()
 	local width = render.get_chat_text_width()
-	local label = "System reminder"
+	local label = part.system_reminder.label
 	local first = summary(body)
 	if first ~= "" then label = label .. " · " .. first end
 	render.add_panel_line(result, text.truncate(tool_panel.header(label, { fold = true, expanded = expanded }),

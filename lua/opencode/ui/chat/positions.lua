@@ -165,6 +165,15 @@ function M.clear()
 	state.block_index = nil
 end
 
+---Key of the render block holding a buffer row.
+---@param line integer 0-based
+---@return string|nil
+function M.block_key_at(line)
+	local index = state.block_index
+	local i = index and index_at(index, line)
+	return i and index.keys[i] or nil
+end
+
 ---Rebuild the index and anchor every position the frame recorded.
 ---@param blocks OpenCodeRenderBlock[]
 function M.anchor_frame(blocks)

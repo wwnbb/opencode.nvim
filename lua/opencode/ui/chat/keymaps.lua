@@ -151,6 +151,12 @@ function M.setup_buffer(bufnr, opts)
 	end, keymap_opts)
 
 	local function confirm(key)
+		if pending_inputs.confirm() then return end
+		local row = vim.api.nvim_win_get_cursor(0)[1] - 1
+		if cs.module(view, require("opencode.ui.chat.positions")).block_key_at(row) == "hidden_history" then
+			require("opencode.ui.palette.session").load_full_history({ view = view, generation = view.generation })
+			return
+		end
 		local id, pos = chat_tasks.get_tool_at_cursor()
 		if chat_tasks.handle_tool_confirm(id, pos) then return end
 		if pos and (pos.activity_group or pos.kind == "tool") then
@@ -224,6 +230,10 @@ function M.setup_buffer(bufnr, opts)
 			chat_nav.enter_child_session(task_part_id)
 		end
 	end, vim.tbl_extend("force", keymap_opts, { nowait = true }))
+
+	map("n", "family_sessions", function()
+		require("opencode.ui.palette.family").show({ view = view, generation = view.generation, filter = "active" })
+	end, vim.tbl_extend("force", keymap_opts, { desc = "Show running subagent sessions" }))
 
 	map("n", "leave_subagent", function()
 		chat_nav.leave_child_session()

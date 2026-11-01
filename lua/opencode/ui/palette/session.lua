@@ -26,6 +26,24 @@ local function report(action, err)
 	if err then vim.notify("Could not " .. action .. ": " .. tostring(err.message or err), vim.log.levels.ERROR) end
 end
 
+---Fetch every history page and lift the render cap for the session.
+---@param context table|nil
+function M.load_full_history(context)
+	context = capture(context)
+	local sid = context.session_id
+	if not sid then return end
+	local current = guard(context, sid)
+	actions.load_session_messages(sid, { all = true }, function(err, messages)
+		if not current() then return end
+		if not err then
+			local view = context.view or require("opencode.ui.chat.state").state
+			view.full_history_sessions[sid] = true
+			require("opencode.ui.chat.render_coordinator").request({ session_id = sid, view_id = view.id, reason = "full_history" })
+		end
+		vim.notify(err and ("Could not load history: " .. err.message) or ("Loaded " .. #messages .. " messages"), err and vim.log.levels.ERROR or vim.log.levels.INFO)
+	end)
+end
+
 local function rename(session, title, callback, context)
 	context = capture(context)
 	local current = guard(context, session.id)
@@ -174,21 +192,7 @@ function M.register(palette)
 		enabled = function() return state.get_session().id ~= nil end,
 	})
 	palette.register({ id = "session.history", title = "Load Full Session History", category = "session",
-		description = "Fetch every history page", run = function(context)
-			context = capture(context)
-			local sid = context.session_id
-			if not sid then return end
-			local current = guard(context, sid)
-			actions.load_session_messages(sid, { all = true }, function(err, messages)
-				if not current() then return end
-				if not err then
-					local view = context.view or require("opencode.ui.chat.state").state
-					view.full_history_sessions[sid] = true
-					require("opencode.ui.chat.render_coordinator").request({ session_id = sid, view_id = view.id, reason = "full_history" })
-				end
-				vim.notify(err and ("Could not load history: " .. err.message) or ("Loaded " .. #messages .. " messages"), err and vim.log.levels.ERROR or vim.log.levels.INFO)
-			end)
-		end })
+		description = "Fetch every history page", run = M.load_full_history })
 
 	palette.register({
 		id = "session.new",

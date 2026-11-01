@@ -61,11 +61,11 @@ describe("editor context attachment widget", function()
 		assert.is_not_nil(state.tools[id]); assert.is_nil(state.expanded_tools[id])
 	end)
 
-	it("keeps queued controls outside the context and hydrates the expanded snapshot", function()
+	it("keeps pending prompt controls outside the context and hydrates the expanded snapshot", function()
 		local function prompt(source)
-			return "Queued prompt\n\n" .. label .. vim.json.encode({ path = "/tmp/test.sh", line = 1, text = source })
+			return "Steering prompt\n\n" .. label .. vim.json.encode({ path = "/tmp/test.sh", line = 1, text = source })
 		end
-		pending.begin({ session_id = "context", message_id = "user", status = "queued" })
+		pending.begin({ session_id = "context", message_id = "user", status = "accepted" })
 		seed(prompt("old source"), true)
 		local id, pos = next(state.tools)
 		local control_end = state.pending_inputs.user.end_line

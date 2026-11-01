@@ -264,6 +264,26 @@ describe("native shell completion notifications", function()
 		assert.equals(output, table.concat(rerendered))
 	end)
 
+	it("drops terminal colour codes and carriage returns from output, like bash output", function()
+		vim.o.columns = 60
+		local esc = string.char(27)
+		local output = esc .. "[30;46m" .. esc .. "[30;46m INFO " .. esc .. "[0m" .. esc .. "[0m "
+			.. esc .. "[96mProcessed: 295 Packages, 3 Services, 120 Methods, 51 Models" .. esc .. "[0m\r\n"
+			.. "progress 10%\rprogress 100%"
+		local id = show(notification("wails3 generate bindings", output))
+		tasks.handle_tool_toggle(id)
+		local lines = block_lines(id)
+		local text = table.concat(lines, "\n")
+		absent(text, esc)
+		absent(text, "\r")
+		contains(text, "INFO")
+		panel_line(lines, "progress 100%")
+		for _, line in ipairs(lines) do
+			assert.is_true(vim.fn.strdisplaywidth(line) <= vim.api.nvim_win_get_width(surface.winid), line)
+			if line ~= "" then assert.equals("▏", line:sub(1, #"▏"), vim.inspect(lines)) end
+		end
+	end)
+
 	it("keeps malformed or mismatched wrappers and native raw failure notices readable", function()
 		local valid = notification("printf safe", "literal body", { shellID = "shell", jobID = "job" })
 		local cases = {}
@@ -315,7 +335,8 @@ describe("native shell completion notifications", function()
 			assert.equals(shell.text, projected.parts[1].text)
 			local text = table.concat(vim.api.nvim_buf_get_lines(surface.bufnr, 0, -1, false), "\n")
 			absent(text, "Shell finished")
-			contains(text, "literal body")
+			-- Like the TUI, an unfinished shell notice shows only its description.
+			contains(text, native.type == "synthetic" and "◈ sleep 60" or "literal body")
 		end
 	end)
 end)

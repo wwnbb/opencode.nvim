@@ -254,7 +254,7 @@ with Enter, Tab, or the send key to open the skill selector. You can keep editin
 the prompt or add more skills; selection alone does not send a message. Sending
 the draft loads the skills on the server. Each selected skill then appears below
 the user message as an independent expandable row. `Attached` means the server
-returned the instructions; a queued message still shows its own delivery status.
+returned the instructions; a pending message keeps its own neutral border.
 Use `O` or `Enter` to inspect that message's saved instructions. If the server
 did not include the text, the row shows `Unconfirmed` and explains that the
 instructions are unavailable. These attachments do not create tool calls.
@@ -290,6 +290,7 @@ children opened directly by ID.
 `gd` opens the exact child recorded by a task. If that link was missed while
 disconnected or before opening Neovim, `gd` opens Session Family for an explicit
 selection; short unique ID suffixes distinguish children with identical titles.
+`gD` opens Session Family filtered to active sessions; `a` cycles the filter.
 The full ID is searchable and shown below the selected row. Activity and filters
 update while the menu is open. Selecting a child does not guess or overwrite the
 task's link. History refreshes preserve live links, and failed child loads leave
@@ -367,8 +368,9 @@ in slash commands, shell input, question answers, or review fields.
 
 Use the palette's Stash Current Prompt / Restore Latest Stashed Prompt actions,
 or `/stash` to browse several saved prompts. Stashes keep attachments and survive
-restarts. `/queued` searches pending inputs and restores them into a draft after
-confirmed cancellation. Empty steer submission promotes the first queued prompt.
+restarts. `/queued` lists queued prompts to steer, delete or restore into a
+draft after confirmed cancellation. Empty steer submission promotes the first
+queued prompt.
 Paste supports several quoted file paths on a line, including PDF and SVG. Large
 clipboard pastes use native folds; `za`, `zo` and `zc` control them, and sending
 preserves the complete text. Set `input.collapse_paste_lines = false` to disable.
@@ -1025,32 +1027,51 @@ UI, or manually convert its model IDs and add `"version": 2`. Unavailable
 favorites in a version 2 file are retained. Existing sessions keep their own
 model, agent and variant until you explicitly change them.
 
-Use `<C-g>` in the input to queue a message, or `<C-x><C-s>` to steer the
-active agent. These keys choose delivery for that send, including when resending
-an edited draft. The chat shows `Sending · queue` or `Sending · steer` until the
-server confirms admission. There is no delivery-mode toggle in the input.
-Queued prompts wait for the current response to finish. Steered prompts are
-applied between agent steps without aborting a running tool. Pending inputs
-stay at the bottom of the chat, below the current response and its status
-footer, until delivery is confirmed. They then move into the conversation
-history.
+Use `<C-g>` in the input to steer the active agent, or `<C-S-g>` (Ctrl+Shift+G)
+to queue a message, like Enter and the queue key in the OpenCode TUI. These keys
+choose delivery for that send, including when resending an edited draft. There
+is no delivery-mode toggle in the input. Queued prompts wait for the current
+response to finish. Steered prompts are applied between agent steps without
+aborting a running tool. `<C-S-g>` needs a terminal that reports Ctrl+Shift
+(the kitty keyboard protocol or CSI u; in tmux, `extended-keys`). Otherwise it
+arrives as `<C-g>` and steers; set `input.keymaps.send_queue` to another key.
 
-Press `S` on a queued message to steer it, or `Q` on a steering message to move
-it back into the queue. Both actions change the existing inbox item without
-resending its text or attachments. The label changes after server confirmation.
-On a pending message, press `C` to cancel it or `E` to remove it from the inbox
-and edit its text and attachments in the input.
-These keys act on the pending widget under the cursor (including its status line);
-outside it they keep their normal Neovim behavior.
-The pending label disappears once delivery is confirmed. **Cancel Pending Input**
-is also available in the palette. Configure or disable these chat keys with:
+Pending prompts look as they do in the OpenCode TUI. A steering prompt stays at
+the bottom of the chat, below the current response and its status footer, with a
+neutral border until delivery is confirmed. It then moves into the conversation
+history. Queued prompts leave the transcript for the queue dock, the last row of
+the chat: `N queued · <next prompt>`. A prompt queued while the session is idle
+is delivered at once and keeps its row. Only outcomes the server has not
+confirmed are labeled: `Delivery unknown · reconnect to check` and
+`Send failed · draft preserved`.
+
+Press `<CR>` on a steering prompt to open **Pending steer** (Move to queue or
+Delete), or on the queue dock to open **Queued prompts**. In that list, Enter
+steers the selected prompt, `<C-d>` deletes it and `<C-u>` restores it into the
+input after confirmed cancellation. Both keys also work while searching. Moving
+a prompt between the queue and steering changes the existing inbox item without
+resending its text or attachments. **View Queued Prompts** (`/queued`) in the
+palette opens the same list, and an empty steer submission steers the next
+queued prompt.
+
+The chat keys `C`, `E`, `S` and `Q` remain as shortcuts. On a steering prompt,
+`C` deletes it, `E` restores it into the input and `Q` moves it to the queue. On
+the queue dock, `S`, `C` and `E` steer, delete or restore the next queued
+prompt. They act on the pending row or dock under the cursor, including its key
+hint line; elsewhere they keep their normal Neovim behavior. **Cancel Pending
+Input** is also available in the palette. Configure or disable these keys with:
 
 ```lua
 require("opencode").setup({
   chat = { keymaps = { cancel_pending = "C", edit_pending = "E", steer_pending = "S", queue_pending = "Q" } }, -- false or "" disables a key
-  input = { keymaps = { send = "<C-g>", send_steer = "<C-x><C-s>" } },
+  queue_menu = { keymaps = { delete = "<C-d>", undo = "<C-u>" } },
+  input = { keymaps = { send = "<C-g>", send_queue = "<C-S-g>" } },
 })
 ```
+
+Pending prompts and the queue dock draw their border with
+`OpenCodePendingPromptBorder` (linked to `NonText`); the dock shows the next
+prompt in `OpenCodeQueueDockMuted` (linked to `Comment`).
 
 Question cancellation has no key binding by default. Set
 `chat.keymaps.cancel_question = "<leader>qc"` to choose one; `false` or `""`
@@ -1061,9 +1082,10 @@ from the answer submission confirmation screen. Escape returns from that screen
 to the questions; set `cancel_question = "<Esc>"` to also use it for cancellation
 with confirmation while choosing answers.
 
-An explicitly configured `input.keymaps.send_alt` remains an additional queue
-binding. If it uses the same key as `send_steer`, the legacy queue binding wins;
-choose a different `send_steer` key to keep both actions.
+`input.keymaps.send_steer` (off by default) adds another steer key, and an
+explicitly configured `input.keymaps.send_alt` remains an additional queue
+binding. If both use the same key, the legacy queue binding wins; choose a
+different `send_steer` key to keep both actions.
 
 Chat `<C-c>` interrupts the current execution and leaves inbox inputs pending.
 Scripts can explicitly request steering with `send(text, { delivery = "steer" })`.
@@ -1097,7 +1119,7 @@ Follow these steps:
    - `popup.border` (`none`, `single`, `double`, `rounded`, `solid`, or a Nui border character table)
    - `chat.session_tabs.enabled`, `chat.session_tabs.auto_fit`, `chat.session_tabs.max_tabs`, `chat.session_tabs.separator`, `chat.session_tabs.icons`, `chat.session_tabs.colors`
    - top-level `keymaps.toggle`, `keymaps.command_palette`, `keymaps.toggle_logs`, `keymaps.close_session`, `keymaps.abort`, `keymaps.active_sessions`
-   - `input.keymaps.send`, `input.keymaps.send_steer`, `input.keymaps.cancel`, `input.keymaps.variant_cycle`, `input.keymaps.agent_cycle`, `input.keymaps.model_cycle`
+   - `input.keymaps.send`, `input.keymaps.send_queue`, `input.keymaps.cancel`, `input.keymaps.variant_cycle`, `input.keymaps.agent_cycle`, `input.keymaps.model_cycle`
    - `lualine.enabled`, `notifications.enabled`, `key_hints.enabled`
    - Keep `danger_mode = false`; do not enable it unless I explicitly request the security tradeoff.
 6. Configure colors/highlights to match the existing colorscheme. Session tabs inherit Neovim's `TabLine`, `TabLineSel`, and `TabLineFill` groups by default; use `chat.session_tabs.colors` only when custom tab colors are needed, and `vim.api.nvim_set_hl` for existing `OpenCode*` highlight groups when needed.
@@ -1198,7 +1220,7 @@ require("opencode").setup({
   input = {
     keymaps = {
       send = "<C-g>",
-      send_steer = "<C-x><C-s>",
+      send_queue = "<C-S-g>",
       cancel = { "<Esc>", "q", "<C-c>" },
       variant_cycle = "<C-t>",
       agent_cycle = "<C-a>",

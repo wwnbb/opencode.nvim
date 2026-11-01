@@ -179,6 +179,12 @@ describe("native subagent completion notifications", function()
 			assert.is_nil(projected.parts[1].subagent_notification)
 			assert.is_nil(state.tasks[id])
 			assert.equals(native.text, projected.parts[1].text)
+			if value.type == "synthetic" then
+				-- Model-facing synthetic text folds; its literal body is behind the fold.
+				assert.equals(native.text, projected.parts[1].system_reminder.text)
+				state.expanded_tools[projected.parts[1].id] = true
+				chat.do_render()
+			end
 			local text = table.concat(vim.api.nvim_buf_get_lines(surface.bufnr, 0, -1, false), "\n")
 			absent(text, "General finished")
 			contains(text, "Literal example")

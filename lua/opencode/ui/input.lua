@@ -283,7 +283,9 @@ local function send_message(delivery)
 		table.insert(parts, part)
 	end
 	if text == "" and #parts == 0 then
-		if delivery == "steer" and state.mode ~= "shell" and current_session_id() then
+		-- As in the TUI composer, an empty steer submission steers the next
+		-- queued prompt. Dialog inputs (answers, review notes) keep no draft.
+		if delivery == "steer" and state.mode ~= "shell" and state.persist_pending and current_session_id() then
 			require("opencode.actions").promote_queued_input(current_session_id(), function(err)
 				if err then vim.notify("Could not promote queued prompt: " .. tostring(err.message or err), vim.log.levels.WARN) end
 			end)

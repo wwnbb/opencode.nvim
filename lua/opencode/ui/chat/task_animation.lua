@@ -97,7 +97,7 @@ end
 function M.is_animating_tool_part(tool_part)
 	tool_part = chat_tasks().resolve_tool_part(tool_part)
 	if type(tool_part) ~= "table" or tool_part.type == "skill" or tool_part._editor_context or tool_part.shell_notification
-		or tool_part.system_reminder then
+		or tool_part.system_reminder or tool_part.instructions then
 		return false
 	end
 	local status = tool_part.state and tool_part.state.status or "pending"

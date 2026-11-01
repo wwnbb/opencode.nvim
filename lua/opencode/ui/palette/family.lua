@@ -14,7 +14,7 @@ function M.show(context)
 	requests[key] = request
 	local current = palette_context.guard(context, { session_token = source_id, require_view = true, same_directory = true,
 		check = function() return requests[key] == request end })
-	local records, items, mode, interrupting, load_request = {}, {}, "all", {}, 0
+	local records, items, mode, interrupting, load_request = {}, {}, context.filter or "all", {}, 0
 	local function rebuild()
 		while #items > 0 do table.remove(items) end
 		local by_id, children, seen, titles, title_counts = {}, {}, {}, {}, {}

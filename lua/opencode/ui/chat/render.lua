@@ -426,7 +426,7 @@ end
 ---@param content string|nil
 ---@param agent_name string|nil
 ---@param files? table[]
----@param opts? { max_lines?: number, highlight_code?: OpenCodeCodeHighlighter }
+---@param opts? { max_lines?: number, highlight_code?: OpenCodeCodeHighlighter, border_hl?: string }
 ---@return OpenCodeRenderedLines
 function M.render_user_message(content, agent_name, files, opts)
 	opts = opts or {}
@@ -467,7 +467,7 @@ function M.render_user_message(content, agent_name, files, opts)
 		end
 		content_lines, body_indices = compacted, indices
 	end
-	local border_hl = M.get_agent_hl(agent_name or "unknown")
+	local border_hl = opts.border_hl or M.get_agent_hl(agent_name or "unknown")
 
 	local function pad_after_prefix(prefix, text, width)
 		local current = safe_display_width(prefix .. text)
@@ -514,6 +514,32 @@ function M.render_user_message(content, agent_name, files, opts)
 	end
 
 	add_block_line("")
+	return lines
+end
+
+---Render the queue dock the TUI shows above its composer: a pending-prompt
+---box with the count and the next queued prompt on one truncated row.
+---@param prompts { id: string, text: string }[]
+---@return OpenCodeRenderedLines
+function M.render_queue_dock(prompts)
+	ensure_user_message_highlights()
+	local width = M.get_chat_text_width()
+	local count = #prompts .. " queued"
+	local next_text = vim.trim((((prompts[1] or {}).text or ""):gsub("%c", " ")))
+	local row = require("opencode.util.text").truncate("  " .. count .. (next_text ~= "" and (" · " .. next_text) or ""),
+		math.max(1, width - 2), "…")
+	local lines = {}
+	for _, text in ipairs({ "", row, "" }) do
+		local line = NuiLine()
+		line:append(NuiText("┃", "OpenCodePendingPromptBorder"))
+		line:append(NuiText(text .. string.rep(" ", math.max(0, width - 1 - safe_display_width(text))), "OpenCodeUserMessageBg"))
+		lines[#lines + 1] = line
+	end
+	-- The next prompt is muted after the count, on the box background.
+	local muted_start = #"┃  " + #count
+	if #row > muted_start - #"┃" then
+		lines._opencode_highlights = { { line = 1, col_start = muted_start, col_end = #"┃" + #row, hl_group = "OpenCodeQueueDockMuted" } }
+	end
 	return lines
 end
 

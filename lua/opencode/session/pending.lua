@@ -44,6 +44,33 @@ function M.list(session_id)
 	return vim.deepcopy(outbox[session_id] or {})
 end
 
+-- As in the native TUI, a queued prompt waits in the queue dock rather than
+-- the transcript, and a submission joins it once admitted. A prompt queued in
+-- an idle session is delivered at once and keeps its transcript row.
+local function docked(record)
+	local submitting = record.status == "submitting" and (record.payload or {}).delivery ~= "steer"
+	return (record.status == "queued" or submitting) and not record.immediate and not record.delivery_missing
+		and ((record.inbox or {}).type or "user") == "user"
+end
+
+function M.docked(session_id, message_id)
+	local record = outbox[session_id] and outbox[session_id][message_id]
+	return record ~= nil and docked(record)
+end
+
+-- Admitted queued prompts in admission order; native IDs ascend. Chat frames
+-- read this, so it copies only IDs and text.
+function M.queued(session_id)
+	local result = {}
+	for id, record in pairs(outbox[session_id] or {}) do
+		if record.status == "queued" and docked(record) then
+			result[#result + 1] = { id = id, text = ((record.inbox or {}).payload or {}).text or record.text or "" }
+		end
+	end
+	table.sort(result, function(a, b) return a.id < b.id end)
+	return result
+end
+
 local function is_terminal(status) return status == "delivered" or status == "cancelled" end
 
 local function retire(session_id, message_id)
@@ -103,7 +130,10 @@ function M.admit(item)
 	if not record then
 		M.begin({ session_id = item.sessionID, message_id = item.id, status = "accepted" })
 	end
-	return M.update(item.sessionID, item.id, { status = item.delivery == "queue" and "queued" or "accepted", inbox = item, delivery_missing = false })
+	local patch = { status = item.delivery == "queue" and "queued" or "accepted", inbox = item, delivery_missing = false }
+	-- A prompt moved between queue and steer was not delivered at once.
+	if record and record.inbox and record.inbox.delivery ~= item.delivery then patch.immediate = false end
+	return M.update(item.sessionID, item.id, patch)
 end
 
 -- Native history contains only delivered messages, unlike local/inbox echoes.

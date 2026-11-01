@@ -4,6 +4,7 @@ return cs.factory("shell_notification", function(view)
 local M = {}
 local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 local render = cs.module(view, require("opencode.ui.chat.render"))
+local text = require("opencode.util.text")
 local panel = tool_panel.create_panel({ border_hl = "OpenCodeBashMuted", default_hl = "OpenCodeBashOutput" })
 local MAX_PREVIEW_ROWS = 8
 
@@ -20,6 +21,9 @@ local function content(part)
 			output = output:sub(#opening + 1, -#closing - 1)
 		end
 	end
+	-- Like bash output: drop terminal colour codes and carriage returns, which
+	-- would otherwise show as ^[ and widen rows past the panel.
+	output = text.strip_ansi(output):gsub("\r\n?", "\n")
 	return type(command) == "string" and command or "", output, metadata
 end
 

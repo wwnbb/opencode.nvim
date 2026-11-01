@@ -47,14 +47,14 @@ end
 local function keyboard_send(value)
 	app.focus_input(); wait(input.is_visible, "No input")
 	vim.api.nvim_buf_set_lines(vim.api.nvim_get_current_buf(), 0, -1, false, { value })
-	vim.cmd("stopinsert"); key("<C-g>")
+	vim.cmd("stopinsert"); key("<C-S-g>")
 	local id
 	wait(function()
 		for candidate, item in pairs(pending.list(info.id)) do
 			if item.text == value and item.status == "queued" then id = candidate; return true end
 		end
 	end, "Input not queued")
-	chat.focus(); assert(text():find("Queued · C cancel · E edit", 1, true), "Queue badge missing")
+	chat.focus(); assert(text():find("1 queued · ", 1, true), "Queue dock missing")
 	return id
 end
 local function cancel_menu(id)
@@ -78,18 +78,19 @@ client.disconnect_events(); state.set_connection("idle"); assert(client.connect_
 wait(state.is_connected, "No reconnect")
 -- Allow the full history recovery to finish before checking the pending input.
 vim.wait(700, function() return false end, 20)
-assert(text():find("INTERRUPT_MUST_KEEP_QUEUED", 1, true), "Reconnect lost queued message")
-assert(text():find("Queued · C cancel · E edit", 1, true), "Reconnect lost queue badge")
+assert(text():find("1 queued · INTERRUPT_MUST_KEEP_QUEUED", 1, true), "Reconnect lost the queue dock")
 shot("queue-after-interrupt-reconnect"); cancel_menu(retained)
 child = start_fifo()
 local steered = keyboard_send("Additional instruction: after the pending rg completes, reply exactly STEERING_APPLIED. Do not call any more tools.")
-local pos = assert(require("opencode.ui.chat.state").state.pending_inputs[steered])
-vim.api.nvim_win_set_cursor(chat.get_winid(), { pos.end_line + 1, 0 }); key("S")
+local chat_state = require("opencode.ui.chat.state").state
+-- The dock's steer key steers the next queued prompt it shows.
+local dock = assert(chat_state.pending_inputs.queue)
+vim.api.nvim_win_set_cursor(chat.get_winid(), { dock.start_line + 2, 0 }); key("S")
 wait(function()
 	local item = pending.get(info.id, steered)
 	return item and item.inbox and item.inbox.delivery == "steer" and item.status == "accepted"
 end, "Steering not admitted")
-assert(text():find("Steering pending", 1, true), "Steering badge missing")
+assert(not text():find(" queued · ", 1, true) and chat_state.pending_inputs[steered], "Steering row missing")
 assert(vim.uv.kill(child, 0), "Steering unexpectedly interrupted the running tool")
 shot("steering-pending")
 local writer = vim.system({ "/bin/sh", "-c", 'printf "needle\\n" > "$1"', "fixture", fifo })
@@ -103,7 +104,7 @@ for _, message in ipairs(history) do
 end
 assert(not users[cancelled] and not users[retained] and users[steered], "Incorrect delivered inputs")
 assert(answer:find("STEERING_APPLIED", 1, true), answer)
-assert(not text():find("Steering pending", 1, true) and not text():find("Queued ·", 1, true), "Stale queue status")
+assert(not text():find(" queued · ", 1, true) and not chat_state.pending_inputs[steered], "Stale queue status")
 shot("steering-completed")
 vim.fn.writefile({ vim.json.encode({ version = "2.0.11", history = history, cancelled = cancelled, retained = retained,
 	steered = steered, keyboard_queue = true, palette_cancel = true, interrupt_preserves_queue = true,

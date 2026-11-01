@@ -112,7 +112,7 @@ function M.open(opts)
 		close(function() opts.on_submit(value) end)
 	end
 	local map, apply = keymaps.mapper("input", state.bufnr)
-	for _, action in ipairs({ "send", "send_alt" }) do
+	for _, action in ipairs({ "send", "send_queue", "send_alt" }) do
 		map({ "i", "n" }, action, submit)
 	end
 	map({ "i", "n" }, "send_steer", submit, { filter = function(key)

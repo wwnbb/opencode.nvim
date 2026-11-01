@@ -42,6 +42,25 @@ local function notice(message)
 	return message.text or message.description or ("Message: " .. tostring(kind))
 end
 
+-- Other synthetic text is model-facing. Like the TUI, the chat shows instruction
+-- loads as one summary and described notices by their description; the rest fold.
+local function synthetic_notice(part, message, metadata, text)
+	local instruction = type(metadata.instruction) == "table" and metadata.instruction or {}
+	local paths = {}
+	for _, path in ipairs(type(instruction.paths) == "table" and instruction.paths or {}) do
+		if type(path) == "string" then paths[#paths + 1] = path end
+	end
+	local description = type(message.description) == "string" and vim.trim(message.description) or ""
+	if #paths > 0 then
+		part.instruction_load = { paths = paths, description = description ~= "" and description or nil }
+	elseif description ~= "" then
+		part.notice = description
+	else
+		local reminder = text:match("^%s*<system%-reminder>\n?(.-)\n?</system%-reminder>%s*$")
+		part.system_reminder = { label = reminder and "System reminder" or "Notice", text = reminder or text }
+	end
+end
+
 -- Automatic context is appended to the native prompt text. Keep its exact
 -- bytes in a synthetic part so ordinary user text and attachments stay separate.
 local function editor_context(text)
@@ -75,6 +94,7 @@ function M.project(session_id, message)
 		part.type = kind
 		if message.type ~= "synthetic" then
 			part.shell_notification, part.subagent_notification, part.system_reminder = nil, nil, nil
+			part.instruction_load, part.notice = nil, nil
 		end
 		part.id = M.part_id(session_id, message.id, kind, kind == "tool" and content.id or ordinal)
 		part.messageID, part.sessionID = message.id, session_id
@@ -125,13 +145,10 @@ function M.project(session_id, message)
 				and (metadata.state == "completed" or metadata.state == "cancelled" or metadata.state == "error")
 				and { description = message.description, metadata = metadata } or nil
 			local part = { type = "text", text = text, synthetic = true, shell_notification = shell_notification }
-			if message.type == "synthetic" and not shell_notification then
-				-- Model-facing reminders (plan mode, etc.) carry no metadata; keep the exact text.
-				part.system_reminder = text:match("^%s*<system%-reminder>\n?(.-)\n?</system%-reminder>%s*$")
-			end
-			if message.type == "synthetic" and metadata.source == "subagent"
+			local subagent = message.type == "synthetic" and metadata.source == "subagent"
 				and type(metadata.childID) == "string" and metadata.childID ~= ""
-				and (metadata.state == "completed" or metadata.state == "cancelled" or metadata.state == "error") then
+				and (metadata.state == "completed" or metadata.state == "cancelled" or metadata.state == "error")
+			if subagent then
 				-- Retain the notice text while reusing task navigation with the exact child ID.
 				part.subagent_notification, part.tool = true, "task"
 				part.state = {
@@ -139,6 +156,8 @@ function M.project(session_id, message)
 					input = { description = message.description, subagent_type = metadata.agent },
 					metadata = vim.tbl_extend("force", {}, metadata, { sessionID = metadata.childID }),
 				}
+			elseif message.type == "synthetic" and not shell_notification then
+				synthetic_notice(part, message, metadata, text)
 			end
 			append(part)
 		end

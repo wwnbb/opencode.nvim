@@ -1,11 +1,15 @@
 local cs = require("opencode.ui.chat.state")
 return cs.factory("pending_inputs", function(view)
 local M = {
+	-- Pending input key of the queue dock; native message IDs never collide.
+	QUEUE_DOCK = "queue",
+	-- Keys beside the TUI's menus. On the queue dock they act on the next
+	-- queued prompt it shows.
 	commands = {
-		{ name = "cancel", description = "Cancel pending input at cursor" },
-		{ name = "edit", description = "Edit pending input at cursor" },
-		{ name = "steer", description = "Steer queued input at cursor" },
-		{ name = "queue", description = "Queue steering input at cursor" },
+		{ name = "cancel", description = "Delete steering or next queued prompt" },
+		{ name = "edit", description = "Restore pending prompt into the input" },
+		{ name = "steer", description = "Steer next queued prompt" },
+		{ name = "queue", description = "Move steering prompt to the queue" },
 	},
 }
 
@@ -62,8 +66,49 @@ local function at_cursor()
 	local id = widget_support.find_widget_context_at_cursor(state.pending_inputs or {}, state.winid, function(item)
 		return item.session_id == sid and widget_support.position_generation_is_current(item)
 	end)
+	local docked = id == M.QUEUE_DOCK
+	if docked then id = (selectors.queued_prompts(sid)[1] or {}).id end
 	local record = id and selectors.pending_input(sid, id)
-	if record then return sid, id, record end
+	if record then return sid, id, record, docked end
+end
+
+local function open_steer_menu(sid, id)
+	local generation = view.generation
+	require("opencode.ui.menu").open({
+		context = { view = view, generation = generation },
+		title = " Pending steer ",
+		searchable = true,
+		sort = false,
+		close_on_select = false,
+		items = { { label = "Move to queue", value = "queue" }, { label = "Delete", value = "cancel" } },
+		on_select = function(item, ctx)
+			if not cs.valid(view, generation) or cs.session(view).id ~= sid then ctx.close(); return end
+			actions[item.value .. "_pending_input"](sid, id, function(err)
+				if err then
+					vim.notify("Could not " .. (item.value == "cancel" and "delete" or "queue") .. " pending prompt: "
+						.. tostring(type(err) == "table" and err.message or err), vim.log.levels.ERROR)
+					return
+				end
+				ctx.close()
+			end)
+		end,
+	})
+end
+
+---Open what clicking a pending row opens in the TUI: Pending steer for a
+---steering prompt, Queued prompts for the queue dock.
+---@return boolean handled
+function M.confirm()
+	local sid, id, record, docked = at_cursor()
+	if not record then return false end
+	if docked then
+		require("opencode.ui.palette.queue").show({ view = view, generation = view.generation, session_id = sid })
+	elseif record.status == "accepted" then
+		open_steer_menu(sid, id)
+	else
+		return false
+	end
+	return true
 end
 
 -- Deferred edits resume through the normal input entry point, never through a

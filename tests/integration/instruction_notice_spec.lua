@@ -132,6 +132,12 @@ describe("native instruction update notices", function()
 			native.time = { created = 2 }
 			local projected = load_history(native)
 			local text = render()
+			if native.type == "synthetic" then
+				-- Model-facing synthetic text folds; its literal body is behind the fold.
+				contains(text, "▸ Notice")
+				state.expanded_tools[projected.parts[1].id] = true
+				text = render()
+			end
 			contains(text, "The Code Mode tool catalog has changed")
 			contains(text, "mcp_instructions")
 			contains(text, "namespace job_search")

@@ -426,11 +426,11 @@ function M.send_selection(opts)
 	return selection
 end
 
--- Admission is separate from execution; delivered messages need no queue badge.
-local PROMPT_LABELS = {
-	queued = "Queued", accepted = "Steering pending",
-	uncertain = "Delivery unknown · reconnect to check", failed = "Send failed · draft preserved",
-}
+-- Admission is separate from execution; delivered messages need no badge. As
+-- in the native TUI, steering and queued prompts are unlabeled: a pending row
+-- has a neutral border and queued prompts wait in the queue dock. Only outcomes
+-- the server has not confirmed keep a label.
+local PROMPT_LABELS = { uncertain = "Delivery unknown · reconnect to check", failed = "Send failed · draft preserved" }
 
 -- Return both the display label and the actionable record from one snapshot.
 function M.prompt_status(session_id, message_id)
@@ -439,10 +439,6 @@ function M.prompt_status(session_id, message_id)
 	local record = require("opencode.session.pending").get(session_id, message_id)
 	if not record then return nil end
 	local label = PROMPT_LABELS[record.status]
-	if record.status == "submitting" then
-		local delivery = (record.payload or {}).delivery or "queue"
-		label = "Sending · " .. delivery
-	end
 	if record.delivery_missing and record.status ~= "delivered" and record.status ~= "cancelled" then
 		label = PROMPT_LABELS.uncertain
 	end
@@ -452,6 +448,21 @@ end
 function M.pending_input(session_id, message_id)
 	local _, record = M.prompt_status(session_id, message_id)
 	return record
+end
+
+---Queued prompts the queue dock shows, oldest first.
+---@param session_id string|nil
+---@return { id: string, text: string }[]
+function M.queued_prompts(session_id)
+	return require("opencode.session.pending").queued(session_id)
+end
+
+---Whether a pending prompt waits in the queue dock instead of the transcript.
+---@param session_id string|nil
+---@param message_id string
+---@return boolean
+function M.prompt_docked(session_id, message_id)
+	return require("opencode.session.pending").docked(session_id, message_id)
 end
 
 return M

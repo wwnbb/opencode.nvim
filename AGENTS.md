@@ -107,7 +107,7 @@ lua/opencode/ui/chat/messages.lua    → Message line rendering
 lua/opencode/ui/chat/history_metadata.lua → Scalar history metadata retained without live message references
 lua/opencode/ui/chat/processing_footer.lua → Processing footer state (busy status, pending response gap, metadata)
 lua/opencode/ui/chat/throughput.lua  → Pure turn-level throughput from native timing and usage
-lua/opencode/ui/chat/pending_inputs.lua → Pending/queued input widgets (cancel, edit, steer, queue)
+lua/opencode/ui/chat/pending_inputs.lua → Pending steer rows and the queue dock: <CR> menus as in the TUI, plus C/E/S/Q keys
 lua/opencode/ui/chat/editor_context.lua → Editor context snapshot rendering (literal, never Markdown)
 lua/opencode/ui/chat/tool_renderer.lua → Tool/task block rendering
 lua/opencode/ui/chat/tool_panel.lua  → Shared panel rendering helpers
@@ -135,7 +135,8 @@ lua/opencode/ui/chat/execute_details.lua → Execute details inspector float (re
 lua/opencode/ui/chat/execute_output.lua → Execute output decoding and readable JSON/fence formatting
 lua/opencode/ui/chat/shell_notification.lua → Native shell completion notices as expandable tool panels
 lua/opencode/ui/chat/subagent_notification.lua → Subagent completion notice widget
-lua/opencode/ui/chat/system_reminder.lua → Folded <system-reminder> synthetic notices (plan mode etc.), literal text when expanded
+lua/opencode/ui/chat/system_reminder.lua → Folded synthetic notices without a description (<system-reminder>, plain text), literal text when expanded
+lua/opencode/ui/chat/instructions.lua → Consecutive instruction-load notices as one "Instructions · N files" row
 lua/opencode/ui/chat/tasks.lua       → Task and tool widget facade
 lua/opencode/ui/chat/task_animation.lua → Task spinner animation frames/timer
 lua/opencode/ui/chat/task_children.lua → Task → child-session ID resolution
@@ -521,6 +522,7 @@ client.on_event("*", function(event_type, data) end) -- native envelope via data
 | `Ngt` | Go to session N |
 | `O` | Toggle tool/task expand |
 | `gd` | Enter subagent output |
+| `gD` | Show running subagent sessions |
 | `<BS>` | Go back to parent session |
 | `j` / `k` | Navigate widgets |
 | `<CR>` | Confirm widget selection |
@@ -540,8 +542,8 @@ client.on_event("*", function(event_type, data) end) -- native envelope via data
 
 | Key | Action |
 |-----|--------|
-| `<C-g>` | Send message |
-| `<C-x><C-s>` | Send message (alt) |
+| `<C-g>` | Send message (steer) |
+| `<C-S-g>` | Queue message |
 | `<Esc>` | Cancel |
 | `<C-t>` | Cycle variant |
 | `<C-a>` | Cycle agent |
