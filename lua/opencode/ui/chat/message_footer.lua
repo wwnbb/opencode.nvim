@@ -8,6 +8,10 @@ local NuiText = require("nui.text")
 local locale = require("opencode.util.locale")
 local sync = require("opencode.sync")
 
+require("opencode.ui.highlights").register("opencode.ui.chat.message_footer", function()
+	vim.api.nvim_set_hl(0, "OpenCodeInterrupted", { default = true, link = "DiagnosticWarn" })
+end)
+
 ---@param render table Per-view opencode.ui.chat.render instance
 ---@param attach_opts { ui_priority: integer }
 function M.attach(render, attach_opts)
@@ -161,16 +165,20 @@ function M.attach(render, attach_opts)
 		if render.is_message_final(message) then
 			return true
 		end
-		if message.error and message.error.name == "MessageAbortedError" then
+		if render.is_interrupted(message) then
 			return true
 		end
 		return false
 	end
 
+	-- A user interrupt is an outcome, not a failure: v1 names it MessageAbortedError,
+	-- the native protocol reports { type = "aborted", message = "Step interrupted" }.
 	---@param message table
 	---@return boolean
 	function render.is_interrupted(message)
-		return message.error and message.error.name == "MessageAbortedError" or false
+		local err = message and message.error
+		if type(err) ~= "table" then return false end
+		return err.name == "MessageAbortedError" or err.type == "aborted"
 	end
 
 	---Calculate duration for an assistant message (completed - parent_user.created).
@@ -273,7 +281,7 @@ function M.attach(render, attach_opts)
 		end
 		local cost = _numeric(message.cost)
 		if cost and cost > 0 then line:append(NuiText(string.format(" · $%.2f", cost), "Comment")) end
-		if not interrupted and is_final then
+		if is_final then
 			local duration_ms
 			if opts.duration_calculated then
 				duration_ms = opts.duration_ms
@@ -292,7 +300,7 @@ function M.attach(render, attach_opts)
 		end
 		if interrupted then
 			line:append(NuiText(" · ", "Comment"))
-			line:append(NuiText("interrupted", "Comment"))
+			line:append(NuiText("interrupted", { hl_group = "OpenCodeInterrupted", priority = UI_HIGHLIGHT_PRIORITY }))
 		end
 		return line
 	end

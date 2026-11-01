@@ -507,7 +507,8 @@ local function render_assistant_message(ctx, index, message, render_parts, opts)
 	end
 
 	widget_renderer.render_widgets_for_message(ctx, index, message.id)
-	if message.error_message then
+	-- The footer marks interrupted steps; only real failures get an error panel.
+	if message.error_message and not render.is_interrupted(message) then
 		ctx:begin_block("error", message.id)
 		widget_renderer.render_session_error_notice(ctx, { content = message.error_message })
 	end
