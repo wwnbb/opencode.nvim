@@ -4,11 +4,13 @@ local context = require("opencode.completion.context")
 
 -- Like completion, the prompt shows plain source in reading order. Inline
 -- markers keep unselected text on the first and last selected lines visible.
--- The rules stay byte-identical across requests; per-request values follow the source.
+-- The rules stay byte-identical across requests unless the source contains a
+-- marker; per-request values follow the source.
 local START, FINISH = "<|selection_start|>", "<|selection_end|>"
 
 local RULES = [[You edit source code in the user's editor. Rewrite the text between <|selection_start|> and <|selection_end|> in the <file> below as the user's <request> asks.
-- Output only the replacement text: no markdown fences, no explanation, no quotes around it.
+- Your output replaces the entire selection: return all of it with the edit applied, including every selected line you leave unchanged. Anything you omit is deleted.
+- Output only that text: no markdown fences, no explanation, no quotes around it.
 - Text outside the markers stays in place, including the rest of the first and last selected lines; never repeat it.
 - Keep the selection's indentation and follow the surrounding code's style.
 - An empty output deletes the selection.
@@ -22,9 +24,9 @@ local LIMITS = "Indent with %s. Output at most %d lines.\n"
 local function encode(data)
 	local out = {}
 	local function push(value) out[#out + 1] = value end
-	push(RULES)
+	push(context.with_marker(context.with_marker(RULES, START, data.start_marker), FINISH, data.end_marker))
 	context.render_related(push, data)
-	context.render_file(push, data, data.prefix .. START .. data.selection .. FINISH .. data.suffix)
+	context.render_file(push, data, data.prefix .. data.start_marker .. data.selection .. data.end_marker .. data.suffix)
 	if data.diagnostics then
 		push(DIAGNOSTICS:format(data.first_line == data.last_line and ("line " .. data.first_line)
 			or ("lines %d-%d"):format(data.first_line, data.last_line)))
@@ -82,6 +84,8 @@ function M.build(snapshot, opts, instruction)
 		language = snapshot.filetype,
 		first_line = selected.start_line, last_line = selected.end_line,
 		prefix = selected.prefix, selection = selected.text, suffix = selected.suffix,
+		start_marker = context.marker(snapshot.bufnr, "selection_start"),
+		end_marker = context.marker(snapshot.bufnr, "selection_end"),
 		instruction = instruction,
 		max_lines = #selected.lines + opts.max_lines,
 		indent = { expandtab = vim.bo[snapshot.bufnr].expandtab, shiftwidth = vim.bo[snapshot.bufnr].shiftwidth,

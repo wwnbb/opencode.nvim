@@ -129,6 +129,14 @@ local function receiving(record)
 	return record.phase == "pending" or record.phase == "streaming"
 end
 
+-- The prompt asks for full indentation when only indentation precedes the
+-- cursor; that indentation is already in the buffer, so drop it once.
+local function after_indent(record, text)
+	local indent = record.prefix
+	if record.selection or indent == "" or indent:find("%S") or text:sub(1, #indent) ~= indent then return text end
+	return text:sub(#indent + 1)
+end
+
 local hooks = {
 	current = function(record) return records[record.id] == record end,
 	valid = function(record)
@@ -149,6 +157,7 @@ local hooks = {
 		if records[snapshot.id] ~= snapshot or not receiving(snapshot) then return end
 		if not active(snapshot) then discard(snapshot); return end
 		local text = M.normalize(response, snapshot.max_lines, true)
+		if text then text = after_indent(snapshot, text) end
 		if text == snapshot.text then return end
 		snapshot.text, snapshot.phase = text, text and "streaming" or "pending"
 		local displayed
@@ -170,6 +179,7 @@ local hooks = {
 			if response_err then notify(response_err) end
 			return
 		end
+		text = after_indent(snapshot, text)
 		snapshot.text, snapshot.phase = text, "ready"
 		if ui.show(snapshot, text) == false then
 			discard(snapshot)

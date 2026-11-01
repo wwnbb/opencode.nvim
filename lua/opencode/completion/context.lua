@@ -10,7 +10,7 @@ local RULES = [[You are an inline code completion engine. Write the text to inse
 - Output only the inserted text: no markdown fences, no explanation, no quotes around it.
 - The code before and after <|cursor|> stays in place; never repeat it.
 - %s
-- Indent with %s and follow the surrounding code's style.
+- Indent with %s and follow the surrounding code's style. Write every new line with its full indentation. When only indentation precedes <|cursor|>, start the first line with its full indentation too; it replaces the indentation before <|cursor|>.
 - Inside a comment, docstring or string, continue its content; do not close it to start unrelated code.
 - If no insertion is useful, output nothing.
 - Example: for `let n = num<|cursor|>;` output `ber`.
@@ -115,18 +115,38 @@ function M.render_file(push, data, focus)
 	push("</file>\n")
 end
 
+-- A marker must not occur in the source itself, or the model sees several
+-- insertion points; such a buffer gets a numbered marker instead.
+function M.marker(bufnr, name)
+	local text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+	local marker, index = "<|" .. name .. "|>", 0
+	while text:find(marker, 1, true) do
+		index = index + 1
+		marker = ("<|%s_%d|>"):format(name, index)
+	end
+	return marker
+end
+
+-- Fixed text naming `default` refers to the request's marker instead.
+function M.with_marker(template, default, marker)
+	if marker == default then return template end
+	return (template:gsub(vim.pesc(default), function() return marker end))
+end
+
 local function encode(data)
 	local out = {}
 	local function push(value) out[#out + 1] = value end
-	push(RULES:format(data.max_lines == 1 and "Output a single line without a newline."
+	push(M.with_marker(RULES, CURSOR, data.marker):format(data.max_lines == 1 and "Output a single line without a newline."
 		or ("Output at most %d lines."):format(data.max_lines), M.indent_style(data.indent)))
-	if data.previous_suggestion then push(PREVIOUS:format(data.previous_suggestion)) end
+	if data.previous_suggestion then
+		push(M.with_marker(PREVIOUS, CURSOR, data.marker):format(data.previous_suggestion))
+	end
 	if data.diagnostics then
 		push(DIAGNOSTICS)
 		M.render_diagnostics(push, data)
 	end
 	M.render_related(push, data)
-	M.render_file(push, data, data.prefix .. CURSOR .. data.suffix)
+	M.render_file(push, data, data.prefix .. data.marker .. data.suffix)
 	if data.instruction then push(REQUEST:format(data.instruction)) end
 	return table.concat(out)
 end
@@ -311,7 +331,7 @@ function M.build(snapshot, opts, previous, instruction)
 		first_line = snapshot.row + 1,
 		indent = { expandtab = vim.bo[bufnr].expandtab, shiftwidth = vim.bo[bufnr].shiftwidth, tabstop = vim.bo[bufnr].tabstop },
 		max_lines = snapshot.suffix ~= "" and 1 or opts.max_lines,
-		prefix = snapshot.prefix, suffix = snapshot.suffix,
+		prefix = snapshot.prefix, suffix = snapshot.suffix, marker = M.marker(bufnr, "cursor"),
 		before = {}, after = {}, header = {}, related = {},
 	}
 	if instruction then data.instruction = instruction end
