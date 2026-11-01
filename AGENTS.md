@@ -47,7 +47,7 @@ lua/opencode/review.lua              → Bundled diff review via the official pl
 lua/opencode/stats.lua               → Adapt native session statistics for the /stats view
 lua/opencode/vcs.lua                 → Pure VCS patch validation and paired-hunk projection
 lua/opencode/completion/init.lua     → Sessionless editor completion lifecycle, cancellation, acceptance
-lua/opencode/completion/context.lua  → Bounded context from current and related loaded buffers, plus overlapping diagnostics
+lua/opencode/completion/context.lua  → Bounded context from current and related loaded buffers, plus overlapping diagnostics; plain prompt sections and their byte budget shared with selection edits and explanations
 lua/opencode/completion/profile.lua  → Model validation and managed-server variant overlay
 lua/opencode/completion/selection.lua → Exact, unsaved Visual ranges for instruction-driven replacement
 lua/opencode/explanation/init.lua    → One Visual selection, one streamed explanation, one temporary popup

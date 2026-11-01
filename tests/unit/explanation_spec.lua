@@ -299,7 +299,7 @@ describe("selection explanation request lifecycle", function()
 
 	it("answers follow-up questions with the selection context and earlier turns", function()
 		local function conversation(prompt)
-			return vim.json.decode(prompt:match("Conversation %(JSON%):\n(.*)$"))
+			return prompt:match("<conversation>\n(.-)</conversation>\n")
 		end
 		assert.is_true(controller.explain_selection())
 		requests[1].callback(nil, "<answer>\nL1–2 — Defines a value.\n</answer>")
@@ -307,17 +307,18 @@ describe("selection explanation request lifecycle", function()
 		assert.same({ "L1–2 — Defines a value.\n\n> Why return it?\n> Briefly." }, pendings)
 		assert.equals(2, #requests)
 		assert.same({ providerID = "test", id = "explain" }, requests[2].model)
-		assert.is_truthy(requests[2].prompt:find("Answer the latest question", 1, true))
-		assert.is_truthy(requests[2].prompt:match("Context %(JSON%):\n[^\n]*local value = 1"))
-		assert.same({
-			{ role = "assistant", text = "L1–2 — Defines a value." },
-			{ role = "user", text = "Why return it?\nBriefly." },
-		}, conversation(requests[2].prompt))
+		assert.is_truthy(requests[2].prompt:find("Answer the latest user question", 1, true))
+		-- The follow-up repeats the first request's context byte for byte.
+		local shared = requests[1].prompt:match("^(.-</file>\n)")
+		assert.is_truthy(shared:find("local value = 1", 1, true))
+		assert.equals(shared, requests[2].prompt:sub(1, #shared))
+		assert.equals("<assistant>\nL1–2 — Defines a value.\n</assistant>\n<user>\nWhy return it?\nBriefly.\n</user>\n",
+			conversation(requests[2].prompt))
 		requests[2].opts.on_update("<answer>\nSo callers")
 		requests[2].callback(nil, "<answer>\nSo callers can use it.\n</answer>")
 		assert.same({ "L1–2 — Defines a value.", "So callers", "So callers can use it." }, shown)
 		assert.is_true(controller.ask("Anything else?"))
-		assert.equals(4, #conversation(requests[3].prompt))
+		assert.equals(4, select(2, conversation(requests[3].prompt):gsub("</%a+>\n", "")))
 		assert.equals("L1–2 — Defines a value.\n\n> Why return it?\n> Briefly.\n\nSo callers can use it.\n\n> Anything else?",
 			pendings[2])
 		assert.same({}, errors)

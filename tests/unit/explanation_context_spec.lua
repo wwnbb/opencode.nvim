@@ -21,8 +21,25 @@ describe("selection explanation context", function()
 			filetype = "lua", mode = mode or "V", start_line = first,
 			end_line = first + #selected - 1, lines = selected, text = table.concat(selected, "\n") }
 	end
-	local function decoded(prompt)
-		return vim.json.decode(prompt:match("Context %(JSON%):\n(.*)$"))
+	local function file(prompt) return prompt:match('<file path="[^"]*" language="[^"]*">\n(.-)</file>\n') end
+	local function selection(prompt)
+		local lines, mode, text = prompt:match('<selection lines="([^"]*)" mode="([^"]*)">\n(.-)\n</selection>\n')
+		return { lines = lines, mode = mode, text = text }
+	end
+	-- Source lines around the selection inside <file>.
+	local function surroundings(prompt)
+		return file(prompt):match("^(.-)<selection .-</selection>\n(.*)$")
+	end
+	local function diagnostic_lines(prompt)
+		local block = prompt:match("<diagnostics>\n(.-)</diagnostics>\n")
+		return block and vim.split(block, "\n", { trimempty = true }) or {}
+	end
+	local function related(prompt)
+		local found = {}
+		for path, body in prompt:gmatch('<related path="([^"]*)" start_line="%d+">\n(.-)</related>\n') do
+			found[#found + 1] = { path = path, body = body }
+		end
+		return found
 	end
 	before_each(function() buffers = {}; original_buf = vim.api.nvim_get_current_buf() end)
 	after_each(function()
@@ -33,20 +50,23 @@ describe("selection explanation context", function()
 		end
 	end)
 
-	it("prioritizes the entire unsaved selection and adds exact source line numbers", function()
+	it("puts the entire unsaved selection with exact source lines before the instruction", function()
 		local bufnr = buffer(root .. "/main.lua", { "-- header", "local before = 1", "local a = 'é'", "return a", "after()" })
 		buffer(root .. "/sibling.lua", { "return { unsaved = true }" })
 		local opts = config.merge({ explanation = { language = "ru" } }).explanation
 		local prompt = assert(context.build(snapshot(bufnr, 3, { "local a = 'é'", "return a" }), opts))
-		local data = decoded(prompt)
-		assert.is_truthy(prompt:find("Объясни только выделенный исходный код по-русски", 1, true))
+		local instruction = prompt:find("Объясни по-русски только код внутри <selection>", 1, true)
+		assert.is_truthy(instruction)
+		assert.is_true(instruction > prompt:find("</file>\n", 1, true))
 		assert.is_truthy(prompt:find("<answer>", 1, true))
-		assert.same({ { line = 3, text = "local a = 'é'" }, { line = 4, text = "return a" } }, data.selection)
-		assert.same({ "-- header", "local before = 1" }, data.before)
-		assert.same({ "after()" }, data.after)
-		assert.equals("sibling.lua", data.related[1].path)
-		assert.same({ "return { unsaved = true }" }, data.related[1].lines)
-		assert.same({}, data.diagnostics)
+		assert.is_nil(prompt:find("JSON", 1, true))
+		assert.same({ lines = "3-4", mode = "line", text = "local a = 'é'\nreturn a" }, selection(prompt))
+		local before, after = surroundings(prompt)
+		assert.equals("-- header\nlocal before = 1\n", before)
+		assert.equals("after()\n", after)
+		assert.same({ { path = "sibling.lua", body = "return { unsaved = true }\n" } }, related(prompt))
+		assert.same({}, diagnostic_lines(prompt))
+		assert.is_nil(prompt:find("<diagnostics> are", 1, true))
 	end)
 
 	it("includes only diagnostics whose ranges overlap the selected source lines", function()
@@ -60,13 +80,13 @@ describe("selection explanation context", function()
 			{ lnum = 4, col = 0, severity = 1, message = "Below selection" },
 		})
 		diagnostics(other, { { lnum = 2, col = 0, severity = 1, message = "Other buffer diagnostic" } })
-		local data = decoded(assert(context.build(snapshot(bufnr, 3, { "three", "four" }), config.merge().explanation)))
+		local prompt = assert(context.build(snapshot(bufnr, 3, { "three", "four" }), config.merge().explanation))
 		assert.same({
-			"Starts above and enters selection", "Inside selection", "Starts inside and extends below selection",
-		}, vim.tbl_map(function(item) return item.message end, data.diagnostics))
-		assert.equals(2, data.diagnostics[1].line)
-		assert.equals(3, data.diagnostics[1].end_line)
-		assert.equals(3, data.diagnostics[1].end_column)
+			"line 2:1 ERROR: Starts above and enters selection",
+			"line 3:2 WARN: Inside selection",
+			"line 4:1 INFO: Starts inside and extends below selection",
+		}, diagnostic_lines(prompt))
+		assert.is_truthy(prompt:find("<diagnostics> are the editor's linter/LSP messages", 1, true))
 	end)
 
 	it("sorts diagnostic severity and positions while serializing only safe metadata", function()
@@ -83,14 +103,14 @@ describe("selection explanation context", function()
 		})
 		local prompt = assert(context.build(snapshot(bufnr, 1, { "local foo = 1", "return missing" }), config.merge().explanation))
 		assert.same({
-			{ line = 2, column = 3, end_line = 2, end_column = 5, severity = "ERROR", source = "ruff", code = "F821", message = 'Undefined name "missing"' },
-			{ line = 1, column = 6, end_line = 1, end_column = 6, severity = "WARN", message = "Earlier line" },
-			{ line = 2, column = 1, end_line = 2, end_column = 1, severity = "WARN", message = "Earlier column" },
-			{ line = 2, column = 2, end_line = 2, end_column = 2, severity = "WARN", source = "pylsp", code = 42, message = "A warning" },
-			{ line = 2, column = 2, end_line = 2, end_column = 2, severity = "WARN", message = "Z warning" },
-			{ line = 1, column = 1, end_line = 1, end_column = 1, severity = "INFO", message = "Information" },
-			{ line = 1, column = 1, end_line = 1, end_column = 1, severity = "HINT", message = "Hint" },
-		}, decoded(prompt).diagnostics)
+			'line 2:3 ERROR ruff F821: Undefined name "missing"',
+			"line 1:6 WARN: Earlier line",
+			"line 2:1 WARN: Earlier column",
+			"line 2:2 WARN pylsp 42: A warning",
+			"line 2:2 WARN: Z warning",
+			"line 1:1 INFO: Information",
+			"line 1:1 HINT: Hint",
+		}, diagnostic_lines(prompt))
 		assert.is_nil(prompt:find("private-data", 1, true))
 		assert.is_truthy(prompt:find("append a separate Diagnostics section inside <answer>", 1, true))
 	end)
@@ -103,7 +123,7 @@ describe("selection explanation context", function()
 		} } }).explanation
 		local snap = snapshot(bufnr, 2, { selected })
 		local base = assert(context.build(snap, opts))
-		opts.context.max_bytes = #base + 180
+		opts.context.max_bytes = #base + 240
 		opts.context.before_lines, opts.context.after_lines = 1, 1
 		diagnostics(bufnr, {
 			{ lnum = 1, col = 0, severity = 1, message = string.rep("é", 2000) },
@@ -111,11 +131,11 @@ describe("selection explanation context", function()
 		})
 		local prompt = assert(context.build(snap, opts))
 		assert.is_true(#prompt <= opts.context.max_bytes)
-		assert.same({ { line = 2, text = selected } }, decoded(prompt).selection)
-		assert.equals(1, #decoded(prompt).diagnostics)
-		assert.equals("Unknown name", decoded(prompt).diagnostics[1].message)
-		assert.same({}, decoded(prompt).before)
-		assert.same({}, decoded(prompt).after)
+		assert.equals(selected, selection(prompt).text)
+		assert.same({ "line 2:1 WARN: Unknown name" }, diagnostic_lines(prompt))
+		local before, after = surroundings(prompt)
+		assert.equals("", before)
+		assert.equals("", after)
 	end)
 
 	it("uses the byte budget for optional context and never truncates selected UTF-8", function()
@@ -124,9 +144,10 @@ describe("selection explanation context", function()
 		local opts = config.merge({ explanation = { context = { max_bytes = 2500 } } }).explanation
 		local prompt = assert(context.build(snapshot(bufnr, 2, { selected }), opts))
 		assert.is_true(#prompt <= 2500)
-		assert.equals(selected, decoded(prompt).selection[1].text)
-		assert.same({}, decoded(prompt).before)
-		assert.same({}, decoded(prompt).after)
+		assert.equals(selected, selection(prompt).text)
+		local before, after = surroundings(prompt)
+		assert.equals("", before)
+		assert.equals("", after)
 		opts.context.max_bytes = 1024
 		local missing, err = context.build(snapshot(bufnr, 2, { selected }), opts)
 		assert.is_nil(missing)
@@ -141,10 +162,10 @@ describe("selection explanation context", function()
 			language = "ru", prompt = "Ответь одним предложением на {language} без номеров строк.",
 		} }).explanation
 		local prompt = assert(context.build(selected, opts))
-		assert.is_truthy(prompt:find("Ответь одним предложением на ru без номеров строк.", 1, true))
-		assert.is_nil(prompt:find("Explain the selected source code", 1, true))
-		assert.same({ { line = 1, text = "local value = 1" } }, decoded(prompt).selection)
-		assert.equals("Custom prompt diagnostic", decoded(prompt).diagnostics[1].message)
+		assert.equals("Ответь одним предложением на ru без номеров строк.\n", prompt:match("</diagnostics>\n(.*)$"))
+		assert.is_nil(prompt:find("Explain only the code", 1, true))
+		assert.same({ lines = "1", mode = "line", text = "local value = 1" }, selection(prompt))
+		assert.same({ "line 1:1 INFO: Custom prompt diagnostic" }, diagnostic_lines(prompt))
 		opts.prompt = string.rep("x", opts.context.max_bytes)
 		local missing, err = context.build(selected, opts)
 		assert.is_nil(missing)
@@ -153,33 +174,40 @@ describe("selection explanation context", function()
 			"opencode.nvim: explanation.prompt must be a non-empty string")
 	end)
 
+	it("names the answer language in the default instruction", function()
+		local bufnr = buffer(root .. "/language.lua", { "local value = 1" })
+		local prompt = assert(context.build(snapshot(bufnr, 1, { "local value = 1" }), config.merge().explanation))
+		assert.is_truthy(prompt:find("Answer in this language: en.", 1, true))
+		assert.is_nil(prompt:find("code in en", 1, true))
+	end)
+
 	it("preserves source line numbers and empty or padded block rows", function()
 		local bufnr = buffer(root .. "/block.lua", { "abcdef", "", "ghijkl" })
 		for _, middle in ipairs({ "", "   " }) do
-			local selected = snapshot(bufnr, 1, { "bcd", middle, "hij" }, "\022")
-			local data = decoded(context.build(selected, config.merge().explanation))
-			assert.equals("block", data.selection_mode)
-			assert.same({
-				{ line = 1, text = "bcd" }, { line = 2, text = middle }, { line = 3, text = "hij" },
-			}, data.selection)
+			local prompt = assert(context.build(snapshot(bufnr, 1, { "bcd", middle, "hij" }, "\022"), config.merge().explanation))
+			assert.same({ lines = "1-3", mode = "block", text = "bcd\n" .. middle .. "\nhij" }, selection(prompt))
 		end
+		local prompt = assert(context.build(snapshot(bufnr, 1, { "cd" }, "v"), config.merge().explanation))
+		assert.equals("character", selection(prompt).mode)
 	end)
 
-	it("asks follow-ups with the built-in instruction, the same context and every earlier turn", function()
+	it("asks follow-ups with the built-in instruction after the same context and every earlier turn", function()
 		local bufnr = buffer(root .. "/follow.lua", { "local value = 1", "return value" })
 		local opts = config.merge({ explanation = { prompt = "Custom {language}", language = "ru" } }).explanation
-		local prompt = assert(context.build(snapshot(bufnr, 1, { "local value = 1" }), opts))
-		local encoded = prompt:match("Context %(JSON%):\n(.*)$")
+		local snap = snapshot(bufnr, 1, { "local value = 1" })
+		local collected = assert(context.collect(snap, opts))
+		local prompt = context.prompt(collected, opts)
+		assert.equals(prompt, context.build(snap, opts))
+		assert.equals(collected .. "Custom ru\n", prompt)
 		local turns = { { answer = "First." }, { question = "Why?", answer = "Because." }, { question = "And?" } }
-		local follow_up = context.follow_up(prompt, turns, opts)
+		local follow_up = context.follow_up(collected, turns, opts)
+		assert.equals(collected, follow_up:sub(1, #collected))
 		assert.is_truthy(follow_up:find("Ответь по-русски на последний вопрос", 1, true))
 		assert.is_nil(follow_up:find("Custom", 1, true))
-		assert.same(vim.json.decode(encoded), vim.json.decode(follow_up:match("Context %(JSON%):\n(.-)\nConversation")))
-		assert.same({
-			{ role = "assistant", text = "First." }, { role = "user", text = "Why?" },
-			{ role = "assistant", text = "Because." }, { role = "user", text = "And?" },
-		}, vim.json.decode(follow_up:match("Conversation %(JSON%):\n(.*)$")))
+		assert.equals("<conversation>\n<assistant>\nFirst.\n</assistant>\n<user>\nWhy?\n</user>\n"
+			.. "<assistant>\nBecause.\n</assistant>\n<user>\nAnd?\n</user>\n</conversation>\n",
+			follow_up:sub(#collected + 1):match("^<conversation>\n.-</conversation>\n"))
 		opts.language = "de"
-		assert.is_truthy(context.follow_up(prompt, turns, opts):find("selected source code in de.", 1, true))
+		assert.is_truthy(context.follow_up(collected, turns, opts):find("Answer in this language: de.", 1, true))
 	end)
 end)

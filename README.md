@@ -688,10 +688,14 @@ Explanations have no timeout by default. Set `explanation.timeout_ms` to a
 positive number of milliseconds to enable a request deadline; `0` disables it.
 
 Set `explanation.prompt` to replace the default instruction. The optional
-`{language}` placeholder uses `explanation.language`. The plugin appends the
-selection and context as JSON after either instruction; the custom prompt is
-included in the `max_bytes` budget. A custom prompt can request any response
-format; its response is shown unchanged. The plugin does not check line ranges.
+`{language}` placeholder uses `explanation.language`. Either instruction follows
+the editor context, which is plain source in reading order: a `<file>` block whose
+`<selection lines="…" mode="…">` element holds the selected code, then
+`<diagnostics>` when present, preceded by any `<related>` excerpts. Follow-ups
+repeat that context unchanged, so providers with prompt caching can reuse it.
+The custom prompt is included in the `max_bytes` budget. A custom prompt can
+request any response format; its response is shown unchanged. The plugin does
+not check line ranges.
 
 The request uses the unsaved source buffer, diagnostics overlapping the selected
 lines, surrounding lines, file header, and related loaded buffers. The full

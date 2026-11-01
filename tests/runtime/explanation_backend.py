@@ -120,8 +120,7 @@ local snapshot = {
 local opts = require('opencode.config').merge(features).explanation
 local prompt = assert(require('opencode.explanation.context').build(snapshot, opts))
 assert(#prompt <= opts.context.max_bytes)
-local payload = vim.json.decode(assert(prompt:match('Context %(JSON%):\n(.*)$')))
-assert(payload.selection[1].line == 24 and payload.selection[4].line == 27)
+assert(prompt:find('<selection lines="24-27" mode="line">\n' .. table.concat(selected, '\n') .. '\n</selection>\n', 1, true))
 for _, text in ipairs(selected) do assert(prompt:find(text, 1, true)) end
 vim.fn.writefile({vim.json.encode({
   overlay = overlay, prompt = prompt, selected = selected,

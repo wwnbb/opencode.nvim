@@ -65,7 +65,7 @@ local function relative(path, root)
 	return within(path, root) and path:sub(#prefix + 1) or path
 end
 
-local function indent_style(indent)
+function M.indent_style(indent)
 	if not indent.expandtab then return "tabs" end
 	local width = indent.shiftwidth > 0 and indent.shiftwidth or indent.tabstop
 	return width .. " spaces"
@@ -84,43 +84,57 @@ local function related_open(entry)
 	return ('<related path="%s" start_line="%d">\n'):format(entry.path, entry.start_line)
 end
 
+-- Plain sections shared by completion, selection edits and explanations.
 -- Every element renders additively (one line plus "\n"); a section wrapper is
 -- part of its first element so text_budget can size it without re-rendering.
+local function push_lines(push, list) for _, line in ipairs(list) do push(line .. "\n") end end
+
+function M.render_related(push, data)
+	for _, entry in ipairs(data.related) do
+		push(related_open(entry))
+		push_lines(push, entry.lines)
+		push(RELATED_CLOSE)
+	end
+end
+
+function M.render_diagnostics(push, data)
+	if not data.diagnostics or #data.diagnostics == 0 then return end
+	push(DIAGNOSTICS_OPEN)
+	for _, entry in ipairs(data.diagnostics) do push(diagnostic_line(entry) .. "\n") end
+	push(DIAGNOSTICS_CLOSE)
+end
+
+-- `focus` is the required source starting at data.first_line, already marked up.
+function M.render_file(push, data, focus)
+	push(('<file path="%s" language="%s">\n'):format(data.path, data.language))
+	push_lines(push, data.header)
+	if #data.header > 0 and #data.header < data.first_line - 1 - #data.before then push(GAP) end
+	push_lines(push, data.before)
+	push(focus .. "\n")
+	push_lines(push, data.after)
+	push("</file>\n")
+end
+
 local function encode(data)
 	local out = {}
 	local function push(value) out[#out + 1] = value end
-	local function push_lines(list) for _, line in ipairs(list) do push(line .. "\n") end end
 	push(RULES:format(data.max_lines == 1 and "Output a single line without a newline."
-		or ("Output at most %d lines."):format(data.max_lines), indent_style(data.indent)))
+		or ("Output at most %d lines."):format(data.max_lines), M.indent_style(data.indent)))
 	if data.previous_suggestion then push(PREVIOUS:format(data.previous_suggestion)) end
 	if data.diagnostics then
 		push(DIAGNOSTICS)
-		if #data.diagnostics > 0 then
-			push(DIAGNOSTICS_OPEN)
-			for _, entry in ipairs(data.diagnostics) do push(diagnostic_line(entry) .. "\n") end
-			push(DIAGNOSTICS_CLOSE)
-		end
+		M.render_diagnostics(push, data)
 	end
-	for _, entry in ipairs(data.related) do
-		push(related_open(entry))
-		push_lines(entry.lines)
-		push(RELATED_CLOSE)
-	end
-	push(('<file path="%s" language="%s">\n'):format(data.path, data.language))
-	push_lines(data.header)
-	if #data.header > 0 and #data.header < data.cursor.line - 1 - #data.before then push(GAP) end
-	push_lines(data.before)
-	push(data.prefix .. CURSOR .. data.suffix .. "\n")
-	push_lines(data.after)
-	push("</file>\n")
+	M.render_related(push, data)
+	M.render_file(push, data, data.prefix .. CURSOR .. data.suffix)
 	if data.instruction then push(REQUEST:format(data.instruction)) end
 	return table.concat(out)
 end
 
--- Exact incremental sizing of encode() for add_surroundings and add_diagnostics.
--- The header's omission marker is always charged, so the bound stays safe when
--- the header turns out contiguous with the lines before the cursor.
-local function text_budget(data, bytes, max_bytes)
+-- Exact incremental sizing of the shared plain sections for add_surroundings
+-- and add_diagnostics. The header's omission marker is always charged, so the
+-- bound stays safe when the header turns out contiguous with the focus lines.
+function M.text_budget(data, bytes, max_bytes)
 	local function line(value) return #value + 1 end
 	local costs = {
 		[data.before] = line,
@@ -248,8 +262,8 @@ end
 function M.add_surroundings(snapshot, settings, data, encode_prompt, first_row, last_row, focus, budget)
 	local bufnr = snapshot.bufnr
 	local function add(list, value, prepend)
-		-- Only the built-in JSON builders supply a tracker. Exported callers with
-		-- arbitrary encoders retain the complete encode-and-rollback behavior.
+		-- Built-in builders supply a tracker (text_budget or json_budget). Exported
+		-- callers with arbitrary encoders retain the complete encode-and-rollback behavior.
 		if budget then return budget:add(list, value, prepend) end
 		table.insert(list, prepend and 1 or (#list + 1), value)
 		if #encode_prompt(data) <= settings.max_bytes then return true end
@@ -294,7 +308,7 @@ function M.build(snapshot, opts, previous, instruction)
 	local data = {
 		path = snapshot.path ~= "" and relative(snapshot.path, snapshot.root) or "[unnamed]",
 		language = snapshot.filetype,
-		cursor = { line = snapshot.row + 1 },
+		first_line = snapshot.row + 1,
 		indent = { expandtab = vim.bo[bufnr].expandtab, shiftwidth = vim.bo[bufnr].shiftwidth, tabstop = vim.bo[bufnr].tabstop },
 		max_lines = snapshot.suffix ~= "" and 1 or opts.max_lines,
 		prefix = snapshot.prefix, suffix = snapshot.suffix,
@@ -311,7 +325,7 @@ function M.build(snapshot, opts, previous, instruction)
 	end
 	local diagnostics = M.diagnostics(bufnr, snapshot.row, snapshot.row)
 	initial_bytes = M.begin_diagnostics(data, encode, diagnostics, initial_bytes, settings.max_bytes)
-	local budget = text_budget(data, initial_bytes, settings.max_bytes)
+	local budget = M.text_budget(data, initial_bytes, settings.max_bytes)
 	M.add_diagnostics(data, diagnostics, budget)
 	M.add_surroundings(snapshot, settings, data, encode, snapshot.row, snapshot.row, snapshot.prefix .. snapshot.suffix, budget)
 	return encode(data)

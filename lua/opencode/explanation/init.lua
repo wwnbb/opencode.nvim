@@ -129,10 +129,10 @@ function M.explain_selection()
 		notify("Could not open the explanation popup")
 		return false
 	end
-	local prompt, prompt_err = context.build(snapshot, config)
-	if not prompt then fail(snapshot, prompt_err); return true end
-	snapshot.prompt = prompt
-	request.run(snapshot, config, prompt, hooks(snapshot, config))
+	local collected, context_err = context.collect(snapshot, config)
+	if not collected then fail(snapshot, context_err); return true end
+	snapshot.context = collected
+	request.run(snapshot, config, context.prompt(collected, config), hooks(snapshot, config))
 	return ui.is_open()
 end
 
@@ -142,7 +142,7 @@ function M.ask(question)
 	local record = current
 	question = type(question) == "string" and vim.trim(question) or ""
 	if question == "" then return false end
-	if not record or record.phase ~= "ready" or not record.prompt then
+	if not record or record.phase ~= "ready" or not record.context then
 		notify("wait for the explanation before asking")
 		return false
 	end
@@ -153,7 +153,7 @@ function M.ask(question)
 	record.turns[#record.turns + 1] = { question = question }
 	record.phase, record.generation = "pending", record.generation + 1
 	ui.pending(transcript(record))
-	request.run(record, config, context.follow_up(record.prompt, record.turns, config), hooks(record, config, true))
+	request.run(record, config, context.follow_up(record.context, record.turns, config), hooks(record, config, true))
 	return true
 end
 

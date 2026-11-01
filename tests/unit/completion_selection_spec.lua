@@ -22,7 +22,11 @@ describe("completion Visual selection replacement", function()
 
 	local diagnostic_ns = vim.api.nvim_create_namespace("opencode_completion_selection_test")
 
-	local function data(prompt) return vim.json.decode(prompt:match("Context %(JSON%):\n(.*)$")) end
+	local function file(prompt) return prompt:match('<file path="[^"]*" language="[^"]*">\n(.-)</file>\n') end
+	local function diagnostic_lines(prompt)
+		local block = prompt:match("<diagnostics>\n(.-)</diagnostics>\n")
+		return block and vim.split(block, "\n", { trimempty = true }) or {}
+	end
 
 	before_each(function()
 		buffers, original_buf = {}, vim.api.nvim_get_current_buf()
@@ -178,20 +182,16 @@ describe("completion Visual selection replacement", function()
 	end)
 
 	it("builds bounded context containing the whole selection and instruction", function()
-		buffer({ "local before = true", "call(old)", "return value" })
+		local bufnr = buffer({ "local before = true", "call(old)", "return value" })
+		vim.bo[bufnr].expandtab, vim.bo[bufnr].shiftwidth = true, 2
 		select("v", { 2, 6 }, { 2, 8 })
 		local snap = assert(selection.capture())
 		local opts = defaults.merge().completion
 		local prompt = assert(selection.build(snap, opts, 'Use "é🙂"'))
-		local decoded = data(prompt)
-		assert.equals('Use "é🙂"', decoded.instruction)
-		assert.same({ "old" }, decoded.selection)
-		assert.equals("character", decoded.selection_mode)
-		assert.equals("call(", decoded.prefix)
-		assert.equals(")", decoded.suffix)
-		assert.equals(1 + opts.max_lines, decoded.max_lines)
-		assert.same({ "local before = true" }, decoded.before)
-		assert.same({ "return value" }, decoded.after)
+		assert.equals("local before = true\ncall(<|selection_start|>old<|selection_end|>)\nreturn value\n", file(prompt))
+		assert.equals(('<request>\nUse "é🙂"\n</request>\nIndent with 2 spaces. Output at most %d lines.\n'):format(1 + opts.max_lines),
+			prompt:match("</file>\n(.*)$"))
+		assert.is_nil(prompt:find("JSON", 1, true))
 		assert.is_true(#prompt <= opts.context.max_bytes)
 		opts.context.before_lines, opts.context.after_lines, opts.context.header_lines = 0, 0, 0
 		opts.context.max_related_buffers = 0
@@ -214,9 +214,9 @@ describe("completion Visual selection replacement", function()
 		select("V", { 2, 1 }, { 3, 1 })
 		local snap = assert(selection.capture())
 		local prompt = assert(selection.build(snap, defaults.merge().completion, "Fix the lint"))
-		assert.is_truthy(prompt:find("diagnostics are the editor's linter/LSP messages", 1, true))
-		assert.same({ "Undefined global `older`." },
-			vim.tbl_map(function(item) return item.message end, data(prompt).diagnostics))
-		assert.equals(3, data(prompt).diagnostics[1].line)
+		assert.is_truthy(prompt:find("<diagnostics> are the editor's linter/LSP messages for the selected lines 2-3", 1, true))
+		assert.same({ "line 3:6 WARN: Undefined global `older`." }, diagnostic_lines(prompt))
+		assert.equals("local before = true\n<|selection_start|>call(old)\ncall(older)<|selection_end|>\nreturn value\n", file(prompt))
+		assert.is_true(prompt:find("</file>", 1, true) < prompt:find("<diagnostics>\n", 1, true))
 	end)
 end)
