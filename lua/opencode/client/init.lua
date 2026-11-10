@@ -453,9 +453,12 @@ function M.commit_revert(session_id, callback)
 	api.request("revert_commit", { path = { sessionID = session_id } }, callback)
 end
 
+-- An all-nil Lua table encodes as `[]`; the server requires a JSON object.
 function M.summarize_session(session_id, opts, callback)
-	api.request("session_compact", { path = { sessionID = session_id },
-		body = { id = opts and opts.id, delivery = opts and opts.delivery } }, callback)
+	local body = vim.empty_dict()
+	if opts and opts.id ~= nil then body.id = opts.id end
+	if opts and opts.delivery ~= nil then body.delivery = opts.delivery end
+	api.request("session_compact", { path = { sessionID = session_id }, body = body }, callback)
 end
 
 -- Interaction routing always uses the immutable owning session, never cwd.
