@@ -720,7 +720,7 @@ function M.switch_to(session, opts)
 
 	local token = pending_helper.token(session.id)
 	local snapshot = ok_sync and sync.capture_session_snapshot and sync.capture_session_snapshot(session.id)
-	client.get_messages(session.id, { limit = 100 }, function(err, messages)
+	client.get_messages(session.id, { limit = client.history_page_limit }, function(err, messages)
 		vim.schedule(function()
 			if not pending_helper.is_current(token) then return end
 			if err and opts.notify then
@@ -734,7 +734,7 @@ function M.switch_to(session, opts)
 				-- cache is still authoritative. Full-window reconcile happens on explicit
 				-- load/sync paths instead.
 				pending_helper.reconcile_history(session.id, messages)
-				sync.handle_session_messages(session.id, messages, { snapshot = snapshot })
+				sync.handle_session_messages(session.id, messages, { snapshot = snapshot, page_limit = client.history_page_limit })
 				M.set_message_cache(session.id, sync.get_messages(session.id), {
 					reason = "session_switch",
 				})

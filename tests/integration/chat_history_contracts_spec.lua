@@ -179,6 +179,42 @@ describe("chat history rendering contracts", function()
 		assert(rendered:find("▣ ", 1, true), "pending interaction should retain a static processing footer")
 	end)
 
+	it("marks history pages the client never loaded", function()
+		chat_state.config.max_rendered_messages = 0
+		app_state.set_session("history_page_session", "History Pages")
+		local function page(count)
+			local messages = {}
+			for i = 1, count do
+				local id = string.format("hp%02d", i)
+				messages[i] = { info = { id = id, sessionID = "history_page_session",
+					role = i % 2 == 1 and "user" or "assistant", time = { created = i * 1000, completed = i * 1000 } },
+					parts = { { id = id .. "_text", messageID = id, sessionID = "history_page_session",
+						type = "text", text = "message " .. i } } }
+			end
+			return messages
+		end
+		local function notice()
+			return table.concat(chat.render(), "\n"):match("%.%.%. [^\n]*earlier messages[^·\n]*")
+		end
+
+		sync.clear_all()
+		sync.handle_session_messages("history_page_session", page(2), { page_limit = 3 })
+		assert.is_nil(notice(), "a short first page is the whole history")
+
+		sync.clear_all()
+		sync.handle_session_messages("history_page_session", page(3), { page_limit = 3 })
+		assert.equals("... earlier messages not loaded ", notice())
+
+		chat_state.config.max_rendered_messages = 2
+		assert.equals("... 1+ earlier messages hidden ", notice())
+		chat_state.config.max_rendered_messages = 0
+
+		sync.handle_session_messages("history_page_session", page(3), { complete = true, reconcile = true })
+		assert.is_nil(notice(), "a complete read loads every page")
+		sync.handle_session_messages("history_page_session", page(3), { page_limit = 3 })
+		assert.is_nil(notice(), "a later newest page does not forget the complete read")
+	end)
+
 	it("hides pending widgets after closing the last tab and restores them on reopen", function()
 		local sessions = require("opencode.session")
 		local widget_index = require("opencode.ui.chat.widget_index")

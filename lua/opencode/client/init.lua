@@ -346,11 +346,14 @@ function M.get_messages(session_id, opts, callback)
 	end)
 end
 
+-- Messages per history page; the first page is the newest slice.
+M.history_page_limit = 100
+
 -- Traverse both opaque cursor directions. Only this complete snapshot may prune
 -- absent v2 messages; ordinary pages remain merge-only.
 function M.get_all_messages(session_id, callback)
 	collect_pages(function(cursor, done)
-		M.get_messages(session_id, { limit = 100, cursor = cursor }, done)
+		M.get_messages(session_id, { limit = M.history_page_limit, cursor = cursor }, done)
 	end, function(message) return message.info.id end, function(err, messages)
 		if err then callback(err); return end
 		table.sort(messages, function(a, b) return a.info.id < b.info.id end)

@@ -322,7 +322,7 @@ end
 
 function M.load_session_messages(session_id, opts, callback)
 	if type(opts) == "function" then callback, opts = opts, nil end
-	local request_opts = vim.tbl_extend("force", { limit = 100 }, opts or {})
+	local request_opts = vim.tbl_extend("force", { limit = client().history_page_limit or 100 }, opts or {})
 	local complete = request_opts.all == true
 	request_opts.all = nil
 	local pending = require("opencode.session.pending")
@@ -336,7 +336,10 @@ function M.load_session_messages(session_id, opts, callback)
 			if not pending.is_current(token) then return end
 			if not err then
 				pending.reconcile_history(session_id, response)
-				store.handle_session_messages(session_id, response, { reconcile = complete, complete = complete, snapshot = snapshot })
+				-- Only a first page (no cursor) is the newest slice of the history.
+				local page_limit = not complete and request_opts.cursor == nil and request_opts.limit or nil
+				store.handle_session_messages(session_id, response,
+					{ reconcile = complete, complete = complete, page_limit = page_limit, snapshot = snapshot })
 				require("opencode.session").set_message_cache(session_id, store.get_messages(session_id), { reason = "load_messages" })
 				require("opencode.session").refresh_status(nil, session_id)
 				require("opencode.events").emit("sync_changed", { kind = "message", session_id = session_id })

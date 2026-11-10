@@ -31,7 +31,7 @@ function M.setup(events)
 			local session_snapshot = state.get_session_record(sid)
 			local inbox_snapshot = pending.list(sid)
 			local function load(cb)
-				if complete_read then client.get_all_messages(sid, cb) else client.get_messages(sid, { limit = 100 }, cb) end
+				if complete_read then client.get_all_messages(sid, cb) else client.get_messages(sid, { limit = client.history_page_limit }, cb) end
 			end
 			client.get_session(sid, function(err, info)
 				if not err and type(info) == "table" and info.id == sid and pending.is_current(token)
@@ -87,8 +87,11 @@ function M.setup(events)
 					end
 				end
 				if not history_err then
+					local page_count = #messages
 					vim.list_extend(messages, pending_messages)
-					sync.handle_session_messages(sid, messages, { snapshot = snapshot, reconcile = complete_read, complete = complete_read })
+					sync.handle_session_messages(sid, messages, { snapshot = snapshot, reconcile = complete_read,
+						complete = complete_read, page_limit = not complete_read and client.history_page_limit or nil,
+						page_count = page_count })
 					sessions.set_message_cache(sid, sync.get_messages(sid), { reason = "session_reconcile" })
 					sessions.refresh_status(nil, sid)
 				elseif #pending_messages > 0 then sync.handle_session_messages(sid, pending_messages) end

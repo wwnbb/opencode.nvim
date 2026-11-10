@@ -78,6 +78,10 @@ local message_order_keys = {}
 local native_messages = {}
 local structure_generation, linked_generation = {}, {}
 local metadata_snapshots, history_generation = {}, {}
+-- Whether the store holds a session's whole history: "complete" after a full
+-- read or a first page shorter than its limit, "partial" after a full newest
+-- page. Unknown sessions (live events only) have no entry.
+local history_extent = {}
 local history_clock, history_reset_generation = 0, 0
 local metadata_depth, metadata_pending = 0, {}
 local parts_generation, parts_owners = {}, {}
@@ -836,6 +840,18 @@ local function handle_session_messages(session_id, messages, opts)
 		return 0, 0, 0
 	end
 
+	local extent = history_extent[session_id]
+	if opts.complete == true and opts.partial ~= true then
+		extent = "complete"
+	elseif type(opts.page_limit) == "number" and extent ~= "complete" then
+		-- The server lists newest first; a full page may have older pages behind it.
+		extent = (tonumber(opts.page_count) or #messages) >= opts.page_limit and "partial" or "complete"
+	end
+	if extent ~= history_extent[session_id] then
+		history_extent[session_id] = extent
+		bump_session_revision(session_id)
+	end
+
 	local message_count = 0
 	local part_count = 0
 	local changed_count = 0
@@ -1213,6 +1229,13 @@ function M.get_session_status(session_id)
 	return store.session_status[session_id]
 end
 
+---Whether older history exists on the server that the store never loaded.
+---@param session_id string|nil
+---@return boolean
+function M.has_unloaded_history(session_id)
+	return session_id ~= nil and history_extent[session_id] == "partial"
+end
+
 ---Clear all data for a session
 ---@param session_id string
 function M.clear_session(session_id)
@@ -1230,6 +1253,7 @@ function M.clear_session_messages(session_id)
 		drop_message_data(msg.id)
 	end
 	store.message[session_id] = nil
+	history_extent[session_id] = nil
 	structure_changed(session_id)
 	linked_generation[session_id] = nil
 	bump_task_summary_revision(session_id)
@@ -1248,7 +1272,7 @@ function M.clear_all()
 	parts_generation, parts_owners = {}, {}
 	history_clock = history_clock + 1
 	history_reset_generation = history_clock
-	history_generation = {}
+	history_generation, history_extent = {}, {}
 	store.snapshot_generation = store.snapshot_generation + 1
 	store.session_generation = {}
 	store.message = {}

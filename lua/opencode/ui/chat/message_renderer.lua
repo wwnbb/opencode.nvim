@@ -269,15 +269,20 @@ local function find_last_assistant(messages)
 	return nil, nil
 end
 
+-- Shown both for messages cut by the render cap and for older history pages
+-- the client never fetched; <CR> on this row loads every page either way.
 local function render_hidden_history_notice(ctx, skipped_messages)
-	if skipped_messages <= 0 then
+	local unloaded = sync.has_unloaded_history(ctx.current_session.id)
+	if skipped_messages <= 0 and not unloaded then
 		return
 	end
 	ctx:begin_block("hidden_history")
 	local history_line = NuiLine()
 	local keymaps = require("opencode.util.keymap")
 	local hint = keymaps.hint({ { keymaps.label("chat", "confirm", (ctx.chat_config or {}).keymaps), "load full history" } })
-	history_line:append(NuiText(string.format("... %d earlier messages hidden", skipped_messages)
+	local summary = skipped_messages <= 0 and "... earlier messages not loaded"
+		or string.format(unloaded and "... %d+ earlier messages hidden" or "... %d earlier messages hidden", skipped_messages)
+	history_line:append(NuiText(summary
 		.. (hint and (" · " .. hint) or ""), "Comment"))
 	ctx:add_line(history_line)
 	ctx:add_raw_line("")
