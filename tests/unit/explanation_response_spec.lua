@@ -49,7 +49,27 @@ describe("selection explanation response", function()
 		local raw = prefix .. marker .. "\nReasoning after the answer.\n<ans"
 		assert.equals("**Значение** и `世界`", response.display(raw, {}, { streaming = true }))
 		assert.equals("**Значение** и `世界`", response.display(raw, {}))
-		assert.equals("Literal </ans", response.display("<answer>\nLiteral </ans", {}, { streaming = true }))
+		assert.equals("Literal", response.display("<answer>\nLiteral </ans", {}, { streaming = true }))
+		assert.equals("<answer>\nLiteral </ans", response.display("<answer>\nLiteral </ans", {}))
+	end)
+
+	it("accepts markers that lead or end a line of answer text", function()
+		local raw = "Reasoning.\n<answer>No. I only see `<related>` excerpts.</answer>\nAfter"
+		assert.equals("No. I only see `<related>` excerpts.", response.display(raw, {}))
+		local split = "  <answer>First line\nSecond line</answer>  "
+		assert.equals("First line\nSecond line", response.display(split, {}))
+		assert.equals("First line\nSecond line", response.display(split, {}, { streaming = true }))
+		local inline = "<answer>No. I can't read buffers.</answer>"
+		for index = #"<answer>" + 1, #inline do
+			local visible = response.display(inline:sub(1, index), {}, { streaming = true })
+			assert.is_nil(visible:find("<", 1, true))
+			assert.equals(1, ("No. I can't read buffers."):find(visible, 1, true))
+		end
+	end)
+
+	it("treats markers inside a line as literal text", function()
+		local raw = "<answer>\nWrap it in `<answer>` and `</answer>` tags.\n</answer>"
+		assert.equals("Wrap it in `<answer>` and `</answer>` tags.", response.display(raw, {}))
 	end)
 
 	it("streams the current answer block after an earlier complete block", function()
