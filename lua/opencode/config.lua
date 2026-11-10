@@ -99,6 +99,7 @@ M.defaults = {
 		width = 80,
 		height = 20,
 		max_rendered_messages = 0, -- 0 renders the whole session; N shows only the latest N messages
+		rendered_messages_step = 100, -- hide older messages in blocks of this size, so the history start moves rarely
 		max_user_message_lines = 120,
 		close_on_focus_lost = true,
 		float = {

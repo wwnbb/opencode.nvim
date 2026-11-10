@@ -147,7 +147,7 @@ describe("queued inputs in the chat buffer", function()
 			{ id = "a1", type = "assistant", time = { created = 20, completed = 21 }, content = { { type = "text", text = "Older output" } } },
 			{ id = "a2", type = "assistant", time = { created = 30 }, content = { { type = "text", text = "Newest output" } } },
 		}))
-		chat.setup({ max_rendered_messages = 1 })
+		chat.setup({ max_rendered_messages = 1, rendered_messages_step = 1 })
 		chat.do_render()
 		assert.is_nil(text():find("Older output", 1, true))
 		assert.is_true(text():find("Newest output", 1, true) < text():find("Old steering", 1, true))

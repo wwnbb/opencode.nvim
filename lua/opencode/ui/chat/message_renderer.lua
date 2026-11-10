@@ -122,7 +122,11 @@ local function select_messages(ctx, index)
 	local skipped_messages = 0
 
 	if max_rendered_messages > 0 and #all_messages > max_rendered_messages then
-		local first_render_index = #all_messages - max_rendered_messages + 1
+		-- Hide whole blocks: the first visible message only moves every `step`
+		-- messages, so between jumps the chat shows N to N + step - 1 messages.
+		local step = math.max(1, math.floor(tonumber((ctx.chat_config or {}).rendered_messages_step) or 1))
+		local overflow = #all_messages - max_rendered_messages
+		local first_render_index = math.floor(overflow / step) * step + 1
 		local message_index_by_id = {}
 		for msg_index, message in ipairs(all_messages) do
 			if message.id then

@@ -215,6 +215,28 @@ describe("chat history rendering contracts", function()
 		assert.is_nil(notice(), "a later newest page does not forget the complete read")
 	end)
 
+	it("hides older history in whole blocks", function()
+		chat_state.config.max_rendered_messages = 2
+		chat_state.config.rendered_messages_step = 3
+		app_state.set_session("history_block_session", "History Blocks")
+		local function hidden_after(count)
+			sync.clear_all()
+			for i = 1, count do
+				local id = string.format("hb%02d", i)
+				sync.handle_message_updated({ id = id, sessionID = "history_block_session",
+					role = i % 2 == 1 and "user" or "assistant", time = { created = i * 1000, completed = i * 1000 } })
+				sync.handle_part_updated({ id = id .. "_text", messageID = id,
+					sessionID = "history_block_session", type = "text", text = "message " .. i })
+			end
+			local rendered = table.concat(chat.render(), "\n")
+			return tonumber(rendered:match("%.%.%. (%d+) earlier messages hidden")) or 0
+		end
+		-- The cutoff stays put until a whole block of messages overflows the limit.
+		for count, hidden in pairs({ [2] = 0, [4] = 0, [5] = 3, [7] = 3, [8] = 6 }) do
+			assert.equals(hidden, hidden_after(count), count .. " messages")
+		end
+	end)
+
 	it("hides pending widgets after closing the last tab and restores them on reopen", function()
 		local sessions = require("opencode.session")
 		local widget_index = require("opencode.ui.chat.widget_index")
