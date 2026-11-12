@@ -1,7 +1,9 @@
 -- opencode.nvim - codediff.nvim review backend
--- Opens the proposed content LEFT of the actual file with `:CodeDiff file`,
--- in codediff's own tab. codediff only diffs files on disk, so the proposed
--- content goes through a temp file. Returns the same windows/buffers as
+-- Opens the actual file as codediff's original side and the proposed content
+-- as its modified side with `:CodeDiff file`, in codediff's own tab, so
+-- additions and deletions read the same way as in the chat. codediff places
+-- the sides by its own `diff.original_position`. It only diffs files on disk,
+-- so the proposed content goes through a temp file. Returns the same windows/buffers as
 -- diff_pair so native_diff keeps owning keymaps, review actions and teardown.
 
 local M = {}
@@ -40,7 +42,7 @@ local function real(path)
 	return vim.fn.resolve(vim.fn.fnamemodify(path, ":p"))
 end
 
----Open a codediff view of `after` (LEFT, readonly) against `filepath` (RIGHT).
+---Open a codediff view of `filepath` (original) against `after` (modified, readonly).
 ---@param filepath string Actual file on disk
 ---@param after string Proposed content
 ---@return { tab_page: integer, original_win: integer, original_buf: integer, proposed_win: integer, proposed_buf: integer, cleanup: fun() }|nil view
@@ -59,7 +61,7 @@ function M.open(filepath, after)
 	fd:close()
 
 	local previous_tab = vim.api.nvim_get_current_tabpage()
-	local ok, err = pcall(vim.cmd, { cmd = "CodeDiff", args = { "file", proposed_path, filepath } })
+	local ok, err = pcall(vim.cmd, { cmd = "CodeDiff", args = { "file", filepath, proposed_path } })
 	local tab = vim.api.nvim_get_current_tabpage()
 	if not ok or tab == previous_tab then
 		remove_temp()
@@ -83,6 +85,8 @@ function M.open(filepath, after)
 		return nil, "CodeDiff view has no proposed/actual window"
 	end
 
+	-- Keep focus on the editable actual file, wherever codediff placed it.
+	vim.api.nvim_set_current_win(view.original_win)
 	vim.bo[view.proposed_buf].modifiable = false
 	vim.bo[view.proposed_buf].readonly = true
 	vim.bo[view.proposed_buf].buflisted = false

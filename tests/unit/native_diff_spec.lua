@@ -334,7 +334,7 @@ describe("codediff review backend", function()
 		-- pane mappings installed from a scheduled render.
 		vim.api.nvim_create_user_command("CodeDiff", function(cmd)
 			local a, b = cmd.fargs[2], cmd.fargs[3]
-			calls[#calls + 1] = { a = a, b = b, after = table.concat(vim.fn.readfile(a, "b"), "\n") }
+			calls[#calls + 1] = { a = a, b = b, after = table.concat(vim.fn.readfile(b, "b"), "\n") }
 			vim.cmd("tabnew " .. vim.fn.fnameescape(a))
 			vim.cmd("rightbelow vsplit " .. vim.fn.fnameescape(b))
 			local bufs = { vim.fn.bufnr(a), vim.fn.bufnr(b) }
@@ -368,11 +368,14 @@ describe("codediff review backend", function()
 		stub_codediff()
 		open()
 		assert.equals(1, #calls)
-		assert.equals(path, calls[1].b)
+		-- The actual file is codediff's original side, the proposed content its
+		-- modified side, so additions are not drawn as deletions.
+		assert.equals(path, calls[1].a)
 		assert.equals("after\n", calls[1].after)
-		local proposed = vim.fn.bufnr(calls[1].a)
+		local proposed = vim.fn.bufnr(calls[1].b)
 		assert.is_false(vim.bo[proposed].modifiable)
 		assert.is_false(vim.wo[vim.fn.bufwinid(path)].diff)
+		assert.equals(vim.fn.bufwinid(path), vim.api.nvim_get_current_win())
 		flush()
 		local actual = vim.fn.bufnr(path)
 		assert.is_function(mapping(actual, "q").callback)
@@ -381,7 +384,7 @@ describe("codediff review backend", function()
 		vim.bo[actual].modified = false
 		mapping(actual, "q").callback()
 		assert.is_false(native.is_active())
-		assert.equals(0, vim.fn.filereadable(calls[1].a))
+		assert.equals(0, vim.fn.filereadable(calls[1].b))
 		assert.is_false(vim.api.nvim_buf_is_valid(proposed))
 	end)
 
@@ -390,7 +393,7 @@ describe("codediff review backend", function()
 		open()
 		vim.cmd("tabclose")
 		assert.is_false(native.is_active())
-		assert.equals(0, vim.fn.filereadable(calls[1].a))
+		assert.equals(0, vim.fn.filereadable(calls[1].b))
 	end)
 
 	it("falls back to the native diff when codediff is not installed", function()

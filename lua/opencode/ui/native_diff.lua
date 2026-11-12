@@ -282,8 +282,8 @@ local function setup_keymaps()
 			local help = {
 				"Native Diff Keymaps:",
 				"",
-				"  do       - Obtain hunk from proposed (LEFT) into actual (RIGHT)",
-				"  dp       - Put hunk from actual (RIGHT) to proposed (LEFT)",
+				"  do       - Obtain hunk from proposed into actual",
+				"  dp       - Put hunk from actual to proposed",
 				"  ]c       - Jump to next change",
 				"  [c       - Jump to previous change",
 				keymaps.label("native_diff", "apply_all") .. " - Apply ALL remaining proposed hunks at once",
@@ -389,8 +389,9 @@ function M._show_file(index)
 		end,
 	})
 
-	-- Proposed content in a readonly split LEFT; focus stays on the actual
-	-- file (RIGHT, editable) at its first change.
+	-- Native: proposed content in a readonly split LEFT; focus stays on the
+	-- actual file (RIGHT, editable) at its first change. codediff: the actual
+	-- file is the original side and the proposed content the modified side.
 	local relative = file.relativePath or require("opencode.util.text").normalize_path(filepath)
 	if external then
 		-- codediff installs its pane mappings from a scheduled render; queue

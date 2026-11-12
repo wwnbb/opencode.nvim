@@ -283,7 +283,11 @@ Neovim run, or the palette's Move Tab Left/Right actions to manage their order.
 `/workspaces` (also `/projects`) selects a server location. `/new` offers location
 selection, `/cd` moves the active server session, and `/worktrees` lists, creates,
 opens and removes native worktrees. Dirty removal requires a separate force
-decision. `/family` lists the complete session family, filters active children
+decision. In the location picker, **Server directory…** opens a prompt filled
+with the session's current directory: edit it in place (for example `<C-w>` to
+go up a level), and press `<Tab>` to complete directories from the server's
+filesystem (`<Tab>` / `<S-Tab>` cycle, Enter accepts, a second Enter moves).
+`popup.keymaps.complete` and `complete_previous` change these keys. `/family` lists the complete session family, filters active children
 and interrupts a selected session. Backspace returns to the parent, including
 children opened directly by ID.
 
@@ -986,8 +990,10 @@ diff mode:
 require("opencode").setup({ diff = { provider = "codediff" } }) -- default: "native"
 ```
 
-The proposed content opens read-only on the left and the actual file on the
-right, in codediff's own tab. codediff's `do`, `dp`, `]c` and `[c` work as usual;
+The actual file opens as codediff's original side and the proposed content,
+read-only, as its modified side, in codediff's own tab, so additions show as
+additions just as in the chat. codediff's `diff.original_position` decides which
+side is on the left (default: the actual file). codediff's `do`, `dp`, `]c` and `[c` work as usual;
 the `native_diff.keymaps` review keys (confirm, reject, apply all, file
 navigation, note, close) stay the same. New files, paths containing whitespace,
 and setups without codediff.nvim use the native diff. The `dv` split always uses
