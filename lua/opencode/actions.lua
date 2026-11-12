@@ -136,8 +136,10 @@ local api_forwarders = {
 	[0] = function(method) return function() return api()[method]() end end,
 	[1] = function(method) return function(a) return api()[method](a) end end,
 	[2] = function(method) return function(a, b) return api()[method](a, b) end end,
+	[3] = function(method) return function(a, b, c) return api()[method](a, b, c) end end,
 }
 for arity, methods in pairs({
+	[3] = { "ask_btw" },
 	[0] = {
 		"open", "toggle", "close", "focus",
 		"focus_input", "start", "stop", "restart",
@@ -153,7 +155,7 @@ for arity, methods in pairs({
 		"add_visual_selection_and_open_input",
 	},
 	[2] = {
-		"ask_btw", "set_danger_mode", "send", "split",
+		"set_danger_mode", "send", "split",
 	},
 }) do
 	for _, method in ipairs(methods) do M[method] = api_forwarders[arity](method) end

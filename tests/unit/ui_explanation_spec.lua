@@ -187,6 +187,16 @@ describe("selection explanation popup", function()
 		keys("iToo early?")
 		assert.equals(view.composer.input.winid, vim.api.nvim_get_current_win())
 		assert_docked(1)
+		-- Insert-mode Escape keeps the composer open in Normal mode.
+		local function mapped(mode, lhs)
+			for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(view.composer.input.bufnr, mode)) do
+				if require("opencode.util.keymap").matches(mapping.lhs, lhs) then return true end
+			end
+			return false
+		end
+		assert.is_false(mapped("i", "<Esc>"))
+		assert.is_true(mapped("i", "<C-c>"))
+		assert.is_true(mapped("n", "<Esc>"))
 		local info
 		for _, winid in ipairs(vim.api.nvim_list_wins()) do
 			local line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(winid), 0, 1, false)[1]

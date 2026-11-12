@@ -160,13 +160,14 @@ local function composer_closed(view)
 end
 
 -- A question typed during an answer stays in the composer until it can be
--- sent; going back keeps it for the next ask.
+-- sent; going back keeps it for the next ask. Insert-mode Escape switches the
+-- composer to Normal mode, as in the chat input.
 local function ask()
 	local view = active
 	if not view or not view.on_ask or view.composer then return end
 	view.composer = require("opencode.ui.completion_prompt").open({
 		winid = view.winid, title = "Ask", model = explanation_model(), text = view.draft,
-		placement = dock(view),
+		placement = dock(view), normal_mode = true,
 		can_submit = function(value)
 			if vim.trim(value) == "" then return false end
 			if view.phase == "pending" or view.phase == "streaming" then

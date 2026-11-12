@@ -47,7 +47,23 @@ function M.pending_count(session_id)
 	return session_id and (pending[session_id] or 0) or total_pending()
 end
 
-function M.ask(session_id, question)
+-- Follow-ups carry the earlier side questions of the same view, since none of
+-- them is recorded in the session.
+local function prompt(question, turns)
+	if type(turns) ~= "table" or #turns == 0 then return INSTRUCTION .. "\n\n" .. question end
+	local blocks = { INSTRUCTION, "Earlier side questions and your answers:" }
+	for _, turn in ipairs(turns) do
+		if type(turn.question) == "string" and type(turn.answer) == "string" then
+			blocks[#blocks + 1] = "Question: " .. turn.question .. "\nAnswer: " .. turn.answer
+		end
+	end
+	blocks[#blocks + 1] = "Current question: " .. question
+	return table.concat(blocks, "\n\n")
+end
+
+---@param opts? { view?: integer, turns?: table[] } Follow-up state from the /btw view.
+function M.ask(session_id, question, opts)
+	opts = type(opts) == "table" and opts or {}
 	question = vim.trim(question or "")
 	if type(session_id) ~= "string" or session_id == "" then
 		vim.notify("No active session for /btw", vim.log.levels.WARN)
@@ -70,16 +86,25 @@ function M.ask(session_id, question)
 		pending[session_id] = math.max(0, (pending[session_id] or 1) - 1)
 		if pending[session_id] == 0 then pending[session_id] = nil end
 		update_animation()
+		local view = require("opencode.ui.btw")
 		if err then
-			vim.notify("/btw failed: " .. tostring(err.message or err), vim.log.levels.ERROR)
+			local message = tostring(err.message or err)
+			if not view.error(opts.view, message) then
+				vim.notify("/btw failed: " .. message, vim.log.levels.ERROR)
+			end
 			return
 		end
-		require("opencode.ui.btw").show(question, vim.trim(answer))
+		view.show(question, vim.trim(answer), {
+			view = opts.view, turns = opts.turns, session_id = session_id,
+			on_ask = function(next_question, next_opts)
+				return require("opencode.actions").ask_btw(next_question, session_id, next_opts)
+			end,
+		})
 	end
 	local client = require("opencode.client")
 	local function generate()
 		if not is_current() then return end
-		client.generate_text(session_id, INSTRUCTION .. "\n\n" .. question, complete)
+		client.generate_text(session_id, prompt(question, opts.turns), complete)
 	end
 	local selection = require("opencode.session.selection")
 	local chosen = selection.pending_values(session_id)
@@ -123,6 +148,8 @@ function M.clear_session(session_id)
 	session_epochs[session_id] = (session_epochs[session_id] or 0) + 1
 	pending[session_id] = nil
 	update_animation()
+	local view = package.loaded["opencode.ui.btw"]
+	if view and type(view.close_session) == "function" then view.close_session(session_id) end
 end
 
 function M.reset()

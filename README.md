@@ -146,7 +146,7 @@ it directly while searching.
 | `menu`, `palette`, `popup`, `password` | Shared controls, command palette, text and credential input |
 | `inline_diff`, `native_diff`, `vcs` | Edit review and VCS views |
 | `execute_details`, `help`, `session_tabs` | Tool inspector, help and session-tab mouse/visual controls |
-| `btw_prompt`, `btw_answer`, `form` | Side questions, their answers and setup forms |
+| `btw_answer`, `form` | Side question view and setup forms |
 | `logs`, `debug_bundle` | Logs and support snapshot |
 | `active_sessions`, `session_menu`, `model_menu` | Session and model selectors |
 | `mcp_menu`, `mcp_info`, `queue_menu`, `family_menu` | MCP, pending prompts and subagent selectors |
@@ -481,10 +481,22 @@ buffer to save the export.
 
 Type `/btw <question>` in the input and press Enter to ask using the current
 session context and model. The input closes while a `/btw` spinner appears in the
-session tab bar. The answer opens in a centered dialog and is not added to the
-conversation. Press `c` to copy the answer, use the arrow keys or Page Up/Down to
-scroll, and press `Esc` to dismiss it. Bare `/btw` or the command palette opens a
-short question prompt.
+session tab bar. The answer opens in a centered popup, laid out like the
+explanation popup, and is not added to the conversation. The answer is an
+ordinary read-only buffer, so Normal-mode motions, search and Visual selection
+work in it. Press `c` to copy the latest answer and `q`, `Esc` or `Ctrl+C` to
+close it.
+
+Bare `/btw` or the command palette opens the same popup with a question
+composer docked along its bottom edge; `i` opens it again to ask a follow-up.
+The composer uses the chat input style and footer showing the session model:
+**Enter** inserts a new line and your input send keys (**Ctrl+G** by default)
+send the question. `Esc` in Insert mode switches the composer to Normal mode, as
+in the chat input; `Esc` in Normal mode or `Ctrl+C` returns to the answer and
+keeps an unsent question for the next `i`. The answer appears below the question
+in the same popup. Follow-ups send the earlier side questions and answers of
+the popup with the new question; none of them is recorded in the session. Set
+`btw_answer.keymaps` (`close`, `copy`, `ask`) to change these keys.
 
 # Inline code completion
 
@@ -678,8 +690,9 @@ request. Press `i` to open a question composer along the bottom of the popup.
 It uses the chat input style, with a multiline field and a footer showing the
 explanation model: **Enter** inserts a new line, and your input send keys
 (**Ctrl+G** or **Ctrl+X Ctrl+S** by default) send the follow-up once the current
-answer is complete. `Esc` or `Ctrl+C` returns to the answer and keeps an unsent
-question for the next `i`. The answer streams below the
+answer is complete. `Esc` in Insert mode switches the composer to Normal mode,
+as in the chat input; `Esc` in Normal mode or `Ctrl+C` returns to the answer and
+keeps an unsent question for the next `i`. The answer streams below the
 conversation, with each question quoted. Follow-ups reuse the same selection
 context, send the earlier turns with the new question, and always use the
 built-in follow-up instruction, even with a custom `prompt`. A failed follow-up

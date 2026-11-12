@@ -1,17 +1,21 @@
--- Completed /btw answer. The question and answer are deliberately kept out of
--- the session transcript; this module owns only the temporary view.
+-- Temporary view for /btw side questions. The question and answer are
+-- deliberately kept out of the session transcript; this module owns only the
+-- view. As in the explanation popup, asking docks a question composer along
+-- the bottom edge, and follow-ups append below the conversation so far.
+-- Request ownership lives in opencode.btw.
 
 local M = {}
 
 local highlights = require("opencode.ui.highlights")
-local render = require("opencode.ui.chat.render")
-local Popup = require("opencode.ui.popup")
 local keymaps = require("opencode.util.keymap")
+local Popup = require("opencode.ui.popup")
+local spinner = require("opencode.ui.spinner")
 
 local active
-local PROMPT_WIDTH = 60
-local ANSWER_WIDTH = 88
-local ANSWER_CONTENT_ROWS = 18 -- 20-row TUI scrollbox minus top and bottom padding
+local tokens = 0
+-- Answer rows that stay visible above a growing question composer.
+local MIN_ANSWER_ROWS = 3
+local PLACEHOLDER = "Ask anything about the conversation so far"
 
 local function setup_highlights()
 	vim.api.nvim_set_hl(0, "OpenCodeBtwBackground", { link = "NormalFloat", default = true })
@@ -22,268 +26,271 @@ end
 
 highlights.register("opencode.ui.btw", setup_highlights)
 
-local function dimensions(kind, question_rows)
-	local is_prompt = kind == "prompt"
-	local columns = math.max(1, vim.o.columns)
-	local rows = math.max(1, vim.o.lines - vim.o.cmdheight)
-	local border_width, border_height = Popup.outer_insets()
-	local width = math.max(1, math.min(is_prompt and PROMPT_WIDTH or ANSWER_WIDTH, columns - border_width))
-	local available_height = math.max(1, rows - border_height)
-	local answer_rows = 0
-	local height
-	if is_prompt then
-		height = math.min(9, available_height)
-	else
-		-- Shared dialog spacing, including one row above/below the raised box.
-		local overhead = 9
-		answer_rows = math.max(1, math.min(ANSWER_CONTENT_ROWS, available_height - overhead - (question_rows or 1)))
-		height = math.min(available_height, overhead + (question_rows or 1) + answer_rows)
+local function valid(view)
+	return view and active == view and vim.api.nvim_buf_is_valid(view.bufnr)
+		and vim.api.nvim_win_is_valid(view.winid)
+end
+
+local function stop_spinner(view)
+	if not view or not view.timer then return end
+	view.timer:stop()
+	view.timer:close()
+	view.timer = nil
+end
+
+local function quote(question)
+	return "> " .. question:gsub("\n", "\n> ")
+end
+
+-- The conversation so far, with each question quoted.
+local function transcript(view)
+	local blocks = {}
+	for _, turn in ipairs(view.turns) do
+		blocks[#blocks + 1] = quote(turn.question)
+		if turn.answer then blocks[#blocks + 1] = turn.answer end
 	end
+	if view.failure then
+		if view.failure.question then blocks[#blocks + 1] = quote(view.failure.question) end
+		blocks[#blocks + 1] = "/btw error: " .. view.failure.message
+	end
+	if view.phase == "pending" then blocks[#blocks + 1] = spinner.get_loading_text("Answering") end
+	return table.concat(blocks, "\n\n")
+end
+
+local function render(view, saved_view)
+	if not valid(view) then return false end
+	saved_view = saved_view or vim.api.nvim_win_call(view.winid, vim.fn.winsaveview)
+	-- A pending answer keeps the cursor at the end while it stays on the last line.
+	local follow = view.follow and saved_view.lnum >= vim.api.nvim_buf_line_count(view.bufnr)
+	local text = transcript(view)
+	local lines, marks
+	if text == "" then
+		lines = { PLACEHOLDER }
+		marks = { { row = 0, col = 0, opts = { end_col = #PLACEHOLDER, hl_group = "OpenCodeBtwMuted" } } }
+	else
+		local renderer = require("opencode.ui.chat.render")
+		local rendered = renderer.render_content(text, {
+			width = vim.api.nvim_win_get_width(view.winid), scope = "assistant_markdown",
+		})
+		lines, marks = renderer.extract_lines(rendered), rendered._opencode_highlights
+		if #lines == 0 then lines = { "" } end
+	end
+	view.popup:render(lines, marks)
+	vim.bo[view.bufnr].modified = false
+	vim.api.nvim_win_call(view.winid, function()
+		vim.fn.winrestview(saved_view)
+		if follow then vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(0), 0 }) end
+	end)
+	return true
+end
+
+local function start_spinner(view)
+	stop_spinner(view)
+	view.timer = vim.uv.new_timer()
+	if not view.timer then return end
+	local interval = spinner.get_interval_ms()
+	view.timer:start(interval, interval, vim.schedule_wrap(function()
+		if active == view and view.phase == "pending" then render(view) end
+	end))
+end
+
+-- Key hints for the frame's bottom border: the view keys, or the composer's
+-- send/back keys while asking.
+local function footer(view)
+	local items = view.composer and { { "input", "send", "ask" }, { "popup", "cancel", "back" } }
+		or { { "btw_answer", "ask", "ask" }, { "btw_answer", "copy", "copy" }, { "btw_answer", "close", "close" } }
+	local hints = {}
+	for _, item in ipairs(items) do
+		if item[2] ~= "ask" or view.on_ask then hints[#hints + 1] = { keymaps.label(item[1], item[2]), item[3] } end
+	end
+	local text = keymaps.hint(hints, { omit_disabled = true })
+	return text and (" " .. text .. " ")
+end
+
+-- Answer rows fill the frame, except the bottom `reserved` rows held by an
+-- open question composer.
+local function layout(reserved)
+	local width = math.min(88, math.max(1, vim.o.columns - 10))
+	local height = math.min(24, math.max(3, vim.o.lines - vim.o.cmdheight - 6))
 	return {
-		width = width,
-		height = height,
-		row = is_prompt and math.min(math.floor(rows / 4), math.max(0, rows - height - border_height))
-			or math.floor((rows - height - border_height) / 2),
-		col = math.floor((columns - width - border_width) / 2),
-		answer_rows = answer_rows,
-		question_rows = question_rows,
+		frame = { size = { width = width, height = height } },
+		content = { position = { row = 0, col = 0 }, size = { width = width, height = math.max(1, height - (reserved or 0)) } },
 	}
 end
 
-local clip = require("opencode.util.text").truncate
-
-local function binding(scope, action)
-	return keymaps.hint({ keymaps.label(scope, action) }, { omit_disabled = true }) or ""
-end
-
-local function header(view, width)
-	local scope = view.kind == "prompt" and "btw_prompt" or "btw_answer"
-	local close = binding(scope, "close")
-	local left, right = "  /btw", close ~= "" and (close .. "  ") or ""
-	local gap = width - vim.fn.strdisplaywidth(left .. right)
-	view.close_start = gap >= 1 and close ~= "" and (width - vim.fn.strdisplaywidth(right) + 1) or nil
-	return gap >= 1 and (left .. string.rep(" ", gap) .. right) or clip(left, width),
-		view.close_start and (#left + gap) or nil
-end
-
-local function wrap_lines(text, width)
-	local result = {}
-	text = tostring(text or ""):gsub("\r\n", "\n"):gsub("\r", "\n"):gsub("\t", "    ")
-	for _, line in ipairs(vim.split(text, "\n", { plain = true, trimempty = false })) do
-		for _, wrapped in ipairs(render.wrap_text(line, width)) do
-			result[#result + 1] = wrapped
-		end
+local function draw_frame(view)
+	local lines = {}
+	for index = 1, layout().frame.size.height do lines[index] = "" end
+	view.popup:render(lines, nil, "frame")
+	local border = view.popup.frame.border
+	if border and border.winid and vim.api.nvim_win_is_valid(border.winid) then
+		border:set_text("bottom", footer(view) or "", "center")
 	end
-	if #result == 0 then result[1] = "" end
-	return result
 end
 
-local function mark(marks, lines, line, start_col, end_col, group, priority)
-	local buffer_line = lines[line + 1]
-	if not buffer_line then return end
-	start_col = math.max(0, math.min(#buffer_line, tonumber(start_col) or 0))
-	end_col = math.max(0, math.min(#buffer_line, tonumber(end_col) or 0))
-	if end_col > start_col then
-		marks[#marks + 1] = {
-			row = line, col = start_col,
-			opts = { end_col = end_col, hl_group = group, priority = priority },
+local function reserve(view, rows)
+	if view.reserved == rows then return end
+	view.reserved = rows
+	view.popup:resize(layout(rows))
+end
+
+-- The composer spans the frame's width along its bottom edge and grows upward
+-- with the question; the answer keeps the rows above it.
+local function dock(view)
+	return function(measure)
+		local frame = view.popup.frame.winid
+		local width, height = vim.api.nvim_win_get_width(frame), vim.api.nvim_win_get_height(frame)
+		local rows = measure(math.max(1, width - 2), height - 4 - MIN_ANSWER_ROWS)
+		reserve(view, rows + 4)
+		return {
+			relative = { type = "win", winid = frame }, zindex = 92,
+			row = math.max(0, height - rows - 4), col = 0, width = math.max(1, width - 2), height = rows,
 		}
 	end
 end
 
-local function prompt_input_geometry(geometry)
-	return {
-		row = 3,
-		col = 2,
-		width = math.max(1, geometry.width - 4),
-		height = 1,
-	}
+local function session_model(view)
+	local ok, selection = pcall(function()
+		return require("opencode.selectors").send_selection({ session_id = view.session_id })
+	end)
+	return ok and selection and selection.model or nil
 end
 
-local function window_options(kind)
-	local options = {
-		winhighlight = "Normal:OpenCodeBtwBackground,NormalNC:OpenCodeBtwBackground,NormalFloat:OpenCodeBtwBackground,EndOfBuffer:OpenCodeBtwBackground",
-		winblend = 0,
-	}
-	if kind == "answer" then
-		options.winhighlight = options.winhighlight .. ",Cursor:OpenCodeHiddenCursor,lCursor:OpenCodeHiddenCursor"
-	end
-	if kind ~= "input" then options.fillchars = "eob: " end
-	if kind ~= "panel" then
-		options.wrap = false
-		options.number = false
-		options.relativenumber = false
-		options.signcolumn = "no"
-	end
-	if kind == "answer" then
-		options.foldcolumn = "0"
-		options.cursorline = false
-		options.scrolloff = 0
-	end
-	return options
-end
-
-local function render_answer(text, width)
-	local rendered = render.render_content(text, { width = width, scope = "assistant_markdown" })
-	local lines = {}
-	for _, line in ipairs(rendered) do lines[#lines + 1] = line:content() end
-	if #lines == 0 then lines[1] = "" end
-	return lines, rendered._opencode_highlights or {}
-end
-
-local function result_dimensions(question)
-	local border_width, border_height = Popup.outer_insets()
-	local width = math.max(1, math.min(ANSWER_WIDTH, vim.o.columns - border_width))
-	local text_width = math.max(1, width - 4)
-	local question_count = #wrap_lines(question, text_width)
-	local available_height = math.max(1, vim.o.lines - vim.o.cmdheight - border_height)
-	-- Reserve one answer row and the fixed dialog spacing on short screens.
-	return dimensions("answer", math.min(question_count, math.max(1, available_height - 10)))
-end
-
-local function draw(view)
-	if active ~= view or not vim.api.nvim_buf_is_valid(view.bufnr) then return end
-	local width, height = view.geometry.width, view.geometry.height
-	local text_width = math.max(1, width - 4)
-	if not view.question_cache or view.question_cache.width ~= text_width then
-		view.question_cache = { width = text_width, lines = wrap_lines(view.question, text_width) }
-	end
-	local question_lines = view.question_cache.lines
-	local question_count = math.min(#question_lines, view.geometry.question_rows or #question_lines)
-	if not view.answer_cache or view.answer_cache.width ~= text_width then
-		local answer_lines, answer_highlights = render_answer(view.answer, text_width)
-		view.answer_cache = { width = text_width, lines = answer_lines, highlights = answer_highlights }
-	end
-	local answer_lines = view.answer_cache.lines
-	local answer_highlights = view.answer_cache.highlights
-	local answer_rows = view.geometry.answer_rows
-	view.max_scroll = math.max(0, #answer_lines - answer_rows)
-	view.scroll = math.min(math.max(0, view.scroll or 0), view.max_scroll)
-
-	local heading, close_start = header(view, width)
-	local lines = {}
-	local function add_line(value)
-		lines[#lines + 1] = value
-		return #lines - 1 -- buffer row
-	end
-	add_line("")
-	local header_row = add_line(heading)
-	add_line("")
-	local question_start = #lines
-	for index = 1, question_count do add_line("  " .. question_lines[index]) end
-	add_line("")
-	local raised_start = add_line("")
-	local answer_start = #lines
-	for index = 1, answer_rows do
-		local answer_line = answer_lines[view.scroll + index]
-		add_line(answer_line and ("  " .. answer_line) or "")
-	end
-	local raised_end = add_line("")
-	add_line("")
-	local copy = binding("btw_answer", "copy")
-	copy = copy ~= "" and (copy .. " copy") or ""
-	view.copy_width = vim.fn.strdisplaywidth(copy)
-	local scroll_keys = {}
-	for _, action in ipairs({ "scroll_up", "scroll_down" }) do
-		local value = binding("btw_answer", action)
-		if value ~= "" then scroll_keys[#scroll_keys + 1] = value end
-	end
-	local scroll_hint = #scroll_keys > 0 and ("   " .. table.concat(scroll_keys, " / ") .. " scroll") or ""
-	local footer = clip("  " .. (view.copied and "✓ copied" or (view.copy_failed and "copy failed" or copy))
-		.. scroll_hint, width)
-	local footer_row = add_line(footer)
-	add_line("")
-	for index = #lines + 1, height do lines[index] = "" end
-	view.footer_row = footer_row + 1 -- 1-based row for mouse hit testing
-
-	local marks = {}
-	for row = raised_start, math.min(raised_end, height - 1) do
-		marks[#marks + 1] = { row = row, col = 0, opts = { line_hl_group = "OpenCodeBtwRaised", priority = 1 } }
-	end
-	mark(marks, lines, header_row, 2, math.min(#heading, 6), "OpenCodeBtwTitle")
-	if close_start then mark(marks, lines, header_row, close_start, #heading, "OpenCodeBtwMuted") end
-	for index = 1, question_count do
-		local row = question_start + index - 1
-		mark(marks, lines, row, 2, #lines[row + 1], "OpenCodeBtwMuted")
-	end
-	for _, highlight in ipairs(answer_highlights) do
-		local first_line = tonumber(highlight.line) or 0
-		local last_line = tonumber(highlight.end_line) or first_line
-		for source_row = first_line, last_line do
-			local row = answer_start + source_row - view.scroll
-			if row >= answer_start and row < answer_start + answer_rows then
-				local source_text = answer_lines[source_row + 1] or ""
-				local start_col = source_row == first_line and (highlight.col_start or 0) or 0
-				local end_col = source_row == last_line and (highlight.end_col or highlight.col_end or #source_text)
-					or #source_text
-				mark(marks, lines, row, 2 + start_col, 2 + end_col, highlight.hl_group, highlight.priority or 4100)
-			end
-		end
-	end
-	if view.copied then
-		mark(marks, lines, footer_row, 2, math.min(#footer, 5), "OpenCodeBtwTitle")
-		mark(marks, lines, footer_row, math.min(#footer, 5), #footer, "OpenCodeBtwMuted")
-	elseif view.copy_failed then
-		mark(marks, lines, footer_row, 2, #footer, "OpenCodeBtwMuted")
-	else
-		local key_end = math.min(#footer, 2 + math.max(0, #copy - #" copy"))
-		mark(marks, lines, footer_row, 2, key_end, "OpenCodeBtwTitle")
-		mark(marks, lines, footer_row, key_end, #footer, "OpenCodeBtwMuted")
-	end
-	view.popup:render(lines, marks)
-	if view.winid and vim.api.nvim_win_is_valid(view.winid) then
-		vim.api.nvim_win_set_cursor(view.winid, { 1, 0 })
-	end
-end
-
-local function scroll(delta)
-	local view = active
-	if not view or not vim.api.nvim_win_is_valid(view.winid) then return end
-	local next_scroll = math.min(view.max_scroll, math.max(0, view.scroll + delta))
-	if next_scroll ~= view.scroll then
-		view.scroll = next_scroll
-		draw(view)
+local function latest_answer(view)
+	for index = #view.turns, 1, -1 do
+		if view.turns[index].answer then return view.turns[index].answer end
 	end
 end
 
 local function copy_answer()
 	local view = active
-	if not view or view.kind == "prompt" then return end
-	vim.fn.setreg('"', view.answer)
-	local copied = false
+	local answer = view and latest_answer(view)
+	if not answer then return end
+	vim.fn.setreg('"', answer)
 	for _, register in ipairs({ "+", "*" }) do
-		pcall(vim.fn.setreg, register, view.answer)
-		local ok, value = pcall(vim.fn.getreg, register)
-		if ok and value == view.answer and view.answer ~= "" then
-			copied = true
-			break
-		end
+		pcall(vim.fn.setreg, register, answer)
 	end
-	view.copied = copied
-	view.copy_failed = not copied
-	draw(view)
+	vim.notify("/btw answer copied", vim.log.levels.INFO)
 end
 
-local function panel_mouse_position(view)
-	local mouse = vim.fn.getmousepos()
-	if not mouse or tonumber(mouse.winid) ~= view.winid then return nil, nil end
-	return tonumber(mouse.winrow or mouse.line) or 0, tonumber(mouse.wincol or mouse.column) or 0
+local function composer_closed(view)
+	view.composer = nil
+	if active ~= view then return false end
+	reserve(view, 0)
+	draw_frame(view)
+	return true
 end
 
-local function clicked_escape(view, row, col)
-	return view.close_start and row == 2 and col >= view.close_start and col <= view.geometry.width - 2
+local function submit(view, question)
+	local earlier = {}
+	for index, turn in ipairs(view.turns) do
+		earlier[index] = { question = turn.question, answer = turn.answer }
+	end
+	view.failure = nil
+	view.turns[#view.turns + 1] = { question = question }
+	view.phase, view.follow = "pending", true
+	render(view)
+	vim.api.nvim_win_set_cursor(view.winid, { vim.api.nvim_buf_line_count(view.bufnr), 0 })
+	start_spinner(view)
+	if view.on_ask(question, { view = view.token, turns = earlier }) == false then
+		M.error(view.token, "The question was not sent")
+	end
 end
 
-local function answer_click()
+-- A question typed during an answer stays in the composer until it can be
+-- sent; going back keeps it for the next ask. Insert-mode Escape switches the
+-- composer to Normal mode, as in the chat input.
+local function ask()
 	local view = active
-	if not view or view.kind == "prompt" then return end
-	local row, col = panel_mouse_position(view)
-	if not row then return end
-	if clicked_escape(view, row, col) then
-		M.close()
-	elseif row == view.footer_row and col >= 3 and col <= 2 + view.copy_width and not view.copied then
-		copy_answer()
+	if not view or not view.on_ask or view.composer then return end
+	view.composer = require("opencode.ui.completion_prompt").open({
+		winid = view.winid, title = "/btw", model = session_model(view), text = view.draft,
+		placement = dock(view), normal_mode = true,
+		can_submit = function(value)
+			if vim.trim(value) == "" then return false end
+			if view.phase == "pending" then
+				vim.notify("/btw: wait for the current answer", vim.log.levels.INFO)
+				return false
+			end
+			return true
+		end,
+		on_submit = function(value)
+			view.draft = nil
+			if composer_closed(view) then submit(view, vim.trim(value)) end
+		end,
+		on_cancel = function(value)
+			view.draft = value
+			if not composer_closed(view) then return end
+			-- Nothing to read without a question, and leaving the composer for
+			-- another window leaves the view too.
+			if (#view.turns == 0 and not view.failure) or vim.api.nvim_get_current_win() ~= view.winid then
+				M.close()
+			end
+		end,
+	})
+	draw_frame(view)
+end
+
+local function open(opts)
+	M.close()
+	local previous_win = vim.api.nvim_get_current_win()
+	-- Close an active composer while its parent chat is still focused. Its
+	-- own BufLeave teardown would otherwise race the floating chat's focus
+	-- handler when the view is dismissed.
+	local ok, chat_input = pcall(require, "opencode.ui.input")
+	if ok and chat_input.is_visible() and chat_input.get_winids()[1] == previous_win then
+		chat_input.close()
 	end
+	tokens = tokens + 1
+	local view = {
+		token = tokens, turns = opts.turns or {}, phase = "ready", on_ask = opts.on_ask,
+		session_id = opts.session_id, previous_win = previous_win,
+	}
+	local layers = layout()
+	local popup = Popup.new({
+		frame = vim.tbl_extend("force", layers.frame, {
+			enter = false, focusable = false, zindex = 90,
+			border = { text = { top = " /btw ", top_align = "center", bottom = footer(view), bottom_align = "center" } },
+			buf_options = { filetype = "opencode_float", modifiable = false },
+		}),
+		content = vim.tbl_extend("force", layers.content, {
+			enter = true, focusable = true, border = "none", zindex = 91,
+			buf_options = { filetype = "opencode_btw" },
+		}),
+		focus_restore = "chat",
+		close_on_leave = true,
+		on_resize = function(current)
+			local saved_view = vim.api.nvim_win_call(view.winid, vim.fn.winsaveview)
+			current:resize(layout(view.reserved))
+			draw_frame(view)
+			render(view, saved_view)
+		end,
+		on_close = function()
+			stop_spinner(view)
+			if active == view then active = nil end
+			if view.composer then view.composer.close() end
+		end,
+	})
+	view.popup = popup
+	popup:mount()
+	view.bufnr, view.winid = popup.bufnr, popup.winid
+	active = view
+	vim.bo[view.bufnr].modifiable = false
+	vim.bo[view.bufnr].readonly = true
+	vim.wo[view.winid].wrap = true
+	vim.wo[view.winid].linebreak = true
+	vim.wo[view.winid].number = false
+	vim.wo[view.winid].relativenumber = false
+	vim.wo[view.winid].signcolumn = "no"
+	vim.wo[view.winid].scrolloff = 2
+	local map, apply = keymaps.mapper("btw_answer", view.bufnr)
+	map("n", "copy", copy_answer, { desc = "Copy /btw answer" })
+	if view.on_ask then map("n", "ask", ask, { desc = "Ask a /btw question" }) end
+	map("n", "close", M.close, { nowait = true })
+	apply()
+	draw_frame(view)
+	render(view)
+	return view
 end
 
 function M.is_visible()
@@ -292,191 +299,79 @@ end
 
 function M.close()
 	local view = active
-	if not view then return end
+	if not view then return false end
 	active = nil
-	if view.input_winid and vim.api.nvim_win_is_valid(view.input_winid)
-		and vim.api.nvim_get_current_win() == view.input_winid then
-		pcall(vim.cmd, "stopinsert")
-	end
 	view.popup:close()
+	return true
 end
 
-local function draw_prompt(view)
-	if active ~= view or not vim.api.nvim_buf_is_valid(view.bufnr) then return end
-	local geometry = view.geometry
-	local heading, close_start = header(view, geometry.width)
-	local lines = {}
-	for index = 1, geometry.height do lines[index] = "" end
-	lines[2] = heading
-	local submit = binding("btw_prompt", "submit")
-	lines[math.max(2, geometry.height - 1)] = clip(submit ~= "" and ("  " .. submit .. " submit") or "", geometry.width)
-	local marks = {}
-	mark(marks, lines, 1, 2, math.min(#heading, 6), "OpenCodeBtwTitle")
-	if close_start then mark(marks, lines, 1, close_start, #heading, "OpenCodeBtwMuted") end
-	local footer_row = math.max(1, geometry.height - 2)
-	mark(marks, lines, footer_row, 2, #lines[footer_row + 1], "OpenCodeBtwMuted")
-	view.popup:render(lines, marks)
+---Close the view when it belongs to a cleared or deleted session.
+function M.close_session(session_id)
+	if active and active.session_id == session_id then M.close() end
 end
 
-local function prompt_click(view)
-	if active ~= view then return end
-	local row, col = panel_mouse_position(view)
-	if not row then return end
-	if clicked_escape(view, row, col) then
-		M.close()
-	elseif view.input_winid and vim.api.nvim_win_is_valid(view.input_winid) then
-		vim.api.nvim_set_current_win(view.input_winid)
-	end
-end
-
-local function create_dialog(kind, geometry, resize_geometry, redraw)
-	local view
-	local previous_win = vim.api.nvim_get_current_win()
-	-- Close an active composer while its parent chat is still focused. Its
-	-- own BufLeave teardown would otherwise race the floating chat's focus
-	-- handler when the dialog is dismissed.
-	local ok, chat_input = pcall(require, "opencode.ui.input")
-	if ok and chat_input.is_visible() and chat_input.get_winids()[1] == previous_win then
-		chat_input.close()
-	end
-	local content = {
-		enter = kind == "answer",
-		focusable = true,
-		relative = "editor",
-		position = { row = geometry.row, col = geometry.col },
-		size = { width = geometry.width, height = geometry.height },
-		border = "none",
-		zindex = 90,
-		buf_options = { filetype = "opencode_btw" },
-		win_options = window_options(kind == "prompt" and "panel" or "answer"),
-	}
-	local input
-	if kind == "prompt" then
-		local input_geometry = prompt_input_geometry(geometry)
-		input = {
-			kind = "popup",
-			enter = true,
-			focusable = true,
-			position = { row = input_geometry.row, col = input_geometry.col },
-			size = { width = input_geometry.width, height = input_geometry.height },
-			border = "none",
-			zindex = 91,
-			buf_options = { filetype = "opencode_btw_input", modifiable = true },
-			win_options = window_options("input"),
-		}
-	end
-	local popup
-	popup = Popup.new({
-		content = content,
-		input = input,
-		focus_restore = "chat",
-		close_on_leave = true,
-		on_close = function()
-			if active == view then active = nil end
-		end,
-		on_resize = function()
-			if active ~= view or not vim.api.nvim_win_is_valid(view.winid) then return end
-			view.geometry = resize_geometry(view)
-			local layout = {
-				content = {
-					position = { row = view.geometry.row, col = view.geometry.col },
-					size = { width = view.geometry.width, height = view.geometry.height },
-				},
-			}
-			if view.input_winid then
-				local g = prompt_input_geometry(view.geometry)
-				layout.input = { position = { row = g.row, col = g.col }, size = { width = g.width, height = g.height } }
-			end
-			popup:resize(layout)
-			redraw(view)
+---Open an empty view with the question composer focused.
+---@param on_submit fun(question: string, opts: table): boolean|nil Sends the
+---question; `opts` carries the view token and earlier turns for opencode.btw.
+---Return false when it was not sent.
+---@param opts? { session_id?: string }
+function M.prompt(on_submit, opts)
+	opts = opts or {}
+	local view = open({
+		session_id = opts.session_id,
+		on_ask = function(question, ask_opts)
+			if type(on_submit) == "function" then return on_submit(question, ask_opts) end
 		end,
 	})
-	popup:mount()
-	view = {
-		kind = kind,
-		popup = popup,
-		bufnr = popup.bufnr,
-		winid = popup.winid,
-		input_bufnr = popup.input and popup.input.bufnr or nil,
-		input_winid = popup.input and popup.input.winid or nil,
-		previous_win = previous_win,
-		geometry = geometry,
-	}
-	active = view
+	ask()
 	return view
 end
 
-function M.prompt(on_submit)
-	M.close()
-	local geometry = dimensions("prompt")
-	local view = create_dialog("prompt", geometry, function() return dimensions("prompt") end, draw_prompt)
-	local input_bufnr, input_winid = view.input_bufnr, view.input_winid
-	local function update_placeholder()
-		if active ~= view or not vim.api.nvim_buf_is_valid(input_bufnr) then return end
-		local value = table.concat(vim.api.nvim_buf_get_lines(input_bufnr, 0, -1, false), "\n")
-		if value == "" then
-			view.popup:render(nil, {
-				{ row = 0, col = 0, opts = {
-					virt_text = { { "Ask anything", "OpenCodeBtwMuted" } },
-					virt_text_pos = "overlay",
-				} },
-			}, "input")
-		else
-			view.popup:render(nil, {}, "input")
-		end
-	end
-	local function submit()
-		if active ~= view then return end
-		local value = vim.trim(table.concat(vim.api.nvim_buf_get_lines(input_bufnr, 0, -1, false), "\n"))
-		if value == "" then return end
-		M.close()
-		if type(on_submit) == "function" then on_submit(value) end
-	end
-	local map, apply = keymaps.mapper("btw_prompt", input_bufnr)
-	map("n", "close", M.close, { nowait = true })
-	map("i", "close", M.close, { nowait = true, filter = function(key) return not keymaps.matches("q", key) end })
-	map({ "i", "n" }, "clear", function()
-		local value = table.concat(vim.api.nvim_buf_get_lines(input_bufnr, 0, -1, false), "\n")
-		if value == "" then M.close(); return end
-		view.popup:render({ "" }, {}, "input")
-		vim.api.nvim_win_set_cursor(input_winid, { 1, 0 })
-		update_placeholder()
-	end, { nowait = true })
-	map({ "i", "n" }, "submit", submit, { nowait = true })
-	apply()
-	local panel_map, panel_apply = keymaps.mapper("btw_prompt", view.bufnr)
-	local _, customized = keymaps.resolve("btw_prompt")
-	panel_map("n", "click", function() prompt_click(view) end, { nowait = true })
-	panel_map("n", "close", M.close, { nowait = true, filter = function(key)
-		return customized.close or keymaps.matches("<Esc>", key)
-	end })
-	panel_apply()
-	draw_prompt(view)
-	view.popup:on("TextChanged", update_placeholder, "input")
-	view.popup:on("TextChangedI", update_placeholder, "input")
-	update_placeholder()
-	vim.cmd("startinsert")
-	return view
-end
-
-function M.show(question, answer)
-	M.close()
+---Show an answer. It fills the view that asked the question when that view
+---is still open, and otherwise opens a new one with the earlier turns.
+---@param opts? { view?: integer, turns?: table[], session_id?: string, on_ask?: function }
+function M.show(question, answer, opts)
+	opts = opts or {}
 	question, answer = tostring(question or ""), tostring(answer or "")
-	local geometry = result_dimensions(question)
-	local view = create_dialog("answer", geometry, function(current) return result_dimensions(current.question) end, draw)
-	view.question, view.answer, view.scroll, view.max_scroll = question, answer, 0, 0
-	local map, apply = keymaps.mapper("btw_answer", view.bufnr)
-	map("n", "close", M.close, { nowait = true })
-	map("n", "copy", copy_answer, { nowait = true })
-	map("n", "click", answer_click, { nowait = true })
-	for action, amount in pairs({ scroll_down = 1, scroll_up = -1, page_down = 20, page_up = -20 }) do
-		map("n", action, function() scroll(amount) end, { nowait = true })
+	local view = active
+	if not (view and opts.view and view.token == opts.view and M.is_visible()) then
+		local turns = {}
+		for index, turn in ipairs(opts.turns or {}) do
+			turns[index] = { question = turn.question, answer = turn.answer }
+		end
+		turns[#turns + 1] = { question = question }
+		view = open({ turns = turns, session_id = opts.session_id, on_ask = opts.on_ask })
 	end
-	map("n", "goto_bottom", function() scroll(view.max_scroll) end, { nowait = true })
-	map("n", "goto_top", function() scroll(-view.max_scroll) end, { nowait = true })
-	apply()
-	draw(view)
+	stop_spinner(view)
+	local last = view.turns[#view.turns]
+	if not last or last.answer or last.question ~= question then
+		last = { question = question }
+		view.turns[#view.turns + 1] = last
+	end
+	last.answer = answer
+	view.phase = "ready"
+	if opts.on_ask then view.on_ask = opts.on_ask end
+	if not view.composer then draw_frame(view) end
+	render(view)
 	return view
+end
+
+---Show a failed question in the view that asked it.
+---@return boolean shown
+function M.error(token, message)
+	local view = active
+	if not view or token == nil or view.token ~= token or not M.is_visible() then return false end
+	stop_spinner(view)
+	local last = view.turns[#view.turns]
+	local question
+	if last and not last.answer then
+		question = last.question
+		table.remove(view.turns)
+	end
+	view.failure = { question = question, message = tostring(message) }
+	view.phase = "ready"
+	render(view)
+	return true
 end
 
 return M

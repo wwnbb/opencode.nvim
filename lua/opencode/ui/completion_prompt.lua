@@ -55,6 +55,7 @@ end
 ---@field can_submit? fun(value: string): boolean Return false to keep the prompt open
 ---@field on_submit fun(value: string)
 ---@field on_cancel? fun(value: string)
+---@field normal_mode? boolean Insert-mode Escape enters Normal mode instead of cancelling
 
 ---@param opts OpenCodeComposerPromptOpts
 function M.open(opts)
@@ -118,7 +119,10 @@ function M.open(opts)
 	map({ "i", "n" }, "send_steer", submit, { filter = function(key)
 		return not keymaps.matches(keymaps.get("input").send_alt, key)
 	end })
-	map({ "i", "n" }, "cancel", cancel, { scope = "popup" })
+	map("n", "cancel", cancel, { scope = "popup" })
+	map("i", "cancel", cancel, { scope = "popup", filter = opts.normal_mode and function(key)
+		return not keymaps.matches("<Esc>", key)
+	end or nil })
 	apply()
 
 	local function footer()

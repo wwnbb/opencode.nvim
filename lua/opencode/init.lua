@@ -565,8 +565,9 @@ end
 --- Ask a transient question using the active session's context and model.
 ---@param question string
 ---@param owner_session_id? string Session that opened a question dialog.
+---@param opts? table Follow-up state from the /btw view (view token, earlier turns).
 ---@return boolean
-function M.ask_btw(question, owner_session_id)
+function M.ask_btw(question, owner_session_id, opts)
 	if not require_lifecycle() then return false end
 	local session_id = owner_session_id or state.get_session().id
 	if not session_id then
@@ -589,7 +590,7 @@ function M.ask_btw(question, owner_session_id)
 			vim.notify("Session was deleted before /btw could start", vim.log.levels.WARN)
 			return
 		end
-		require("opencode.btw").ask(session_id, question)
+		require("opencode.btw").ask(session_id, question, opts)
 	end)
 	return true
 end

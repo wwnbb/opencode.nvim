@@ -1,6 +1,6 @@
 describe("/btw side questions", function()
 	local saved, original_notify
-	local requests, shown, notices, refreshes
+	local requests, shown, notices, refreshes, failures, shown_opts
 	local btw
 
 	before_each(function()
@@ -9,14 +9,22 @@ describe("/btw side questions", function()
 			saved[name] = package.loaded[name]
 			package.loaded[name] = nil
 		end
-		requests, shown, notices, refreshes = {}, {}, {}, 0
+		requests, shown, notices, refreshes, failures, shown_opts = {}, {}, {}, 0, {}, nil
 		package.loaded["opencode.client"] = {
 			generate_text = function(session_id, prompt, callback)
 				requests[#requests + 1] = { session_id = session_id, prompt = prompt, callback = callback }
 			end,
 		}
 		package.loaded["opencode.ui.btw"] = {
-			show = function(question, answer) shown[#shown + 1] = { question, answer } end,
+			show = function(question, answer, opts)
+				shown[#shown + 1] = { question, answer }
+				shown_opts = opts
+			end,
+			error = function(token, message)
+				if token == nil then return false end
+				failures[#failures + 1] = { token, message }
+				return true
+			end,
 			close = function() end,
 		}
 		package.loaded["opencode.ui.chat"] = { update_winbar = function() refreshes = refreshes + 1 end }
@@ -46,6 +54,24 @@ describe("/btw side questions", function()
 		assert.equals(0, btw.pending_count())
 		assert.same({ { "how is your day?", "Day good." } }, shown)
 		assert.is_true(refreshes >= 2)
+	end)
+
+	it("sends earlier turns with a follow-up and answers into the asking view", function()
+		local turns = { { question = "first?", answer = "one" } }
+		assert.is_true(btw.ask("ses_one", "second?", { view = 7, turns = turns }))
+		assert.matches("Do not call any tools", requests[1].prompt, 1, true)
+		assert.matches("Question: first?\nAnswer: one", requests[1].prompt, 1, true)
+		assert.matches("\n\nCurrent question: second%?$", requests[1].prompt)
+		requests[1].callback(nil, " two ")
+		assert.same({ { "second?", "two" } }, shown)
+		assert.equals(7, shown_opts.view)
+		assert.same(turns, shown_opts.turns)
+		assert.equals("ses_one", shown_opts.session_id)
+		assert.is_function(shown_opts.on_ask)
+		assert.is_true(btw.ask("ses_one", "third?", { view = 7 }))
+		requests[2].callback({ message = "Unavailable" })
+		assert.same({ { 7, "Unavailable" } }, failures)
+		assert.same({}, notices)
 	end)
 
 	it("tracks concurrent questions and ignores stale replies after reset", function()

@@ -227,10 +227,10 @@ function M.register(palette)
 				return
 			end
 			local current = guard(ctx, session_id)
-			require("opencode.ui.btw").prompt(function(question)
-				if not current() then return end
-				actions.ask_btw(question, session_id)
-			end)
+			require("opencode.ui.btw").prompt(function(question, opts)
+				if not current() then return false end
+				return actions.ask_btw(question, session_id, opts)
+			end, { session_id = session_id })
 		end,
 	})
 	palette.register({
