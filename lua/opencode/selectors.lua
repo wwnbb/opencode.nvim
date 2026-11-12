@@ -465,4 +465,40 @@ function M.prompt_docked(session_id, message_id)
 	return require("opencode.session.pending").docked(session_id, message_id)
 end
 
+---Sessions with a permission, question or edit review waiting for the user.
+---@return string[]
+local function sessions_awaiting_user()
+	local ids = {}
+	for _, item in ipairs(require("opencode.permission.state").get_all_active()) do
+		ids[#ids + 1] = item.session_id
+	end
+	local attention = require("opencode.session.attention")
+	for _, item in ipairs(require("opencode.question.state").get_all()) do
+		if attention.is_pending_question(item) then ids[#ids + 1] = item.session_id end
+	end
+	for _, item in ipairs(require("opencode.edit.state").get_all_active()) do
+		for _, file in ipairs(item.files or {}) do
+			if file.status == "pending" then ids[#ids + 1] = item.session_id; break end
+		end
+	end
+	return ids
+end
+
+---Whether a session, or a subagent session below it, waits for the user.
+---@param session_id string|nil
+---@return boolean
+function M.session_awaits_user(session_id)
+	if type(session_id) ~= "string" or session_id == "" then return false end
+	local sync, state_mod = require("opencode.sync"), require("opencode.state")
+	for _, awaiting_id in ipairs(sessions_awaiting_user()) do
+		local id, visited = awaiting_id, {} ---@type string|nil, table<string, true>
+		while type(id) == "string" and id ~= "" and not visited[id] do
+			if id == session_id then return true end
+			visited[id] = true
+			id = sync.get_task_parent_session(id) or state_mod.get_session_parent_id(id)
+		end
+	end
+	return false
+end
+
 return M

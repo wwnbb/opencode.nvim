@@ -22,6 +22,8 @@ local TASK_ANIM_FRAMES = tool_panel.ANIM_FRAMES
 local TASK_COMPLETE_ICON = "✓"
 local TASK_CANCELLED_ICON = "✕"
 local TASK_ERROR_ICON = "✗"
+-- Same mark as the "Waiting" session tab status.
+local TASK_WAITING_ICON = "◈"
 local TASK_HIGHLIGHT_PRIORITY = 4200
 local TASK_ANIMATION_PRIORITY = TASK_HIGHLIGHT_PRIORITY + 50
 local MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES = 120
@@ -54,6 +56,9 @@ function M.get_task_status_icon(status)
 	if status == "error" then
 		return TASK_ERROR_ICON
 	end
+	if status == "waiting" then
+		return TASK_WAITING_ICON
+	end
 	if is_task_cancelled(status) then
 		return TASK_CANCELLED_ICON
 	end
@@ -74,20 +79,32 @@ local function is_animated_regular_tool(tool_name)
 end
 
 -- A completed delegation call may have left a child running in the background.
-function M.task_status(tool_part)
+local function delegated_status(tool_part)
 	local tool_state = tool_part.state or {}
 	local status = tool_state.status or "pending"
-	if tool_part.subagent_notification then return status end
-	if status == "error" or is_task_cancelled(status) then return status end
 	local child = require("opencode.events.util").resolve_task_child_session_id(tool_part)
 	if child then
 		local child_status = require("opencode.sync").get_session_status(child)
 		if child_status then
-			if child_status.type == "busy" or child_status.type == "retry" then return "running" end
-			if child_status.outcome == "failed" then return "error" end
-			if child_status.outcome == "interrupted" then return "cancelled" end
-			if child_status.type == "idle" then return status == "completed" and "completed" or status end
-		elseif status == "completed" and (tool_state.metadata or {}).status == "running" then return "running" end
+			if child_status.type == "busy" or child_status.type == "retry" then return "running", child end
+			if child_status.outcome == "failed" then return "error", child end
+			if child_status.outcome == "interrupted" then return "cancelled", child end
+			if child_status.type == "idle" then return status == "completed" and "completed" or status, child end
+		elseif status == "completed" and (tool_state.metadata or {}).status == "running" then return "running", child end
+	end
+	return status, child
+end
+
+-- A running child blocked on the user (its own or a nested subagent's
+-- permission, question or edit review) is "waiting": it does not animate, while
+-- sibling tasks that still work keep their spinners.
+function M.task_status(tool_part)
+	local status = (tool_part.state or {}).status or "pending"
+	if tool_part.subagent_notification or status == "error" or is_task_cancelled(status) then return status end
+	local child
+	status, child = delegated_status(tool_part)
+	if child and M.is_task_working(status) and require("opencode.selectors").session_awaits_user(child) then
+		return "waiting"
 	end
 	return status
 end
@@ -140,6 +157,19 @@ function M.has_active_task_rows()
 	return false
 end
 
+---@return boolean
+local function displayed_edit_pending()
+	for id in pairs(state.edits) do
+		local edit = edit_state.get_edit(id)
+		if edit and edit.status == "pending" then
+			for _, file in ipairs(edit.files or {}) do
+				if file.status == "pending" then return true end
+			end
+		end
+	end
+	return false
+end
+
 function M.start_task_animation_timer()
 	if state.task_anim_timer then
 		return
@@ -160,15 +190,6 @@ function M.start_task_animation_timer()
 				return
 			end
 
-			for id in pairs(state.edits) do
-				local edit = edit_state.get_edit(id)
-				if edit and edit.status == "pending" then
-					for _, file in ipairs(edit.files or {}) do
-						if file.status == "pending" then return end
-					end
-				end
-			end
-
 			if widget_support.in_place_updates_blocked() then
 				return
 			end
@@ -179,7 +200,9 @@ function M.start_task_animation_timer()
 			end
 
 			tick_task_anim_frame()
-			if not M.update_animation_frames_in_place() then
+			-- Overlay frames leave the text alone. Rewriting blocks could move the
+			-- cursor in a displayed edit review, so that fallback waits for it.
+			if not M.update_animation_frames_in_place() and not displayed_edit_pending() then
 				M.update_active_animations_in_place()
 			end
 		end)

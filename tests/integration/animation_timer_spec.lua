@@ -59,7 +59,7 @@ describe("chat animation timer ownership", function()
 			vim.api.nvim_buf_get_lines(surface.bufnr, spinner_line, spinner_line + 1, false)[1])
 		end)
 
-	it("pauses task ticks only for pending edits displayed in their own pane", function()
+	it("keeps animating beside a displayed pending edit without rewriting its text", function()
 		local edits = require("opencode.edit.state")
 		local part = { id = "bash", type = "tool", tool = "bash", state = { status = "running" } }
 		state.tools = { bash = { start_line = 0, end_line = 0, tool_part = part } }
@@ -72,8 +72,11 @@ describe("chat animation timer ownership", function()
 			callbacks[1]()
 			assert.equals(frame + 1, state.task_anim_frame, "an unrelated pane edit must not stop animation")
 			state.edits["other-pane-edit"] = { start_line = 0, end_line = 0 }
+			local before = vim.api.nvim_buf_get_lines(surface.bufnr, 0, -1, false)
 			callbacks[1]()
-			assert.equals(frame + 1, state.task_anim_frame, "a displayed pending edit must keep its cursor stable")
+			assert.equals(frame + 2, state.task_anim_frame, "a displayed pending edit must not stop other animations")
+			assert.same(before, vim.api.nvim_buf_get_lines(surface.bufnr, 0, -1, false),
+				"a displayed pending edit must keep its cursor stable")
 		end, debug.traceback)
 		edits.clear_all()
 		assert.is_true(ok, failure)
