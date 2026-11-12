@@ -35,6 +35,37 @@ function M.projects(callback, context)
 	end)
 end
 
+local function starts_with(value, prefix, ignore_case)
+	if ignore_case then value, prefix = value:lower(), prefix:lower() end
+	return value:sub(1, #prefix) == prefix
+end
+
+---Complete an absolute server directory from the server's own filesystem, so
+---remote servers complete their paths rather than the editor's.
+---@param value string Text before the cursor
+---@param callback fun(matches: string[])
+function M.complete_directory(value, callback)
+	local server_path = require("opencode.util.path")
+	if not server_path.is_absolute(value) then callback({}); return end
+	local parent, partial = value:match("^(.*[/\\])([^/\\]*)$")
+	actions.list_directory(parent, function(err, entries)
+		if err then callback({}); return end
+		local matches = {}
+		-- Prefer exact case; fall back to case-insensitive like a shell would.
+		for _, ignore_case in ipairs({ false, true }) do
+			for _, entry in ipairs(entries or {}) do
+				local hidden = entry.name:sub(1, 1) == "." and partial:sub(1, 1) ~= "."
+				if entry.type == "directory" and entry.name ~= "" and not hidden and starts_with(entry.name, partial, ignore_case) then
+					matches[#matches + 1] = parent .. entry.name .. "/"
+				end
+			end
+			if #matches > 0 then break end
+		end
+		table.sort(matches)
+		callback(matches)
+	end)
+end
+
 function M.pick(callback, context)
 	context = capture(context)
 	local source = context.session_id
@@ -60,7 +91,14 @@ function M.pick(callback, context)
 			if not valid() then return end
 			if item.kind == "directory" then resolve(item.value)
 			elseif item.kind == "input" then
-				require("opencode.ui.float").create_input_popup({ context = context, title = " Server Directory ", prompt = "Absolute server directory:", on_submit = resolve })
+				require("opencode.ui.float").create_input_popup({ context = context, title = " Server Directory ",
+					prompt = "Directory:", default = directory, complete = M.complete_directory,
+					on_submit = function(value)
+						value = vim.trim(value)
+						if value == "" then return end
+						local server_path = require("opencode.util.path")
+						resolve(server_path.is_absolute(value) and server_path.normalize(value) or value)
+					end })
 			else
 				M.projects(function(project)
 					if not valid() then return end

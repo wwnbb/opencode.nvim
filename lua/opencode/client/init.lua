@@ -233,6 +233,14 @@ function M.get_location(directory, callback)
 	api.request("location_get", { query = directory and { location = { directory = directory } } or nil }, callback)
 end
 
+---List the direct children of an absolute server directory.
+function M.list_directory(directory, callback)
+	if not require("opencode.util.path").is_absolute(directory) then
+		require("opencode.util.schedule").schedule_callback(callback, { code = "invalid_request", message = "Enter an absolute server directory" }); return
+	end
+	api.request("fs_list", { query = { path = directory } }, callback)
+end
+
 function M.list_worktrees(project_id, callback)
 	api.request("worktree_list", { query = { projectID = project_id } }, callback)
 end

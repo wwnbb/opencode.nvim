@@ -196,6 +196,34 @@ describe("OpenCode HTTP contracts", function()
 			json(entry[2]); assert.equals("incompatible_response", invoke(entry[1]).err.code)
 		end
 	end)
+	it("resolves directory listing entries against the response location", function()
+		local client = require("opencode.client")
+		json({ location = { directory = "/home/user/project" }, data = {
+			{ path = "../../", type = "directory" },
+			{ path = "../sibling/", type = "directory" },
+			{ path = "src/", type = "directory" },
+			{ path = "/abs/dir/", type = "directory" },
+			{ path = "README.md", type = "file" },
+		} })
+		local result
+		client.list_directory("/home/user", function(err, entries) result = { err = err, entries = entries } end)
+		assert.is_nil(result.err)
+		assert.truthy(requests[1].path:find("path=%2Fhome%2Fuser", 1, true))
+		assert.same({
+			{ path = "/home", name = "home", type = "directory" },
+			{ path = "/home/user/sibling", name = "sibling", type = "directory" },
+			{ path = "/home/user/project/src", name = "src", type = "directory" },
+			{ path = "/abs/dir", name = "dir", type = "directory" },
+			{ path = "/home/user/project/README.md", name = "README.md", type = "file" },
+		}, result.entries)
+		json({ location = { directory = "relative" }, data = {} })
+		client.list_directory("/home", function(err) result = err end)
+		assert.equals("incompatible_response", result.code)
+		local count = #requests
+		client.list_directory("relative", function(err) result = err end)
+		assert.equals("invalid_request", result.code)
+		assert.equals(count, #requests)
+	end)
 	it("sends worktree DELETE JSON and preserves the server's dirty-worktree decision", function()
 		local body = { projectID = "p", directory = "/remote/worktree", force = false }
 		json({ name = "WorktreeError", data = { message = "Dirty worktree test-password", forceRequired = true } }, 400)

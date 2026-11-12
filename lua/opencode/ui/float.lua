@@ -141,8 +141,10 @@ function M.create_input_popup(opts)
 			},
 		}
 	else
-		local bottom = keymaps.hint({ { keymaps.label("popup", "submit"), "submit" },
-			{ keymaps.label("popup", "cancel"), "cancel" } }, { omit_disabled = true })
+		local hints = { { keymaps.label("popup", "submit"), "submit" } }
+		if opts.complete then hints[#hints + 1] = { keymaps.label("popup", "complete"), "complete" } end
+		hints[#hints + 1] = { keymaps.label("popup", "cancel"), "cancel" }
+		local bottom = keymaps.hint(hints, { omit_disabled = true })
 		popup_opts.input = {
 			relative = relative,
 			position = { row = row, col = col },
@@ -314,7 +316,10 @@ function M.create_input_popup(opts)
 		popup.on_resize(popup)
 	end, "input")
 
+	local function feed(keys) vim.api.nvim_feedkeys(vim.keycode(keys), "n", false) end
 	map("i", "submit", function()
+		-- Enter first accepts an open completion menu, as in the command line.
+		if opts.complete and vim.fn.pumvisible() == 1 then feed("<C-y>"); return end
 		local lines = vim.api.nvim_buf_get_lines(input_bufnr, 0, 1, false)
 		local value = lines[1] or ""
 		if value:sub(1, #prompt) == prompt then value = value:sub(#prompt + 1) end
@@ -328,6 +333,44 @@ function M.create_input_popup(opts)
 		close()
 		if opts.on_cancel then opts.on_cancel() end
 	end)
+
+	if opts.complete then
+		-- opts.complete(text_before_cursor, callback) answers with replacement
+		-- values for that text; stale answers are dropped.
+		local function split_at_cursor()
+			local line = vim.api.nvim_buf_get_lines(input_bufnr, 0, 1, false)[1] or ""
+			local col = vim.api.nvim_win_get_cursor(input.winid)[2]
+			local before = line:sub(1, col)
+			if before:sub(1, #prompt) == prompt then before = before:sub(#prompt + 1) end
+			return before, line:sub(col + 1)
+		end
+		local request = 0
+		map("i", "complete", function()
+			if vim.fn.pumvisible() == 1 then feed("<C-n>"); return end
+			request = request + 1
+			local id, before, after = request, split_at_cursor()
+			opts.complete(before, function(matches)
+				if is_closed or id ~= request or type(matches) ~= "table" or #matches == 0
+					or vim.api.nvim_get_current_win() ~= input.winid or vim.fn.mode() ~= "i" then return end
+				local current_before, current_after = split_at_cursor()
+				if current_before ~= before or current_after ~= after then return end
+				local common = matches[1]
+				for index = 2, #matches do
+					local length = 0
+					while length < #common and common:byte(length + 1) == matches[index]:byte(length + 1) do length = length + 1 end
+					common = common:sub(1, length)
+				end
+				if common ~= before and #common >= #before then
+					vim.api.nvim_buf_set_lines(input_bufnr, 0, 1, false, { prompt .. common .. after })
+					vim.api.nvim_win_set_cursor(input.winid, { 1, #prompt + #common })
+				end
+				if #matches > 1 then vim.fn.complete(#prompt + 1, matches) end
+			end)
+		end)
+		map("i", "complete_previous", function()
+			if vim.fn.pumvisible() == 1 then feed("<C-p>") end
+		end)
+	end
 	apply()
 
 	-- Start in insert mode

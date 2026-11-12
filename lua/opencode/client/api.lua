@@ -20,6 +20,7 @@ local operations = {
 	worktree_remove = { "DELETE", "/api/worktree", "empty" },
 	worktree_refresh = { "POST", "/api/worktree/refresh", "empty" },
 	location_reload = { "POST", "/api/location/reload", "empty" },
+	fs_list = { "GET", "/api/fs/list", "fs_list" },
 	session_fork = { "POST", "/api/session/{sessionID}/fork", "session" },
 	session_export = { "GET", "/api/experimental/session/{sessionID}/export", "transfer" },
 	session_diff = { "GET", "/api/session/{sessionID}/diff", "list" },
@@ -144,6 +145,23 @@ local function decode(shape, body, meta)
 			or type(body.project.id) ~= "string" or not path.is_absolute(body.project.directory)
 			or not path.is_absolute(body.project.canonical) then return nil, "Invalid location response" end
 		return body
+	end
+	if shape == "fs_list" then
+		-- Entry paths are relative to the response location, including parents
+		-- of it (../); resolve them so callers only see absolute server paths.
+		if not object(body) or not object(body.location) or not path.is_absolute(body.location.directory)
+			or not vim.islist(body.data) then return nil, "Invalid directory listing" end
+		local entries = {}
+		for _, entry in ipairs(body.data) do
+			if not object(entry) or type(entry.path) ~= "string" or type(entry.type) ~= "string" then
+				return nil, "Invalid directory listing entry"
+			end
+			local absolute = path.normalize(path.is_absolute(entry.path) and entry.path
+				or (body.location.directory .. "/" .. entry.path))
+			if absolute then entries[#entries + 1] = { path = absolute, name = vim.fs.basename(absolute), type = entry.type } end
+		end
+		meta.location = body.location
+		return entries
 	end
 	if shape == "pairing" then
 		if not object(body) or type(body.code) ~= "string" or not body.code:match("^[%w_%-]+$")

@@ -262,6 +262,10 @@ function M.get_location(directory, callback)
 	return connected_request(nil, function(done) client().get_location(directory, done) end, callback)
 end
 
+function M.list_directory(directory, callback)
+	return connected_request(nil, function(done) client().list_directory(directory, done) end, callback)
+end
+
 function M.list_worktrees(project_id, callback)
 	return connected_request(nil, function(done) client().list_worktrees(project_id, done) end, callback)
 end

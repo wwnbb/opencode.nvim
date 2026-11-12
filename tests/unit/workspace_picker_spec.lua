@@ -87,6 +87,45 @@ describe("native project and worktree UI workflows", function()
 		commands.cd.run({})
 		assert.equals(1, #menus)
 	end)
+	it("prefills the server directory prompt with the session location and completes it", function()
+		workspace.move()
+		menus[1].on_select(menus[1].items[4])
+		assert.equals("/remote/project", inputs[1].default)
+		assert.equals(workspace.complete_directory, inputs[1].complete)
+		inputs[1].on_submit("  /remote/  ")
+		assert.same({ method = "location", directory = "/remote" }, calls[1])
+		assert.same({ method = "move", id = "source", directory = "/remote" }, calls[2])
+		inputs[1].on_submit("   ")
+		assert.equals(2, #calls)
+	end)
+	it("completes server directories from the server's listing", function()
+		local listed = {}
+		actions.list_directory = function(directory, cb)
+			listed[#listed + 1] = directory
+			cb(nil, {
+				{ name = "project", path = "/remote/project", type = "directory" },
+				{ name = "projects", path = "/remote/projects", type = "directory" },
+				{ name = "Proto", path = "/remote/Proto", type = "directory" },
+				{ name = ".private", path = "/remote/.private", type = "directory" },
+				{ name = "project.txt", path = "/remote/project.txt", type = "file" },
+			})
+		end
+		local function complete(value)
+			local result
+			workspace.complete_directory(value, function(matches) result = matches end)
+			return result
+		end
+		assert.same({ "/remote/project/", "/remote/projects/" }, complete("/remote/proj"))
+		assert.equals("/remote/", listed[1])
+		assert.same({ "/remote/Proto/" }, complete("/remote/Prot"))
+		assert.same({ "/remote/Proto/", "/remote/project/", "/remote/projects/" }, complete("/remote/PRO"))
+		assert.same({ "/remote/.private/" }, complete("/remote/.p"))
+		assert.same({ "/remote/Proto/", "/remote/project/", "/remote/projects/" }, complete("/remote/"))
+		assert.same({}, complete("relative/pro"))
+		assert.equals(5, #listed)
+		actions.list_directory = function(_, cb) cb({ message = "Directory not found" }) end
+		assert.same({}, complete("/missing/x"))
+	end)
 	it("lists projects and worktrees and makes create, open and refresh reachable", function()
 		workspace.worktrees()
 		menus[1].on_select(menus[1].items[1])
