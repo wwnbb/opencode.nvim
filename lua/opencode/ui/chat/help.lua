@@ -89,6 +89,8 @@ local function sections(config)
 					"Execute details: Result / Raw / Code / Calls" },
 				{ key("enter_subagent"), "Enter subagent output" },
 				{ key("family_sessions"), "Show running subagent sessions" },
+				{ key("processes"), "View or stop session shell processes" },
+				{ key("background"), "Move running shell or subagent work to background" },
 				{ key("leave_subagent"), "Go back to parent" },
 			},
 		},

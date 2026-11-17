@@ -306,9 +306,9 @@ Inside an expanded Task, Enter or `O` opens the selected child tool's command
 and output. Press it again to collapse that tool; the Task stays open.
 
 Toggle shell input with Ctrl+\\ or `/shell`; sending executes in the session's
-server location without calling a model. `/processes` shows output and kills a
-selected process. `/background` moves a supported blocking shell/subagent tool
-to the background.
+server location without calling a model. `/processes` (`gp`) shows output and
+kills a selected process. `/background` (`gb`) moves a supported blocking
+shell/subagent tool to the background.
 
 Background shell completions show a compact status, command and output preview
 instead of the server's raw shell tags. Press Enter or `O` on the block to

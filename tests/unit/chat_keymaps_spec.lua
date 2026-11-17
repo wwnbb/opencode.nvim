@@ -49,6 +49,15 @@ describe("configurable chat controls", function()
 		assert.equals("(disabled)", keymaps.label("chat", "new_session", chat.config.keymaps))
 	end)
 
+	it("opens session processes and backgrounds running work from chat keys", function()
+		local triggered = {}
+		replace(require("opencode.ui.palette"), "trigger", function(id) triggered[#triggered + 1] = id end)
+		setup({})
+		mapping("gp").callback()
+		mapping("gb").callback()
+		assert.same({ "action.processes", "action.background" }, triggered)
+	end)
+
 	it("supports aliases and passes the pressed key to widget dispatch", function()
 		local tasks = require("opencode.ui.chat.tasks")
 		replace(tasks, "get_tool_at_cursor", function() end)

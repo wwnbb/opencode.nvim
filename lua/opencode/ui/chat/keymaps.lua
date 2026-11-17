@@ -235,6 +235,14 @@ function M.setup_buffer(bufnr, opts)
 		require("opencode.ui.palette.family").show({ view = view, generation = view.generation, filter = "active" })
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Show running subagent sessions" }))
 
+	map("n", "processes", function()
+		palette.trigger("action.processes", { view = view, generation = view.generation })
+	end, vim.tbl_extend("force", keymap_opts, { desc = "View or stop session shell processes" }))
+
+	map("n", "background", function()
+		palette.trigger("action.background", { view = view, generation = view.generation })
+	end, vim.tbl_extend("force", keymap_opts, { desc = "Move running tools to the background" }))
+
 	map("n", "leave_subagent", function()
 		chat_nav.leave_child_session()
 	end, keymap_opts)

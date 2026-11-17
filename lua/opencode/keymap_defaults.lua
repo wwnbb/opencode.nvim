@@ -14,7 +14,8 @@ local M = {
 		next_question = "<Tab>", prev_question = "<S-Tab>", back = "<Esc>", custom_input = "c", widget_message = "m", toggle_selection = "<Space>",
 		accept_edit = "<C-a>", reject_edit = "<C-x>", resolve_edit = "<C-m>", toggle_diff = "=",
 		accept_all_edits = "A", reject_all_edits = "X", resolve_all_edits = "M", diff_tab = "dt", diff_split = "dv",
-		enter_subagent = "gd", family_sessions = "gD", leave_subagent = "<BS>", toggle_tool = "O",
+		enter_subagent = "gd", family_sessions = "gD", processes = "gp", background = "gb",
+		leave_subagent = "<BS>", toggle_tool = "O",
 	},
 	-- As in the TUI, the main send key steers and a second key queues.
 	input = { send = "<C-g>", send_queue = "<C-S-g>", send_steer = false, send_alt = false, cancel = { "<Esc>", "q", "<C-c>" },
