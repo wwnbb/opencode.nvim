@@ -53,6 +53,7 @@ describe("inline completion request lifecycle", function()
 		package.loaded["opencode.lifecycle"] = {
 			ensure_connected = function(callback) callback(); return true end,
 			owns_server = function() return true end,
+			feature_agent = function(kind) return "__opencode_nvim_" .. kind end,
 			resolve_completion_model = function() return { providerID = "test", id = "fast" } end,
 		}
 		package.loaded["opencode.client"] = {
@@ -80,6 +81,8 @@ describe("inline completion request lifecycle", function()
 		assert.is_true(controller.complete()); assert.equals(1, #pending); assert.is_false(controller.visible())
 		assert.same({ providerID = "test", id = "fast" }, requests[1].model)
 		assert.is_true(requests[1].opts.timeout > 0)
+		assert.equals("__opencode_nvim_completion", requests[1].opts.agent)
+		assert.equals(vim.fs.joinpath(vim.fn.stdpath("cache"), "opencode.nvim", "generation"), requests[1].opts.directory)
 		assert.is_truthy(requests[1].prompt:find("inline code completion engine", 1, true))
 		requests[1].callback(nil, "42")
 		assert.is_true(controller.visible()); assert.equals("42", shown[1][2])
@@ -182,7 +185,7 @@ describe("inline completion request lifecycle", function()
 	end)
 	it("replaces streamed previews and ignores updates after replacement, completion, or cancellation", function()
 		controller.complete()
-		assert.equals(pending[1].root, requests[1].opts.directory)
+		assert.is_true(requests[1].opts.directory ~= pending[1].root)
 		requests[1].opts.on_update("4")
 		assert.is_true(controller.visible())
 		assert.equals("4", shown[#shown][2])

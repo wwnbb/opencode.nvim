@@ -78,7 +78,7 @@ describe("selection explanation request lifecycle", function()
 				return true
 			end,
 			owns_server = function() return true end,
-			explanation_agent = function() return "__opencode_nvim_explanation" end,
+			feature_agent = function(kind) return "__opencode_nvim_" .. kind end,
 			resolve_explanation_model = function()
 				return { providerID = "test", id = "explain" }
 			end,
@@ -201,7 +201,7 @@ describe("selection explanation request lifecycle", function()
 	it("streams only the answer and ignores updates after completion or dismissal", function()
 		assert.is_true(controller.explain_selection())
 		local request = requests[1]
-		assert.equals(vim.fs.joinpath(vim.fn.stdpath("cache"), "opencode.nvim", "explanation"), request.opts.directory)
+		assert.equals(vim.fs.joinpath(vim.fn.stdpath("cache"), "opencode.nvim", "generation"), request.opts.directory)
 		assert.equals(1, vim.fn.isdirectory(request.opts.directory))
 		assert.equals("__opencode_nvim_explanation", request.opts.agent)
 		request.opts.on_update("Preparing the answer.\n<ans")

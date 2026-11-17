@@ -10,10 +10,10 @@ describe("native explanation streaming", function()
 			function(err, text) finished[#finished + 1] = { err = err, text = text } end,
 			{ directory = "/project", timeout = 1000, on_update = function(text) updates[#updates + 1] = text end })
 	end
-	-- The shared transport, as a progress-only caller would drive it.
+	-- Completion streams through a temporary session only with its hidden agent.
 	local function transport(prompt, model, callback, opts)
-		return require("opencode.client.explanation").generate(prompt, model, callback,
-			vim.tbl_extend("force", opts, { title = "Completion" }), client.endpoint_config)
+		return client.generate_completion(prompt, model, callback,
+			vim.tbl_extend("force", opts, { agent = "__opencode_nvim_completion" }))
 	end
 	local function start_completion(callbacks)
 		return transport("Complete at cursor", { providerID = "test", id = "complete" },
@@ -97,7 +97,7 @@ describe("native explanation streaming", function()
 		assert.equals(1, #finished)
 	end)
 
-	it("sends completion through the sessionless endpoint even when streaming callbacks are given", function()
+	it("sends completion through the sessionless endpoint without its hidden agent", function()
 		client.generate_completion("Complete at cursor", { providerID = "test", id = "complete" }, function() end,
 			{ directory = "/project", timeout = 1000, on_update = function() error("streamed") end })
 		assert.equals(1, #calls)
@@ -107,10 +107,19 @@ describe("native explanation streaming", function()
 	end)
 
 	it("selects the requested agent for the temporary session", function()
-		client.generate_explanation("Explain selection", { providerID = "test", id = "explain" }, function() end,
-			{ directory = "/scratch", timeout = 1000, agent = "__opencode_nvim_explanation", on_update = function() end })
-		assert.equals("__opencode_nvim_explanation", calls[1].args.body.agent)
-		assert.same({ directory = "/scratch" }, calls[1].args.body.location)
+		for _, case in ipairs({
+			{ generate = client.generate_explanation, agent = "__opencode_nvim_explanation", title = "Explanation" },
+			{ generate = client.generate_completion, agent = "__opencode_nvim_completion", title = "Completion" },
+		}) do
+			calls = {}
+			local request = case.generate("Prompt", { providerID = "test", id = "model" }, function() end,
+				{ directory = "/scratch", timeout = 1000, agent = case.agent, on_update = function() end })
+			assert.equals("session_create", calls[1].name)
+			assert.equals(case.agent, calls[1].args.body.agent)
+			assert.equals(case.title, calls[1].args.body.title)
+			assert.same({ directory = "/scratch" }, calls[1].args.body.location)
+			request.cancel()
+		end
 	end)
 
 	it("streams cumulative completion output with only on_update and removes the temporary session", function()

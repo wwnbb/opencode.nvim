@@ -993,7 +993,10 @@ function M.manage_service(operation, callback)
 		if not is_current_attempt(attempt) or generation ~= restart_generation or token ~= attempt.connection_token then return end
 		local managed = require("opencode.managed")
 		local failure = err or managed.validate(info, health)
-		if failure or not managed.same(info, managed.read(M.opts)) then callback(failure or { message = "Managed service registration changed", code = "stale_connection" }); return end
+		if failure or not managed.same(info, managed.read(M.opts)) then
+			callback(failure or { message = "Managed service registration changed", code = "stale_connection" })
+			return
+		end
 		if operation == "restart" then M.disconnect() end
 		local action_generation = restart_generation
 		managed.native_cli(M.opts, operation == "restart" and { "service", "restart" } or { "upgrade" }, function(command_err)
@@ -1080,11 +1083,12 @@ function M.resolve_explanation_model(config)
 	return resolve_feature_model(config, "explanation")
 end
 
----The hidden explanation agent, when this plugin spawned the server with it.
+---A feature's hidden agent, when this plugin spawned the server with it.
+---@param kind "completion"|"explanation"
 ---@return string|nil
-function M.explanation_agent()
+function M.feature_agent(kind)
 	local feature = current_attempt and not current_attempt.external
-		and current_attempt.profiles and current_attempt.profiles.explanation
+		and current_attempt.profiles and current_attempt.profiles[kind]
 	return feature and feature.agent or nil
 end
 

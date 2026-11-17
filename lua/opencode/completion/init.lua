@@ -152,6 +152,7 @@ local hooks = {
 		notify("Server is unavailable")
 	end,
 	resolve_model = function(lifecycle, feature_config) return lifecycle.resolve_completion_model(feature_config) end,
+	agent = function(lifecycle) return lifecycle.feature_agent("completion") end,
 	generate = function(...) return require("opencode.client").generate_completion(...) end,
 	update = function(snapshot, response)
 		if records[snapshot.id] ~= snapshot or not receiving(snapshot) then return end

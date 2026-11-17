@@ -8,6 +8,14 @@ local profile = require("opencode.completion.profile")
 -- A cold server may reject a configured model until its catalog is loaded.
 local WARMUP_MS = 2000
 
+-- Temporary sessions run outside the project so AGENTS.md discovery does not
+-- prepend repository instructions to the feature prompt.
+function M.scratch_directory()
+	local directory = vim.fs.joinpath(vim.fn.stdpath("cache"), "opencode.nvim", "generation")
+	vim.fn.mkdir(directory, "p")
+	return directory
+end
+
 function M.stop_timer(record, key)
 	if record and record[key] then
 		record[key]:stop()
@@ -40,6 +48,7 @@ end
 ---  fail(record, message)             report a failure and discard the request
 ---  unavailable(record)               the server refused to start or connect
 ---  resolve_model(lifecycle, config) -> model|nil, err
+---  agent(lifecycle) -> string|nil   hidden agent for a temporary session
 ---  generate(prompt, model, callback, opts) -> handle
 ---  update(record, text)              streamed partial response
 ---  respond(record, err, response)    final response after warm-up retries
@@ -79,7 +88,7 @@ function M.run(record, config, prompt, hooks)
 				M.stop_timer(record, "deadline")
 				hooks.respond(record, request_err, response)
 			end, {
-				timeout = remaining, directory = record.root,
+				timeout = remaining, directory = M.scratch_directory(), agent = hooks.agent(lifecycle),
 				on_update = function(text) hooks.update(record, text) end,
 			})
 			if hooks.in_flight(record) then record.handle = handle end

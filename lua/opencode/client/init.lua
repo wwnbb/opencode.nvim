@@ -73,7 +73,14 @@ function M.setup(opts)
 end
 
 function M.endpoint_config()
-	return vim.deepcopy({ generation = configuration_generation, url = http.opts.url, host = http.opts.host, port = http.opts.port, auth = http.opts.auth, tls = http.opts.tls })
+	return vim.deepcopy({
+		generation = configuration_generation,
+		url = http.opts.url,
+		host = http.opts.host,
+		port = http.opts.port,
+		auth = http.opts.auth,
+		tls = http.opts.tls,
+	})
 end
 
 local ENDPOINT_KEYS = { "url", "host", "port", "auth", "tls" }
@@ -384,15 +391,20 @@ function M.generate_text(session_id, prompt, callback)
 	api.request("generate", { path = { sessionID = session_id }, body = { prompt = prompt }, timeout = 0 }, callback)
 end
 
--- Generate editor completion through the sessionless endpoint, so the prompt
--- reaches the model without a session's agent system prompt, AGENTS.md or
--- environment instructions. Streaming callbacks are ignored.
+-- Generate editor completion. Streaming runs in an isolated temporary session
+-- and needs the hidden completion agent, whose system prompt replaces the
+-- coding-agent one. Without it, the sessionless endpoint keeps the prompt clean
+-- and streaming callbacks are ignored.
 ---@param prompt string
 ---@param model? table Native Model.Ref: { providerID, id, variant? }.
 ---@param callback function(err, text)
----@param opts? table { timeout?: number }
+---@param opts? table { timeout?: number, directory?: string, agent?: string, on_update?: fun(text: string), on_progress?: fun(tokens: number) } Updates contain accumulated output; tokens are estimated.
 ---@return table|nil request Handle with cancel() and is_active().
 function M.generate_completion(prompt, model, callback, opts)
+	if opts and opts.agent and (type(opts.on_update) == "function" or type(opts.on_progress) == "function") then
+		return require("opencode.client.explanation").generate(prompt, model, callback,
+			vim.tbl_extend("force", opts, { title = "Completion" }), M.endpoint_config)
+	end
 	return api.request("completion", {
 		body = { prompt = prompt, model = model },
 		timeout = opts and opts.timeout,

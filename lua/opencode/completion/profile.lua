@@ -130,20 +130,35 @@ function M.prepare(config, existing, kind)
 	return overlay, snapshot
 end
 
--- Temporary explanation sessions select this hidden agent: its system prompt
+-- Temporary feature sessions select these hidden agents: their system prompt
 -- replaces the coding-agent harness prompt, which invites tool use and chat replies.
-M.EXPLANATION_AGENT = "__opencode_nvim_explanation"
-M.EXPLANATION_SYSTEM = [[You explain source code to a developer inside their editor. The user message holds the instructions, the selected code and its editor context. Follow those instructions and their output format exactly. You have no tools; answer only from the given context.]]
+M.agents = {
+	completion = {
+		id = "__opencode_nvim_completion",
+		system = [[You are a code completion engine inside a code editor. ]]
+			.. [[The user message holds the rules, the source around the edit point and related context. ]]
+			.. [[Output only the text those rules ask for, exactly as they require: no markdown fences, no commentary. You have no tools.]],
+	},
+	explanation = {
+		id = "__opencode_nvim_explanation",
+		system = [[You explain source code to a developer inside their editor. ]]
+			.. [[The user message holds the instructions, the selected code and its editor context. ]]
+			.. [[Follow those instructions and their output format exactly. ]]
+			.. [[You have no tools; answer only from the given context.]],
+	},
+}
 
----Add the hidden explanation agent to an overlay.
+---Add a feature's hidden agent to an overlay.
 ---@return string|nil overlay Unchanged when the existing overlay cannot be merged
 ---@return boolean installed
-function M.prepare_agent(existing)
+function M.prepare_agent(existing, kind)
+	local agent = M.agents[kind]
+	if not agent then return existing, false end
 	local ok, overlay = pcall(function()
 		local document = vim.empty_dict()
 		if existing and existing:match("%S") then document = require("opencode.util.jsonc").decode(existing) end
 		if not is_object(document) or vim.islist(document) then error("Expected configuration object") end
-		ensure_object(document, "agents")[M.EXPLANATION_AGENT] = { system = M.EXPLANATION_SYSTEM, hidden = true }
+		ensure_object(document, "agents")[agent.id] = { system = agent.system, hidden = true }
 		return vim.json.encode(document)
 	end)
 	if not ok then return existing, false end
@@ -161,10 +176,13 @@ function M.prepare_all(configs, existing)
 		overlay, active, err = M.prepare(configs[kind], overlay, kind)
 		profiles[kind] = { active = active, error = err }
 	end
-	if configs.explanation and configs.explanation.enabled then
-		local installed
-		overlay, installed = M.prepare_agent(overlay)
-		if installed then profiles.explanation.agent = M.EXPLANATION_AGENT end
+	for _, kind in ipairs({ "completion", "explanation" }) do
+		-- A rejected profile leaves the overlay untouched; its requests fail anyway.
+		if configs[kind] and configs[kind].enabled and not profiles[kind].error then
+			local installed
+			overlay, installed = M.prepare_agent(overlay, kind)
+			if installed then profiles[kind].agent = M.agents[kind].id end
+		end
 	end
 	return overlay, profiles
 end

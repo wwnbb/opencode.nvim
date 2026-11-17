@@ -146,18 +146,30 @@ describe("completion model profiles", function()
 		assert.same({ completion = {}, explanation = {} }, select(2, profile.prepare_all({})))
 	end)
 
-	it("installs the hidden explanation agent only when explanation is enabled", function()
-		local overlay, profiles = profile.prepare_all({ explanation = { enabled = true } }, '{"agents":{"title":{"model":"openai/chat"}}}')
+	it("installs a hidden agent for each enabled feature", function()
+		local overlay, profiles = profile.prepare_all({ completion = { enabled = true }, explanation = { enabled = true } },
+			'{"agents":{"title":{"model":"openai/chat"}}}')
 		local agents = vim.json.decode(overlay).agents
 		assert.same({ model = "openai/chat" }, agents.title)
-		assert.same({ system = profile.EXPLANATION_SYSTEM, hidden = true }, agents[profile.EXPLANATION_AGENT])
-		assert.equals(profile.EXPLANATION_AGENT, profiles.explanation.agent)
+		for _, kind in ipairs({ "completion", "explanation" }) do
+			local agent = profile.agents[kind]
+			assert.same({ system = agent.system, hidden = true }, agents[agent.id])
+			assert.equals(agent.id, profiles[kind].agent)
+		end
+		overlay, profiles = profile.prepare_all({ completion = { enabled = true }, explanation = { enabled = false } }, '{"model":"openai/chat"}')
+		assert.same({ [profile.agents.completion.id] = { system = profile.agents.completion.system, hidden = true } },
+			vim.json.decode(overlay).agents)
+		assert.is_nil(profiles.explanation.agent)
 		overlay, profiles = profile.prepare_all({ explanation = { enabled = false } }, '{"model":"openai/chat"}')
 		assert.equals('{"model":"openai/chat"}', overlay)
-		assert.is_nil(profiles.explanation.agent)
-		overlay, profiles = profile.prepare_all({ explanation = { enabled = true } }, "[1]")
+		overlay, profiles = profile.prepare_all({ completion = { enabled = true }, explanation = { enabled = true } }, "[1]")
 		assert.equals("[1]", overlay)
+		assert.is_nil(profiles.completion.agent)
 		assert.is_nil(profiles.explanation.agent)
+		overlay, profiles = profile.prepare_all({ completion = { enabled = true, model = { providerID = "openai", modelID = "coder" },
+			variant = "fast", options = {} } }, '{"model":"openai/chat"}')
+		assert.equals('{"model":"openai/chat"}', overlay)
+		assert.is_nil(profiles.completion.agent)
 	end)
 
 	it("validates explanation options and preserves the other overlay on failure", function()
