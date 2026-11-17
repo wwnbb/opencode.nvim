@@ -197,6 +197,10 @@ function M.render_task_tool(tool_part, expanded)
 	-- ── Prefer live child-session tool activity when available ──
 	local child_session_id = task_children.get_task_child_session_id(tool_part)
 	local child_user_prompt = nil
+	-- An earlier call to a resumed child keeps its own stats; the child's live
+	-- activity belongs to the call that resumed it.
+	local superseded = child_session_id ~= nil and require("opencode.sync").is_task_part_superseded(tool_part, child_session_id)
+	local own_summary = summary
 	if child_session_id then
 		local derived
 		derived, child_user_prompt = derive_task_child_data(child_session_id)
@@ -210,7 +214,7 @@ function M.render_task_tool(tool_part, expanded)
 	local working = task_animation.is_task_working(tool_status)
 	local completed = tool_status == "completed"
 	local metadata_count = tool_labels.get_metadata_toolcall_count(metadata) or 0
-	local count = math.max(#summary, metadata_count)
+	local count = math.max(#(superseded and own_summary or summary), metadata_count)
 	local duration = tool_labels.format_state_duration(tool_part.state and tool_part.state.time)
 
 	local result_lines = {}
@@ -301,9 +305,10 @@ function M.render_task_tool(tool_part, expanded)
 			add_line("  ✗ " .. tostring(err), TASK_ERROR_HL)
 		end
 	elseif working and count > 0 then
-		local current_item = tool_labels.find_current_summary_item(summary)
-		if not current_item and #summary == 1 then
-			current_item = summary[1]
+		local status_summary = superseded and own_summary or summary
+		local current_item = tool_labels.find_current_summary_item(status_summary)
+		if not current_item and #status_summary == 1 then
+			current_item = status_summary[1]
 		end
 		if current_item then
 			add_task_detail(tool_labels.format_summary_item_label(current_item), " · " .. tool_labels.format_toolcall_count(count))
@@ -337,7 +342,7 @@ function M.render_task_tool(tool_part, expanded)
 			for index, item in ipairs(summary) do
 				local item_state = item.state or {}
 				local item_status = item_state.status or "pending"
-				local prefix = item_status == "running" and (task_frame .. " ") or ""
+				local prefix = item_status == "running" and not superseded and (task_frame .. " ") or ""
 				local item_hl = item_status == "error" and TASK_ERROR_HL or TASK_MUTED_HL
 				local id = tool_part.id .. ":child:" .. tostring(item.id or index)
 				local part = M.resolve_tool_part(item)

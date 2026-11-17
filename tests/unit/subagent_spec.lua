@@ -68,6 +68,40 @@ describe("native subagent projection", function()
 		edits.clear_all()
 		assert.is_true(ok, failure)
 	end)
+	it("animates only the latest task call that resumed a child session", function()
+		local function task(message_id, call_id, description, status)
+			return projection.project("s", { id = message_id, type = "assistant", content = {
+				{ type = "tool", name = "subagent", id = call_id, state = { status = status,
+					input = { agent = "heavy_coder", description = description },
+					metadata = { sessionID = "child" }, content = {} } },
+			} })
+		end
+		sync.handle_session_messages("s", {
+			task("m1", "call-first", "Fix scanner page review findings", "completed"),
+			task("m2", "call-resume", "Resume frontend review fixes", "running"),
+		})
+		sync.handle_session_messages("child", { projection.project("child", { id = "cm", type = "assistant", content = {
+			{ type = "tool", name = "bash", id = "shell", state = { status = "running", input = { command = "npx tsc --noEmit" }, content = {} } },
+		} }) })
+		sync.handle_session_status("child", { type = "busy" })
+		local first, resumed = sync.get_parts("m1")[1], sync.get_parts("m2")[1]
+		assert.equals("child", sync.get_task_child_session_for_part(first))
+		assert.equals("child", sync.get_task_child_session_for_part(resumed))
+		local animation = require("opencode.ui.chat.task_animation")
+		local tasks = require("opencode.ui.chat.tasks")
+		assert.equals("completed", animation.task_status(first))
+		assert.is_false(animation.is_animating_tool_part(first))
+		assert.equals("running", animation.task_status(resumed))
+		assert.is_true(animation.is_animating_tool_part(resumed))
+		local first_text = table.concat(tasks.render_task_tool(first, false).lines, "\n")
+		local resumed_text = table.concat(tasks.render_task_tool(resumed, false).lines, "\n")
+		assert.truthy(first_text:find("✓", 1, true), first_text)
+		assert.is_nil(first_text:find("tsc", 1, true), first_text)
+		assert.truthy(resumed_text:find("tsc", 1, true), resumed_text)
+		sync.handle_session_status("child", { type = "idle", outcome = "failed" })
+		assert.equals("completed", animation.task_status(first), "the earlier call keeps its own result")
+		assert.equals("error", animation.task_status(resumed))
+	end)
 	it("renders streaming and interrupted tasks without reporting success", function()
 		local animation = require("opencode.ui.chat.task_animation")
 		local part = { tool = "task", state = { status = "streaming" } }

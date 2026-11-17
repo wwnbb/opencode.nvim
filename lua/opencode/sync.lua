@@ -1215,6 +1215,7 @@ M.get_task_parent_session = task_children.get_task_parent_session
 M.get_task_child_session = task_children.get_task_child_session
 M.get_task_child_owner = task_children.get_task_child_owner
 M.get_task_child_session_for_part = task_children.get_task_child_session_for_part
+M.is_task_part_superseded = task_children.is_task_part_superseded
 M.get_task_child_sessions = task_children.get_task_child_sessions
 M.task_reference_can_own = task_children.task_reference_can_own
 M.session_owns_task_child = task_children.session_owns_task_child

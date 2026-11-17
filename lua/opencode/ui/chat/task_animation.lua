@@ -83,10 +83,14 @@ local function delegated_status(tool_part)
 	local tool_state = tool_part.state or {}
 	local status = tool_state.status or "pending"
 	local child = require("opencode.events.util").resolve_task_child_session_id(tool_part)
-	if child then
-		local child_status = require("opencode.sync").get_session_status(child)
+	local sync = require("opencode.sync")
+	-- Only the latest call that launched a resumed child shows its live state.
+	if child and not sync.is_task_part_superseded(tool_part, child) then
+		local child_status = sync.get_session_status(child)
 		if child_status then
-			if child_status.type == "busy" or child_status.type == "retry" then return "running", child end
+			-- Same rule as selectors.session_activity(), which keeps the parent's
+			-- tab and footer running while this spinner turns.
+			if require("opencode.session.status").is_busy(child_status) then return "running", child end
 			if child_status.outcome == "failed" then return "error", child end
 			if child_status.outcome == "interrupted" then return "cancelled", child end
 			if child_status.type == "idle" then return status == "completed" and "completed" or status, child end
@@ -272,6 +276,39 @@ local function set_frame_overlay(bufnr, line_nr, byte_col, frame)
 	return ok
 end
 
+-- Task summary rows read "  ↳ <frame> ..."; overlay the frame when one is there.
+local function overlay_summary_frame(bufnr, line_nr, line, frame)
+	if not line or #line == 0 or vim.fn.strcharpart(line, 0, 4) ~= "  ↳ " then
+		return false
+	end
+	if not is_animation_frame(vim.fn.strcharpart(line, 4, 1), TASK_ANIM_FRAMES) then
+		return false
+	end
+	local byte_offset = #vim.fn.strcharpart(line, 0, 4)
+	return set_frame_overlay(bufnr, line_nr, byte_offset, frame)
+end
+
+-- Classic spinners sit at the end of the row, before any trailing whitespace.
+local function overlay_trailing_frame(bufnr, line_nr, buf_lines, frames, frame)
+	if line_nr < 0 or line_nr >= buf_lines then
+		return false
+	end
+	local line = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1]
+	if not line or #line == 0 then
+		return false
+	end
+	local trimmed = line:gsub("%s+$", "")
+	local char_count = vim.fn.strchars(trimmed)
+	if char_count <= 0 then
+		return false
+	end
+	if not is_animation_frame(vim.fn.strcharpart(trimmed, char_count - 1, 1), frames) then
+		return false
+	end
+	local byte_offset = #vim.fn.strcharpart(trimmed, 0, char_count - 1)
+	return set_frame_overlay(bufnr, line_nr, byte_offset, frame)
+end
+
 ---Update spinner frames with overlay extmarks.
 ---Avoids mutating buffer text, which can disturb highlight extmarks on the task row.
 ---Falls back to update_active_animations_in_place() when frame positions cannot be found.
@@ -324,17 +361,7 @@ function M.update_animation_frames_in_place()
 			local last_line = math.min(end_line, bottom_line, buf_lines - 1)
 			local lines = first_line <= last_line and vim.api.nvim_buf_get_lines(bufnr, first_line, last_line + 1, false) or {}
 			for index, line in ipairs(lines) do
-				local line_nr = first_line + index - 1
-				if line and #line > 0 then
-					local prefix_chars = vim.fn.strcharpart(line, 0, 4)
-					if prefix_chars == "  ↳ " then
-						local fifth_char = vim.fn.strcharpart(line, 4, 1)
-						if is_animation_frame(fifth_char, TASK_ANIM_FRAMES) then
-							local byte_offset = #vim.fn.strcharpart(line, 0, 4)
-							updated = set_frame_overlay(bufnr, line_nr, byte_offset, task_frame) or updated
-						end
-					end
-				end
+				updated = overlay_summary_frame(bufnr, first_line + index - 1, line, task_frame) or updated
 			end
 		end
 	end
@@ -373,21 +400,8 @@ function M.update_animation_frames_in_place()
 				if block_updated then
 					break
 				end
-				if line_nr >= 0 and line_nr < buf_lines then
-					local line = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1]
-					if line and #line > 0 then
-						local trimmed = line:gsub("%s+$", "")
-						local char_count = vim.fn.strchars(trimmed)
-						if char_count > 0 then
-							local last_char = vim.fn.strcharpart(trimmed, char_count - 1, 1)
-							if is_animation_frame(last_char, classic_frames) then
-								local byte_offset = #vim.fn.strcharpart(trimmed, 0, char_count - 1)
-								block_updated = set_frame_overlay(bufnr, line_nr, byte_offset, classic_frame)
-								updated = block_updated or updated
-							end
-						end
-					end
-				end
+				block_updated = overlay_trailing_frame(bufnr, line_nr, buf_lines, classic_frames, classic_frame)
+				updated = block_updated or updated
 			end
 		end
 	end

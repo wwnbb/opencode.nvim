@@ -105,15 +105,18 @@ function M.new(sync, store, hooks)
 		local owner, sequence, pending = valid and previous or nil, existing and existing.sequence, false
 		if not valid then parent = nil end
 		for key, reference in pairs(references) do
-			if not reference.retired then
-				if not task_reference_can_own(child_session_id, reference.parent, reference) then pending = true
-				elseif not sequence or reference.sequence > sequence then
-					if reference.genuine or task_reference_can_replace(child_session_id, reference, existing) then
-						if native_parent then reference.genuine = true end
-						owner, parent, sequence = key, reference.parent, reference.sequence
-					else pending = true end
+			if reference.retired then goto continue end
+			if not task_reference_can_own(child_session_id, reference.parent, reference) then
+				pending = true
+			elseif not sequence or reference.sequence > sequence then
+				if not (reference.genuine or task_reference_can_replace(child_session_id, reference, existing)) then
+					pending = true
+					goto continue
 				end
+				if native_parent then reference.genuine = true end
+				owner, parent, sequence = key, reference.parent, reference.sequence
 			end
+			::continue::
 		end
 		store.task_child_parent[child_session_id], store.task_child_owner[child_session_id] = parent, owner
 		task_child_pending[child_session_id] = pending and true or nil
@@ -327,6 +330,19 @@ function M.new(sync, store, hooks)
 		end
 		local message_id, part_id = key:match("^(.-)%z(.+)$")
 		return message_id, part_id
+	end
+
+	-- A resumed child belongs to the call that last launched it. An earlier call in
+	-- the same session keeps its own final state while the child works again.
+	---@param tool_part table|nil
+	---@param child_session_id string|nil
+	---@return boolean
+	function T.is_task_part_superseded(tool_part, child_session_id)
+		if type(tool_part) ~= "table" or not child_session_id or child_session_id == "" then return false end
+		local owner_message, owner_part = T.get_task_child_owner(child_session_id)
+		if not owner_message or (owner_message == tool_part.messageID and owner_part == tool_part.id) then return false end
+		local session_id = tool_part.sessionID or hooks.find_message_session_id(tool_part.messageID)
+		return session_id ~= nil and session_id == hooks.find_message_session_id(owner_message)
 	end
 
 	---@param tool_part table|nil
