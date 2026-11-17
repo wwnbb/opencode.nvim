@@ -97,7 +97,7 @@ function parseHunkContext(raw: string): string {
   return raw.startsWith(" ") ? raw.slice(1) : raw
 }
 
-function parseUpdateFileChunks(lines: string[], start: number) {
+function parseUpdateFileChunks(lines: string[], start: number, filePath: string) {
   const chunks: UpdateFileChunk[] = []
   let index = start
 
@@ -118,6 +118,7 @@ function parseUpdateFileChunks(lines: string[], start: number) {
     const oldLines: string[] = []
     const newLines: string[] = []
     let isEndOfFile = false
+    let changes = false
 
     while (
       index < lines.length &&
@@ -135,10 +136,20 @@ function parseUpdateFileChunks(lines: string[], start: number) {
         newLines.push(line.slice(1))
       } else if (line.startsWith("-")) {
         oldLines.push(line.slice(1))
+        changes = true
       } else if (line.startsWith("+")) {
         newLines.push(line.slice(1))
+        changes = true
       }
       index++
+    }
+
+    // A hunk of context alone would be reviewed and reported as a success
+    // while the file stays as it was; the model must resend it with its lines.
+    if (!changes) {
+      throw new Error(
+        `Hunk ${chunks.length + 1} of ${filePath} has no '+' or '-' lines, so it changes nothing. Resend the patch with the added lines after '+' and the removed lines after '-'.`,
+      )
     }
 
     chunks.push({
@@ -189,7 +200,7 @@ function parsePatch(patchText: string): Hunk[] {
       continue
     }
 
-    const parsed = parseUpdateFileChunks(lines, header.next)
+    const parsed = parseUpdateFileChunks(lines, header.next, header.filePath)
     hunks.push({
       type: "update",
       path: header.filePath,
@@ -548,6 +559,16 @@ export default {
       [hunk.path, ...(hunk.type === "update" && hunk.move_path ? [hunk.move_path] : [])]
     ))])
     const changes = await buildChanges(hunks, context.worktree, args.allowIndentChange)
+    // A file the patch leaves as it was must not reach the review or come back
+    // as "Updated": the model would believe a change that never happened.
+    const unchanged = changes.filter((change) =>
+      change.type !== "delete" && change.type !== "move" && change.before.exists
+      && change.before.bom === change.bom && change.before.content === change.newContent)
+    if (unchanged.length > 0) {
+      throw new Error(
+        `patch rejected: it leaves ${unchanged.map((change) => change.relativePath).join(", ")} unchanged. Nothing was applied; read the file and resend the patch with the lines that actually change.`,
+      )
+    }
 
     const reviewFiles = changes.flatMap(reviewFilesForChange)
     const proposedFiles = changes.map((change) => ({

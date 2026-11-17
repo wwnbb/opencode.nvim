@@ -164,3 +164,20 @@ test("server-side approval still applies a deletion when the client did not writ
   expect(await exists("remove")).toBe(false)
   expect(result.metadata.status).toBe("applied")
 })
+
+for (const [name, patchText, message] of [
+  ["a hunk of context alone", "*** Begin Patch\n*** Update File: same\n@@\n keep\n*** End Patch", "has no '+' or '-' lines"],
+  ["a hunk that removes and re-adds the same line", "*** Begin Patch\n*** Update File: same\n@@\n-keep\n+keep\n*** End Patch", "same unchanged. Nothing was applied"],
+  ["an Add File identical to the existing file", "*** Begin Patch\n*** Add File: same\n+keep\n*** End Patch", "same unchanged. Nothing was applied"],
+  ["a no-op file next to a real change", "*** Begin Patch\n*** Update File: other\n@@\n-before\n+after\n*** Update File: same\n@@\n-keep\n+keep\n*** End Patch", "same unchanged. Nothing was applied"],
+]) {
+  test(`${name} is rejected before the review`, async () => {
+    await fs.writeFile(path.join(directory, "same"), "keep\n")
+    await fs.writeFile(path.join(directory, "other"), "before\n")
+    let reviewed = false
+    await expect(patch.execute({ patchText }, context(async () => { reviewed = true }))).rejects.toThrow(message)
+    expect(reviewed).toBe(false)
+    expect(await fs.readFile(path.join(directory, "same"), "utf8")).toBe("keep\n")
+    expect(await fs.readFile(path.join(directory, "other"), "utf8")).toBe("before\n")
+  })
+}
