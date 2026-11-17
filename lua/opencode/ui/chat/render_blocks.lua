@@ -152,16 +152,11 @@ function M.owned_highlights(blocks, maps, range)
 	for order, map in ipairs(maps) do
 		for id, pos in pairs(map) do
 			local list, first = pos.highlights, range(pos)
-			if type(list) == "table" and list[1] ~= nil and type(first) == "number" then
-				local block = M.block_at(blocks, first)
-				if block then
-					local entries = owned[block.key]
-					if not entries then
-						entries = {}
-						owned[block.key] = entries
-					end
-					entries[#entries + 1] = { base = first - block.start, highlights = list, order = order, id = id }
-				end
+			local block = type(list) == "table" and list[1] ~= nil and type(first) == "number" and M.block_at(blocks, first)
+			if block then
+				local entries = owned[block.key] or {}
+				owned[block.key] = entries
+				entries[#entries + 1] = { base = first - block.start, highlights = list, order = order, id = id }
 			end
 		end
 	end
@@ -530,28 +525,30 @@ function M.verify(frame, range)
 		end
 	end
 
+	local function check_position(map_name, id, pos)
+		local first, last = range(pos)
+		if type(first) ~= "number" or type(last) ~= "number" or last < first then return end
+		local label = map_name .. "." .. tostring(id)
+		local block = contained(label, first, last)
+		local key = M.position_key(map_name, id, pos)
+		if block and key and block.key ~= key then
+			fail("%s lies in block %s, expected %s", label, block.key, key)
+		end
+		if not block then return end
+		for hl_index, hl in ipairs(type(pos.highlights) == "table" and pos.highlights or {}) do
+			if type(hl) == "table" and hl.hl_group then
+				local hl_first, hl_last = bounds(hl, first)
+				contained(label .. " highlight " .. hl_index .. " (" .. hl.hl_group .. ")", hl_first, hl_last, block)
+			end
+		end
+		check_children(label, pos.children, block)
+	end
+
 	local positions = frame.positions or {}
 	for map_name, map in pairs(positions) do
 		if type(map) == "table" and map_name ~= "spinner_footer" then
 			for id, pos in pairs(map) do
-				local first, last = range(pos)
-				if type(first) == "number" and type(last) == "number" and last >= first then
-					local label = map_name .. "." .. tostring(id)
-					local block = contained(label, first, last)
-					local key = M.position_key(map_name, id, pos)
-					if block and key and block.key ~= key then
-						fail("%s lies in block %s, expected %s", label, block.key, key)
-					end
-					if block then
-						for hl_index, hl in ipairs(type(pos.highlights) == "table" and pos.highlights or {}) do
-							if type(hl) == "table" and hl.hl_group then
-								local hl_first, hl_last = bounds(hl, first)
-								contained(label .. " highlight " .. hl_index .. " (" .. hl.hl_group .. ")", hl_first, hl_last, block)
-							end
-						end
-						check_children(label, pos.children, block)
-					end
-				end
+				check_position(map_name, id, pos)
 			end
 		end
 	end

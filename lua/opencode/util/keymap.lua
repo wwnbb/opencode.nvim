@@ -186,7 +186,17 @@ function M.mapper(scope, bufnr, values)
 						end
 						if not previous then order[#order + 1] = id end
 						if not previous or custom or not previous.custom then
-							chosen[id] = { mode = mode, key = lhs, rhs = definition.rhs, opts = opts, custom = custom, name = name, group = group, action = definition.action, aliases = aliases }
+							chosen[id] = {
+								mode = mode,
+								key = lhs,
+								rhs = definition.rhs,
+								opts = opts,
+								custom = custom,
+								name = name,
+								group = group,
+								action = definition.action,
+								aliases = aliases,
+							}
 						end
 					end
 				end

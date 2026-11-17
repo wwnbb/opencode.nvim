@@ -28,21 +28,21 @@ function M.show(context)
 				children[record.parentID][#children[record.parentID] + 1] = record
 			end
 		end
+		local function unique_id_suffix(record, title)
+			local length = 6
+			for _, other in ipairs(records) do
+				local namesake = other.id ~= record.id and titles[other.id] == title
+				while namesake and record.id:sub(-length) == other.id:sub(-length) do length = length + 1 end
+			end
+			return record.id:sub(-length)
+		end
 		local function walk(record, depth)
 			if seen[record.id] then return end
 			seen[record.id] = true
 			local running = status.is_busy(app_state.get_session_status(record.id))
 			if mode == "all" or (mode == "active" and running) or (mode == "inactive" and not running) then
 				local title, suffix = titles[record.id], ""
-				if title_counts[title] > 1 then
-					local length = 6
-					for _, other in ipairs(records) do
-						if other.id ~= record.id and titles[other.id] == title then
-							while record.id:sub(-length) == other.id:sub(-length) do length = length + 1 end
-						end
-					end
-					suffix = " · " .. record.id:sub(-length)
-				end
+				if title_counts[title] > 1 then suffix = " · " .. unique_id_suffix(record, title) end
 				items[#items + 1] = {
 					key = record.id, value = record.id, title = title,
 					label = string.rep("  ", depth) .. (record.id == source_id and "● " or "")

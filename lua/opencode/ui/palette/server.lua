@@ -25,7 +25,9 @@ function M.show()
 				items = { "Continue", "Cancel" }, on_select = function(choice)
 					if choice ~= "Continue" then return end
 					actions.manage_server(item.value, function(err)
-						vim.notify(err and err.message or (item.value == "restart" and "Native service restarted; reconnecting" or "Native updater finished; restart the managed service to use the installed version"), err and vim.log.levels.WARN or vim.log.levels.INFO)
+						local done = item.value == "restart" and "Native service restarted; reconnecting"
+							or "Native updater finished; restart the managed service to use the installed version"
+						vim.notify(err and err.message or done, err and vim.log.levels.WARN or vim.log.levels.INFO)
 					end)
 				end })
 		end })

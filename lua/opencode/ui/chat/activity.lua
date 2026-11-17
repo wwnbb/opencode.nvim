@@ -40,33 +40,36 @@ function M.collect(messages, get_parts, has_interaction)
 		if current then current.completed = true end
 		current = nil
 	end
-	for _, message in ipairs(messages) do
-		if not message.hidden then
-			if message.role ~= "assistant" then
+	local function add_part(message, part)
+		local kind = M.kind(part, session_config)
+		local interaction = has_interaction(message, part)
+		if kind and (kind == "thought" or not interaction) then
+			if not current or current.kind ~= kind then
 				finish()
-			else
-				for _, part in ipairs(get_parts(message.id).parts) do
-					local kind = M.kind(part, session_config)
-					local interaction = has_interaction(message, part)
-					if kind and (kind == "thought" or not interaction) then
-						if not current or current.kind ~= kind then
-							finish()
-							current = { id = "activity:" .. kind .. ":" .. part.id, first_part_id = part.id,
-								kind = kind, refs = {}, completed = false }
-						end
-						current.refs[#current.refs + 1] = { part = part, message = message }
-						by_part[part.id] = current
-					elseif part.type == "tool" or interaction
-						or (part.type == "text" and vim.trim(part.text or "") ~= "") then
-						finish()
-					end
-				end
-				if has_interaction(message, {}) or message.error or message.error_message or message.retry
-					or (message.finish and message.finish ~= "tool-calls" and message.finish ~= "unknown") then
-					finish()
-				end
+				current = { id = "activity:" .. kind .. ":" .. part.id, first_part_id = part.id,
+					kind = kind, refs = {}, completed = false }
 			end
+			current.refs[#current.refs + 1] = { part = part, message = message }
+			by_part[part.id] = current
+		elseif part.type == "tool" or interaction
+			or (part.type == "text" and vim.trim(part.text or "") ~= "") then
+			finish()
 		end
+	end
+	for _, message in ipairs(messages) do
+		if message.hidden then goto continue end
+		if message.role ~= "assistant" then
+			finish()
+			goto continue
+		end
+		for _, part in ipairs(get_parts(message.id).parts) do
+			add_part(message, part)
+		end
+		if has_interaction(message, {}) or message.error or message.error_message or message.retry
+			or (message.finish and message.finish ~= "tool-calls" and message.finish ~= "unknown") then
+			finish()
+		end
+		::continue::
 	end
 	return by_part
 end

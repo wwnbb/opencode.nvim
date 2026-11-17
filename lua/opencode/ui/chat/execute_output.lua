@@ -328,6 +328,15 @@ local function raw_string(value)
 	return vim.inspect(value, { depth = 8 })
 end
 
+local function add_unparsed_block(out, opener, block)
+	out.add(opener)
+	for _, line in ipairs(block) do
+		if not out.add(line) then
+			break
+		end
+	end
+end
+
 local function format_fences(raw, out, opts, format_json, scan_all)
 	format_json = format_json or readable
 	local block, fence, opener, literal_fence
@@ -345,12 +354,7 @@ local function format_fences(raw, out, opts, format_json, scan_all)
 				if ok then
 					format_json(value, out, opts)
 				else
-					out.add(opener)
-					for _, original in ipairs(block) do
-						if not out.add(original) then
-							break
-						end
-					end
+					add_unparsed_block(out, opener, block)
 					out.add(line)
 				end
 				block, fence, opener = nil, nil, nil
@@ -372,12 +376,7 @@ local function format_fences(raw, out, opts, format_json, scan_all)
 		return scan_all or not out.truncated
 	end)
 	if block and (scan_all or not out.truncated) then
-		out.add(opener)
-		for _, line in ipairs(block) do
-			if not out.add(line) then
-				break
-			end
-		end
+		add_unparsed_block(out, opener, block)
 	end
 end
 

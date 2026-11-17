@@ -204,10 +204,12 @@ function M.update(state)
 		if room < 16 then summary = " · Skills: " .. #names end
 		skill_part = clip(summary, room)
 	end
-	local usage = usage_part(state, width - vim.fn.strdisplaywidth(agent_part .. model_part .. provider_part .. dot_part .. variant_part .. skill_part))
+	local leading = agent_part .. model_part .. provider_part .. dot_part .. variant_part .. skill_part
+	local usage = usage_part(state, width - vim.fn.strdisplaywidth(leading))
 	local editor_part = ""
 	if editor_status and state.mode ~= "shell" then
-		editor_part = clip(" · Context: " .. editor_status, math.max(0, width - vim.fn.strdisplaywidth(agent_part .. model_part .. provider_part .. dot_part .. variant_part .. skill_part .. usage)))
+		local editor_room = math.max(0, width - vim.fn.strdisplaywidth(leading .. usage))
+		editor_part = clip(" · Context: " .. editor_status, editor_room)
 	end
 
 	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {

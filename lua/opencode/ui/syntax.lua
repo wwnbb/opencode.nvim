@@ -447,6 +447,20 @@ local function capture_priority(metadata, capture, base_priority)
 	return base_priority + (raw_priority - ts_priority)
 end
 
+---@return integer|nil row_start, integer|nil col_start, integer|nil row_end, integer|nil col_end
+local function capture_range(node, text, capture_metadata)
+	-- Most captures have no offset/trim directives. Avoid allocating
+	-- a range table and a protected call for every streamed token.
+	if capture_metadata then
+		local ok, range = pcall(vim.treesitter.get_range, node, text, capture_metadata)
+		if ok and type(range) == "table" then
+			if #range >= 6 then return range[1], range[2], range[4], range[5] end
+			return range[1], range[2], range[3], range[4]
+		end
+	end
+	return node:range()
+end
+
 ---Code highlighter callback; custom callbacks also receive the fenced block.
 ---@alias OpenCodeCodeHighlighter fun(text: string, language: string|nil, opts?: table, block?: table): table[], string
 
@@ -501,23 +515,8 @@ function M.highlight_text(text, language, opts)
 					local capture_name = query.captures[capture]
 					if type(capture_name) == "string" and capture_name:sub(1, 1) ~= "_" then
 						local hl_group = syntax_hl_group("@" .. capture_name .. "." .. lang)
-						local capture_metadata = metadata and metadata[capture]
-						local range_ok, range
-						-- Most captures have no offset/trim directives. Avoid allocating
-						-- a range table and a protected call for every streamed token.
-						if capture_metadata then
-							range_ok, range = pcall(vim.treesitter.get_range, node, text, capture_metadata)
-						end
-						local row_start, col_start, row_end, col_end
-						if range_ok and type(range) == "table" then
-							if #range >= 6 then
-								row_start, col_start, row_end, col_end = range[1], range[2], range[4], range[5]
-							else
-								row_start, col_start, row_end, col_end = range[1], range[2], range[3], range[4]
-							end
-						else
-							row_start, col_start, row_end, col_end = node:range()
-						end
+						local row_start, col_start, row_end, col_end =
+							capture_range(node, text, metadata and metadata[capture])
 						if
 							type(row_start) == "number"
 							and type(col_start) == "number"

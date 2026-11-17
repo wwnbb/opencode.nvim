@@ -176,6 +176,32 @@ function M.show(cfg, hooks)
 	end
 end
 
+local function normal_window_count(winid)
+	local count = 0
+	for _, tab_winid in ipairs(vim.api.nvim_tabpage_list_wins(vim.api.nvim_win_get_tabpage(winid))) do
+		if vim.api.nvim_win_get_config(tab_winid).relative == "" then count = count + 1 end
+	end
+	return count
+end
+
+---The layout that should take over when this tab-layout view is the last
+---window of the current layout, or nil.
+local function handoff_layout()
+	if not (state.config.layout == "tab" and view.workspace_id and not cs.workspace.switching
+		and #cs.windows(view) == 1) then
+		return nil
+	end
+	local workspace = require("opencode.ui.chat.workspace")
+	local current_layout = workspace.current()
+	if not current_layout or current_layout.id ~= view.workspace_id then
+		return nil
+	end
+	for _, layout in ipairs(workspace.list()) do
+		if layout ~= current_layout then return layout end
+	end
+	return nil
+end
+
 ---Close the native chat window. A tab-layout view that is the last window of
 ---its layout hands the close to another layout instead.
 ---@return boolean delegated, any result close_view's result when delegated
@@ -185,23 +211,11 @@ function M.close_native()
 		state.layout:unmount()
 	else
 		if state.winid and vim.api.nvim_win_is_valid(state.winid) then
-			local normal_windows = 0
-			for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(vim.api.nvim_win_get_tabpage(state.winid))) do
-				if vim.api.nvim_win_get_config(winid).relative == "" then normal_windows = normal_windows + 1 end
-			end
-			if normal_windows == 1 then
-				if state.config.layout == "tab" and view.workspace_id and not cs.workspace.switching
-					and #cs.windows(view) == 1 then
-					local workspace = require("opencode.ui.chat.workspace")
-					local current_layout = workspace.current()
-					if current_layout and current_layout.id == view.workspace_id then
-						for _, layout in ipairs(workspace.list()) do
-							if layout ~= current_layout then
-								workspace.select(layout.id)
-								return true, require("opencode.ui.chat").close_view(view)
-							end
-						end
-					end
+			if normal_window_count(state.winid) == 1 then
+				local layout = handoff_layout()
+				if layout then
+					require("opencode.ui.chat.workspace").select(layout.id)
+					return true, require("opencode.ui.chat").close_view(view)
 				end
 				if state.config.layout == "tab" and #vim.api.nvim_list_tabpages() == 1 then
 					vim.cmd("tabnew")

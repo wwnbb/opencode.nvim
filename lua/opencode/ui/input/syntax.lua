@@ -77,6 +77,13 @@ local function tree_bytes(trees, source)
 	return bytes
 end
 
+---Reuse the size measured for an unchanged block.
+local function measured_tree_bytes(trees, source, cached_bytes)
+	if cached_bytes then return cached_bytes end
+	local ok, bytes = pcall(tree_bytes, trees, source)
+	if ok then return bytes end
+end
+
 local function remove_marks(bufnr, ids, current)
 	for _, id in ipairs(ids) do
 		vim.api.nvim_buf_del_extmark(bufnr, namespace, id)
@@ -204,11 +211,7 @@ function M.attach(bufnr)
 					if (dependency.cacheable or status == "skipped") and not syntax.needs_retry(captures, status) then
 						metadata.signature, metadata.packed, metadata.status = dependency.signature, packed, status
 						if trees then
-							if matching and cached.tree_bytes then metadata.tree_bytes = cached.tree_bytes
-							else
-								local ok, bytes = pcall(tree_bytes, trees, block.code)
-								if ok then metadata.tree_bytes = bytes end
-							end
+							metadata.tree_bytes = measured_tree_bytes(trees, block.code, matching and cached.tree_bytes)
 							if metadata.tree_bytes then
 								pending_trees[#pending_trees + 1] = { owner = owner, signature = dependency.signature,
 									trees = trees, bytes = metadata.tree_bytes }

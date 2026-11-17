@@ -73,7 +73,10 @@ function M.open(opts)
 			local certificate = diagnostic:find("certificate verify failed", 1, true) or diagnostic:find("verification error", 1, true)
 			local unsupported = diagnostic:find("unknown option", 1, true) or diagnostic:find("unrecognized", 1, true)
 			local invalid_ca = diagnostic:find("error setting certificate", 1, true) or diagnostic:find("no such file", 1, true)
-			fail("tls_error", labeled("connect", certificate and "TLS certificate verification failed" or unsupported and "Installed OpenSSL lacks the required TLS options" or "TLS connection failed",
+			local message = certificate and "TLS certificate verification failed"
+				or unsupported and "Installed OpenSSL lacks the required TLS options"
+				or "TLS connection failed"
+			fail("tls_error", labeled("connect", message,
 				{ code = certificate and "tls_verification_failed" or "tls_error", retryable = not certificate and not unsupported and not invalid_ca }))
 		else
 			connection._active = false

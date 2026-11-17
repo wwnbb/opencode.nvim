@@ -245,7 +245,9 @@ render = function(view)
 	if view.before_buf then write(view.before_buf, before, before_marks) end
 	local reviewed = 0
 	for _, file in ipairs(view.files) do if view.reviewed[file.file] == file.patch then reviewed = reviewed + 1 end end
-	local title = string.format(" %s · %s · %d/%d reviewed · %s · ? help", view.mode, view.base or view.resolved_base or "automatic base", reviewed, #view.files, view.all and "all files" or "single file")
+	local base = view.base or view.resolved_base or "automatic base"
+	local scope = view.all and "all files" or "single file"
+	local title = string.format(" %s · %s · %d/%d reviewed · %s · ? help", view.mode, base, reviewed, #view.files, scope)
 	for _, win in ipairs({ view.after_win, view.before_win }) do
 		if win and vim.api.nvim_win_is_valid(win) then
 			vim.wo[win].winbar = title:gsub("%%", "%%%%")
@@ -359,7 +361,8 @@ function M.open(opts)
 	local preference = (app.get_config().chat or {}).diff_view or "auto"
 	local view = { session_id = session_id, directory = app.get_session_directory(session_id) or require("opencode.util.cwd").get(),
 		token = require("opencode.session.pending").token(session_id), origin = vim.api.nvim_get_current_win(),
-		mode = opts.mode or "branch", base = opts.base, auto_layout = preference == "auto", layout = preference == "auto" and (vim.o.columns >= 120 and "split" or "unified") or preference,
+		mode = opts.mode or "branch", base = opts.base, auto_layout = preference == "auto",
+		layout = preference == "auto" and (vim.o.columns >= 120 and "split" or "unified") or preference,
 		index = 1, files = {}, buffers = {}, reviewed = {}, collapsed = {}, all = true, request = 0 }
 	active = view
 	vim.cmd("tabnew")

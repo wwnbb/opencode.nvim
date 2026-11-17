@@ -350,7 +350,13 @@ function M.show(view)
 		},
 		win_options = {
 			winblend = 0,
-			winhighlight = "Normal:OpenCodeStatsBackground,NormalNC:OpenCodeStatsBackground,EndOfBuffer:OpenCodeStatsBackground,Cursor:OpenCodeHiddenCursor,lCursor:OpenCodeHiddenCursor",
+			winhighlight = table.concat({
+				"Normal:OpenCodeStatsBackground",
+				"NormalNC:OpenCodeStatsBackground",
+				"EndOfBuffer:OpenCodeStatsBackground",
+				"Cursor:OpenCodeHiddenCursor",
+				"lCursor:OpenCodeHiddenCursor",
+			}, ","),
 			fillchars = "eob: ",
 			wrap = false,
 			number = false,

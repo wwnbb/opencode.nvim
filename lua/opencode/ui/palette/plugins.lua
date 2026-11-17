@@ -4,8 +4,12 @@ local state = require("opencode.state")
 local pending = require("opencode.session.pending")
 
 local function report(action, err)
-	local message = (err.status == 404 or err.status == 405 or err.status == 501 or err.status == 503) and "This server does not support this plugin operation" or tostring(err.message or err)
-	if err.status == 503 then message = "Server plugin operations are temporarily unavailable" .. (err.message and (": " .. err.message) or "") end
+	local message = tostring(err.message or err)
+	if err.status == 503 then
+		message = "Server plugin operations are temporarily unavailable" .. (err.message and (": " .. err.message) or "")
+	elseif err.status == 404 or err.status == 405 or err.status == 501 then
+		message = "This server does not support this plugin operation"
+	end
 	vim.notify("Could not " .. action .. ": " .. message, vim.log.levels.ERROR)
 end
 

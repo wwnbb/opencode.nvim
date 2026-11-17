@@ -14,7 +14,11 @@ end
 local function report(action, err)
 	if err then
 		local unavailable = err.status == 404 or err.status == 405 or err.status == 501 or err.status == 503
-		vim.notify("Could not " .. action .. ": " .. (unavailable and ("This operation is unavailable on this server or location" .. (err.message and (": " .. err.message) or "")) or tostring(err.message or err)), vim.log.levels.ERROR)
+		local message = tostring(err.message or err)
+		if unavailable then
+			message = "This operation is unavailable on this server or location" .. (err.message and (": " .. err.message) or "")
+		end
+		vim.notify("Could not " .. action .. ": " .. message, vim.log.levels.ERROR)
 	end
 end
 

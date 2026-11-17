@@ -95,33 +95,52 @@ end
 ---@type fun(diff: string|nil): number, number
 local parse_diff_stats = text_util.diff_stats
 
+local RESULT_STATUS = {
+	completed = "applied",
+	success = "applied",
+	accepted = "applied",
+	approved = "applied",
+	applied = "applied",
+	partial = "partial",
+	partially_applied = "partial",
+	resolved = "partial",
+	rejected = "rejected",
+	denied = "rejected",
+	failed = "failed",
+	error = "failed",
+	unknown = "unknown",
+}
+
+local CHANGE_TYPE = {
+	add = "add",
+	added = "add",
+	create = "add",
+	created = "add",
+	new = "add",
+	delete = "delete",
+	deleted = "delete",
+	remove = "delete",
+	removed = "delete",
+	move = "move",
+	moved = "move",
+	rename = "move",
+	renamed = "move",
+	write = "write",
+	wrote = "write",
+	update = "update",
+	updated = "update",
+	modify = "update",
+	modified = "update",
+	edit = "update",
+}
+
 ---@param value any
 ---@return "applied"|"partial"|"rejected"|"failed"|"unknown"|nil
 local function normalize_result_status(value)
 	if type(value) ~= "string" or value == "" then
 		return nil
 	end
-
-	local lowered = value:lower()
-	if lowered == "completed" or lowered == "success" or lowered == "accepted" or lowered == "approved" then
-		return "applied"
-	end
-	if lowered == "applied" then
-		return "applied"
-	end
-	if lowered == "partial" or lowered == "partially_applied" or lowered == "resolved" then
-		return "partial"
-	end
-	if lowered == "rejected" or lowered == "denied" then
-		return "rejected"
-	end
-	if lowered == "failed" or lowered == "error" then
-		return "failed"
-	end
-	if lowered == "unknown" then
-		return "unknown"
-	end
-	return nil
+	return RESULT_STATUS[value:lower()]
 end
 
 ---@param value any
@@ -130,30 +149,7 @@ local function normalize_type(value)
 	if type(value) ~= "string" or value == "" then
 		return nil
 	end
-
-	local lowered = value:lower()
-	if lowered == "add" or lowered == "added" or lowered == "create" or lowered == "created" or lowered == "new" then
-		return "add"
-	end
-	if lowered == "delete" or lowered == "deleted" or lowered == "remove" or lowered == "removed" then
-		return "delete"
-	end
-	if lowered == "move" or lowered == "moved" or lowered == "rename" or lowered == "renamed" then
-		return "move"
-	end
-	if lowered == "write" or lowered == "wrote" then
-		return "write"
-	end
-	if
-		lowered == "update"
-		or lowered == "updated"
-		or lowered == "modify"
-		or lowered == "modified"
-		or lowered == "edit"
-	then
-		return "update"
-	end
-	return nil
+	return CHANGE_TYPE[value:lower()]
 end
 
 ---@param path string|nil

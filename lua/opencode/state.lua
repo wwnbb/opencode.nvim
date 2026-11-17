@@ -163,6 +163,18 @@ local function remove_order_id(order, id)
 	return next_order
 end
 
+---Merge incoming session times; the idle/viewed watermarks never move backwards.
+local function merge_session_time(previous_time, time, value)
+	local merged = vim.tbl_extend("force", time or {}, value)
+	for _, watermark in ipairs({ "idle", "viewed" }) do
+		local previous = previous_time and previous_time[watermark]
+		if type(previous) == "number" and type(merged[watermark]) == "number" then
+			merged[watermark] = math.max(previous, merged[watermark])
+		end
+	end
+	return merged
+end
+
 ---@param session table
 ---@return table|nil
 local function upsert_session_record(session)
@@ -178,13 +190,7 @@ local function upsert_session_record(session)
 		if (key == "revert" or key == "parentID") and value == vim.NIL then record[key] = nil end
 		if value ~= nil and value ~= vim.NIL then
 			if key == "time" and type(value) == "table" then
-				record.time = vim.tbl_extend("force", record.time or {}, value)
-				for _, watermark in ipairs({ "idle", "viewed" }) do
-					local previous = old and old.time and old.time[watermark]
-					if type(previous) == "number" and type(record.time[watermark]) == "number" then
-						record.time[watermark] = math.max(previous, record.time[watermark])
-					end
-				end
+				record.time = merge_session_time(old and old.time, record.time, value)
 			else record[key] = value end
 		end
 	end

@@ -17,6 +17,14 @@ local function display(setting)
 	return tostring(setting.value)
 end
 
+local function add_variant_choices(choices, model)
+	for _, name in ipairs(model.variant_order or vim.fn.sort(vim.tbl_keys(model.variants or {}))) do
+		if name ~= "default" then
+			choices[#choices + 1] = { value = name, label = name == "none" and "No reasoning" or name }
+		end
+	end
+end
+
 local function choose(setting, cwd, callback)
 	if setting.kind == "integer" then
 		return require("opencode.ui.float").create_input_popup({ title = " " .. setting.title .. " ",
@@ -63,12 +71,7 @@ local function choose(setting, cwd, callback)
 				local selected = setting.model
 				for _, provider in ipairs(response and response.providers or {}) do
 					if selected and provider.id == selected.providerID then
-						local model = (provider.models or {})[selected.modelID or selected.id] or {}
-						for _, name in ipairs(model.variant_order or vim.fn.sort(vim.tbl_keys(model.variants or {}))) do
-							if name ~= "default" then
-								choices[#choices + 1] = { value = name, label = name == "none" and "No reasoning" or name }
-							end
-						end
+						add_variant_choices(choices, (provider.models or {})[selected.modelID or selected.id] or {})
 					end
 				end
 			end

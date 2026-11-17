@@ -11,8 +11,12 @@ local function origin(url)
 end
 
 local function report(err)
-	local message = (err.status == 404 or err.status == 405 or err.status == 501 or err.status == 503) and "This server does not support pairing" or tostring(err.message or err)
-	if err.status == 503 then message = "Server pairing is temporarily unavailable" .. (err.message and (": " .. err.message) or "") end
+	local message = tostring(err.message or err)
+	if err.status == 503 then
+		message = "Server pairing is temporarily unavailable" .. (err.message and (": " .. err.message) or "")
+	elseif err.status == 404 or err.status == 405 or err.status == 501 then
+		message = "This server does not support pairing"
+	end
 	vim.notify("Could not pair server: " .. message, vim.log.levels.ERROR)
 end
 

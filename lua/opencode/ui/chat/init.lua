@@ -792,6 +792,55 @@ function M.focus()
 	end
 end
 
+---Run submitted slash text as a built-in command.
+---@return boolean handled true when the text was executed or rejected and must not be sent as a prompt
+local function submit_slash(text, parts, send_session, generation)
+	local slash_ok, slash = pcall(require, "opencode.slash")
+	if not (slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function") then
+		return false
+	end
+	local parsed = slash.parse(text)
+	if not parsed then
+		return false
+	end
+	local has_parts = type(parts) == "table" and #parts > 0
+	local command = require("opencode.command_registry").get_slash(parsed.command)
+	if has_parts and command and command.with_parts == "reject" then
+		require("opencode.ui.input.history").set_pending(text, parts, send_session or "")
+		vim.notify(command.parts_error or ("/" .. parsed.command .. " does not support attachments"), vim.log.levels.WARN)
+		return true
+	end
+	-- Slash-like text with attachments remains a prompt unless the
+	-- command explicitly accepts them as a draft-only action.
+	if has_parts and not (command and command.with_parts == "execute") then
+		return false
+	end
+	local owner_session_id = cs.session(view).id
+	local context = {
+		source = "slash_submit", view = view, generation = generation,
+		args = parsed.args,
+		parsed = parsed,
+		session_id = owner_session_id,
+		resume_input = function()
+			if cs.valid(view, generation) and cs.session(view).id == owner_session_id and M.is_visible() then
+				M.focus_input()
+			end
+		end,
+	}
+	if command and command.on_select then
+		-- The input closes after on_send returns. Run actions that
+		-- open another view after its teardown.
+		vim.schedule(function()
+			if cs.valid(view, generation) and cs.session(view).id == owner_session_id then
+				slash.execute(parsed, context)
+			end
+		end)
+	else
+		slash.execute(parsed, context)
+	end
+	return true
+end
+
 function M.focus_input(context_snapshot, context_error)
 	-- Selecting a skill can focus an input that is already open. Focusing the
 	-- chat window first would trigger the input's WinLeave handler and close it.
@@ -834,47 +883,7 @@ function M.focus_input(context_snapshot, context_error)
 			if draft_options and draft_options.mode == "shell" then
 				return actions.send(text, vim.tbl_extend("force", draft_options, { parts = parts }))
 			end
-			local slash_ok, slash = pcall(require, "opencode.slash")
-			local has_parts = type(parts) == "table" and #parts > 0
-			if slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function" then
-				local parsed = slash.parse(text)
-				if parsed then
-					local command = require("opencode.command_registry").get_slash(parsed.command)
-					if has_parts and command and command.with_parts == "reject" then
-						require("opencode.ui.input.history").set_pending(text, parts, send_session or "")
-						vim.notify(command.parts_error or ("/" .. parsed.command .. " does not support attachments"), vim.log.levels.WARN)
-						return
-					end
-					-- Slash-like text with attachments remains a prompt unless the
-					-- command explicitly accepts them as a draft-only action.
-					if not has_parts or (command and command.with_parts == "execute") then
-						local owner_session_id = cs.session(view).id
-						local context = {
-							source = "slash_submit", view = view, generation = generation,
-							args = parsed.args,
-							parsed = parsed,
-							session_id = owner_session_id,
-							resume_input = function()
-								if cs.valid(view, generation) and cs.session(view).id == owner_session_id and M.is_visible() then
-									M.focus_input()
-								end
-							end,
-						}
-						if command and command.on_select then
-							-- The input closes after on_send returns. Run actions that
-							-- open another view after its teardown.
-							vim.schedule(function()
-								if cs.valid(view, generation) and cs.session(view).id == owner_session_id then
-									slash.execute(parsed, context)
-								end
-							end)
-						else
-							slash.execute(parsed, context)
-						end
-						return
-					end
-				end
-			end
+			if submit_slash(text, parts, send_session, generation) then return end
 			actions.send(text, vim.tbl_extend("force", draft_options or {}, { parts = parts }))
 		end,
 		on_cancel = function()
@@ -923,6 +932,18 @@ local function finish_frame(widget_cursor, should_scroll)
 	redraw()
 end
 
+---The activity tool block of a session that shows the given reasoning part.
+local function activity_tool_id(session_id, message_id, part_id)
+	for id, pos in pairs(state.tools) do
+		if pos.activity_group and pos.session_id == session_id then
+			for _, ref in ipairs(pos.activity_group.refs) do
+				if ref.part.id == part_id and ref.message.id == message_id then return id end
+			end
+		end
+	end
+	return nil
+end
+
 function M.update_stream_part_block(session_id, message_id, part_id)
 	if not session_id or not message_id then
 		return false
@@ -945,23 +966,18 @@ function M.update_stream_part_block(session_id, message_id, part_id)
 	end
 
 	if part.type == "reasoning" then
-		for id, pos in pairs(state.tools) do
-			if pos.activity_group and pos.session_id == effective_session_id then
-				for _, ref in ipairs(pos.activity_group.refs) do
-					if ref.part.id == part_id and ref.message.id == message_id then
-						local cursor = capture_widget_cursor_context()
-						local scroll = should_auto_scroll(cursor)
-						local updated = chat_tasks.rerender_tool(id)
-						if updated then
-							if not restore_widget_cursor_context(cursor) and scroll then chat_cursor.scroll_to_bottom() end
-							redraw()
-						end
-						return updated
-					end
-				end
-			end
+		local id = activity_tool_id(effective_session_id, message_id, part_id)
+		if not id then
+			return false
 		end
-		return false
+		local cursor = capture_widget_cursor_context()
+		local scroll = should_auto_scroll(cursor)
+		local updated = chat_tasks.rerender_tool(id)
+		if updated then
+			if not restore_widget_cursor_context(cursor) and scroll then chat_cursor.scroll_to_bottom() end
+			redraw()
+		end
+		return updated
 	end
 
 	local block_key = stream_block_key(effective_session_id, message_id, part_id, part.type)

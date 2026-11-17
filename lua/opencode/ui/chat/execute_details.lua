@@ -163,7 +163,8 @@ function M.open(tool_part, opts)
 		wrap = true, linebreak = true, breakindent = true, conceallevel = 0,
 		number = false, relativenumber = false, signcolumn = "no", foldenable = false,
 		cursorline = false, cursorcolumn = false, colorcolumn = "", list = false,
-		winhighlight = "Normal:OpenCodeExecuteDetailsNormal,NormalFloat:OpenCodeExecuteDetailsNormal,WinBar:OpenCodeExecuteDetailsNormal,WinBarNC:OpenCodeExecuteDetailsNormal",
+		winhighlight = "Normal:OpenCodeExecuteDetailsNormal,NormalFloat:OpenCodeExecuteDetailsNormal,"
+			.. "WinBar:OpenCodeExecuteDetailsNormal,WinBarNC:OpenCodeExecuteDetailsNormal",
 		fillchars = "eob: ", scrolloff = 2, winbar = "",
 	}
 	for name in pairs(options) do saved_options[name] = vim.wo[winid][name] end

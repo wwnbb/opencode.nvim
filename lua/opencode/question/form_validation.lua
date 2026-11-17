@@ -149,46 +149,41 @@ local function has_option(field, value)
 	return false
 end
 
-function M.validate(field, value)
-	if field.type == "external" then
-		if value == true then return nil end
-		return "Complete and confirm the external action"
+local function validate_string(field, value)
+	if type(value) ~= "string" then return "Expected text" end
+	if field.required and value == "" then return "Answer required" end
+	local length = vim.str_utfindex(value, "utf-16")
+	if field.minLength and length < field.minLength then return "Must be at least " .. field.minLength .. " characters" end
+	if field.maxLength and length > field.maxLength then return "Must be at most " .. field.maxLength .. " characters" end
+	if field.pattern ~= nil then
+		local matched = matches_pattern(field.pattern, value)
+		if matched == nil then return "Invalid pattern: " .. field.pattern end
+		if not matched then return "Must match pattern: " .. field.pattern end
 	end
-	if not vim.tbl_contains({ "string", "boolean", "integer", "number", "multiselect" }, field.type) then
-		return "Unsupported field type: " .. tostring(field.type)
+	if field.format == "email" and (has_whitespace(value) or not value:match("^[^@]+@[^@]+%.[^@]+$")) then
+		return "Expected an email address"
 	end
-	if value == nil then return field.required and "Answer required" or nil end
-	if field.type == "string" then
-		if type(value) ~= "string" then return "Expected text" end
-		if field.required and value == "" then return "Answer required" end
-		local length = vim.str_utfindex(value, "utf-16")
-		if field.minLength and length < field.minLength then return "Must be at least " .. field.minLength .. " characters" end
-		if field.maxLength and length > field.maxLength then return "Must be at most " .. field.maxLength .. " characters" end
-		if field.pattern ~= nil then
-			local matched = matches_pattern(field.pattern, value)
-			if matched == nil then return "Invalid pattern: " .. field.pattern end
-			if not matched then return "Must match pattern: " .. field.pattern end
-		end
-		if field.format == "email" and (has_whitespace(value) or not value:match("^[^@]+@[^@]+%.[^@]+$")) then
-			return "Expected an email address"
-		end
-		if field.format == "uri" and not valid_uri(value) then return "Expected a URL" end
-		if field.format == "date" and not valid_date(value) then return "Expected a date (YYYY-MM-DD)" end
-		if field.format == "date-time" and not valid_date_time(value) then return "Expected a date and time" end
-		if field.options and not field.custom and not has_option(field, value) then return "Select an available option" end
-		return nil
-	end
-	if field.type == "number" or field.type == "integer" then
-		if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge then return "Expected a number" end
-		if field.type == "integer" and value % 1 ~= 0 then return "Expected an integer" end
-		if type(field.minimum) == "number" and value < field.minimum then return "Must be at least " .. field.minimum end
-		if type(field.maximum) == "number" and value > field.maximum then return "Must be at most " .. field.maximum end
-		return nil
-	end
-	if field.type == "boolean" then
-		if type(value) == "boolean" then return nil end
-		return "Expected yes or no"
-	end
+	if field.format == "uri" and not valid_uri(value) then return "Expected a URL" end
+	if field.format == "date" and not valid_date(value) then return "Expected a date (YYYY-MM-DD)" end
+	if field.format == "date-time" and not valid_date_time(value) then return "Expected a date and time" end
+	if field.options and not field.custom and not has_option(field, value) then return "Select an available option" end
+	return nil
+end
+
+local function validate_number(field, value)
+	if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge then return "Expected a number" end
+	if field.type == "integer" and value % 1 ~= 0 then return "Expected an integer" end
+	if type(field.minimum) == "number" and value < field.minimum then return "Must be at least " .. field.minimum end
+	if type(field.maximum) == "number" and value > field.maximum then return "Must be at most " .. field.maximum end
+	return nil
+end
+
+local function validate_boolean(_, value)
+	if type(value) == "boolean" then return nil end
+	return "Expected yes or no"
+end
+
+local function validate_multiselect(field, value)
 	if type(value) ~= "table" then return "Expected selections" end
 	if field.required and #value == 0 then return "Select at least one option" end
 	if field.minItems and #value < field.minItems then return "Select at least " .. field.minItems end
@@ -198,6 +193,27 @@ function M.validate(field, value)
 		if not field.custom and not has_option(field, entry) then return "Select only available options" end
 	end
 	return nil
+end
+
+local VALIDATORS = {
+	string = validate_string,
+	number = validate_number,
+	integer = validate_number,
+	boolean = validate_boolean,
+	multiselect = validate_multiselect,
+}
+
+function M.validate(field, value)
+	if field.type == "external" then
+		if value == true then return nil end
+		return "Complete and confirm the external action"
+	end
+	local validator = type(field.type) == "string" and VALIDATORS[field.type]
+	if not validator then
+		return "Unsupported field type: " .. tostring(field.type)
+	end
+	if value == nil then return field.required and "Answer required" or nil end
+	return validator(field, value)
 end
 
 return M

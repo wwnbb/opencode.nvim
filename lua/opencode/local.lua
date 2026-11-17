@@ -350,6 +350,27 @@ local function should_log_model_selection(candidates, agent, result_source)
 	return true
 end
 
+---Log every candidate tried before the resolved one.
+local function log_skipped_candidates(candidates, resolved, agent)
+	for _, skipped in ipairs(candidates) do
+		if skipped == resolved then
+			return
+		end
+		if skipped.model ~= nil then
+			logger.debug("Model selection candidate invalid", {
+				agent = agent.name,
+				source = skipped.source,
+				model = model_summary(skipped.model),
+			})
+		else
+			logger.debug("Model selection candidate missing", {
+				agent = agent.name,
+				source = skipped.source,
+			})
+		end
+	end
+end
+
 ---Get current model key for the current agent
 ---@return { providerID: string, modelID: string }|nil
 function M.model.current(opts)
@@ -389,23 +410,7 @@ function M.model.current(opts)
 	for _, candidate in ipairs(candidates) do
 		if is_model_valid(candidate.model, opts) then
 			if should_log_model_selection(candidates, agent, candidate.source) then
-				for _, skipped in ipairs(candidates) do
-					if skipped == candidate then
-						break
-					end
-					if skipped.model ~= nil then
-						logger.debug("Model selection candidate invalid", {
-							agent = agent.name,
-							source = skipped.source,
-							model = model_summary(skipped.model),
-						})
-					else
-						logger.debug("Model selection candidate missing", {
-							agent = agent.name,
-							source = skipped.source,
-						})
-					end
-				end
+				log_skipped_candidates(candidates, candidate, agent)
 				logger.debug("Model selection resolved", {
 					agent = agent.name,
 					source = candidate.source,
@@ -774,10 +779,8 @@ function M.variant.cycle(opts)
 	local current = M.variant.current(opts)
 	local new_variant
 	if not current then
-		-- No variant selected, select first
 		new_variant = variants[1]
 	else
-		-- Find current index
 		local current_idx = nil
 		for i, v in ipairs(variants) do
 			if v == current then
@@ -789,12 +792,10 @@ function M.variant.cycle(opts)
 			-- At end or not found, reset to default (nil)
 			new_variant = nil
 		else
-			-- Move to next
 			new_variant = variants[current_idx + 1]
 		end
 	end
 	M.variant.set(new_variant, opts)
-	-- Show feedback
 	if not opts.silent then
 		if new_variant then
 			vim.notify("Variant: " .. new_variant, vim.log.levels.INFO)

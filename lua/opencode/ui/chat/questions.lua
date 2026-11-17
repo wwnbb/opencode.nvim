@@ -351,7 +351,13 @@ function M.handle_question_custom_input(request_id)
 		persist_pending = false,
 		add_history = false,
 		on_send = function(text)
-			if not cs.valid(view, generation) or not pending.is_current(token) or question_state.get_question(request_id) ~= qstate or qstate.status ~= "pending" or qstate.submitting then return end
+			if not cs.valid(view, generation)
+				or not pending.is_current(token)
+				or question_state.get_question(request_id) ~= qstate
+				or qstate.status ~= "pending"
+				or qstate.submitting then
+				return
+			end
 			if text ~= nil then
 				question_state.set_custom_input(request_id, current_tab, text)
 				M.rerender_question(request_id, true)

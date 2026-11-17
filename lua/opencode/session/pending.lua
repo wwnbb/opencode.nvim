@@ -11,8 +11,6 @@ local terminal_order = {}
 local last_revert_events = {}
 local admission_waiters = {}
 
--- Re-exports: cancellation tokens live in session/epoch, interaction counts in
--- session/attention.
 M.token, M.is_current = epoch.token, epoch.is_current
 M.zero_counts, M.normalize_counts, M.total = attention.zero_counts, attention.normalize_counts, attention.total
 M.has_pending, M.is_pending_question = attention.has_pending, attention.is_pending_question

@@ -31,6 +31,16 @@ function M.parse(value, fallback)
 	return result
 end
 
+local function merge_diagnostics(files, value, fallback)
+	if vim.islist(value) and fallback then
+		files[fallback] = value
+		return
+	end
+	for filename, list in pairs(value) do
+		if type(list) == "table" then files[filename] = list end
+	end
+end
+
 function M.collect(session_id)
 	local state, sync = require("opencode.state"), require("opencode.sync")
 	local record, files = state.get_session_record(session_id), {}
@@ -41,13 +51,7 @@ function M.collect(session_id)
 			local value = type(metadata) == "table" and metadata.diagnostics
 			if type(value) == "table" then
 				local input = part.state.input or {}
-				local fallback = input.path or input.filePath or metadata.filePath
-				if vim.islist(value) and fallback then files[fallback] = value
-				else
-					for filename, list in pairs(value) do
-						if type(list) == "table" then files[filename] = list end
-					end
-				end
+				merge_diagnostics(files, value, input.path or input.filePath or metadata.filePath)
 			end
 		end
 	end

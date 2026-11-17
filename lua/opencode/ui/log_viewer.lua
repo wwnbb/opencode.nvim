@@ -511,7 +511,6 @@ function M.toggle(opts)
 	end
 end
 
--- Check if visible
 function M.is_visible()
 	return state.visible and split_has_window(state.split)
 end

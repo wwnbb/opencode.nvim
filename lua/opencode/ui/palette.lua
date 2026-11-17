@@ -124,7 +124,6 @@ local function save_frecency()
 	require("opencode.util.json_file").write(config.frecency_file, frecency_data)
 end
 
--- Track command usage
 local function track_command_usage(cmd_id)
 	if not config.frecency or not cmd_id then
 		return
@@ -448,7 +447,6 @@ local function render_list()
 	}, "frame")
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
-	-- Apply highlights
 	for index, hl in ipairs(highlights_to_apply) do
 		local line_idx, hl_group, col_start, col_end = hl[1], hl[2], hl[3], hl[4]
 		if col_end == -1 then
@@ -463,7 +461,6 @@ local function render_list()
 	render_selection()
 end
 
--- Update search results
 local function update_results()
 	state.results = filter_commands(state.query, state.context)
 	state.selected = math.min(state.selected, math.max(1, #state.results))

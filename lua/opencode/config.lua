@@ -257,6 +257,17 @@ for scope, keys in pairs(keymap_defaults) do
 	end
 end
 
+local function valid_keymap_value(scope, value)
+	if type(value) == "table" and vim.islist(value) then
+		for _, lhs in ipairs(value) do
+			if type(lhs) ~= "string" or lhs == "" then return false end
+		end
+		return true
+	end
+	if (scope == "completion" or scope == "explanation") and value == "" then return false end
+	return value == false or type(value) == "string"
+end
+
 local function validate_keymaps(merged, opts)
 	merged._keymap_overrides = {}
 	for scope in pairs(keymap_defaults) do
@@ -267,15 +278,7 @@ local function validate_keymaps(merged, opts)
 			local raw = scope == "global" and opts.keymaps or (type(opts[scope]) == "table" and opts[scope].keymaps)
 			local explicit = {}
 			for action, value in pairs(values) do
-				local valid = value == false or type(value) == "string"
-				if (scope == "completion" or scope == "explanation") and value == "" then valid = false end
-				if type(value) == "table" and vim.islist(value) then
-					valid = true
-					for _, lhs in ipairs(value) do
-						if type(lhs) ~= "string" or lhs == "" then valid = false; break end
-					end
-				end
-				if not valid then
+				if not valid_keymap_value(scope, value) then
 					error("opencode.nvim: " .. path .. "." .. action .. " must be a key sequence, a list of key sequences, or false", 3)
 				end
 				if type(raw) == "table" and raw[action] ~= nil then explicit[action] = true end

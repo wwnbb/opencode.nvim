@@ -273,25 +273,31 @@ function M.capture(opts)
 	return { values = values, max_bytes = limit, source = source, range = vim.deepcopy(opts.range) }
 end
 
+-- Returns the part's valid reference range, and whether it carried a source at all.
+local function part_reference(text, part)
+	local source = type(part.source) == "table" and (part.source.text or part.source)
+	if type(source) ~= "table" or type(source.value) ~= "string" or source.value == "" then return nil, false end
+	local first, final = source.start, source["end"]
+	local valid = type(first) == "number" and type(final) == "number" and first >= 0 and final > first and final <= #text
+		and first % 1 == 0 and final % 1 == 0 and text:sub(first + 1, final) == source.value
+	if not valid and part.type == "file" then
+		local a, b = text:find(source.value, 1, true)
+		if a and not text:find(source.value, b + 1, true) then first, final, valid = a - 1, b, true end
+	end
+	if not valid then return nil, true end
+	return { first = first, last = final, source = source }, true
+end
+
 local function references(text, opts, resolve)
 	local result = {}
 	for _, group in ipairs({ opts.context or {}, opts.parts or {} }) do
 		for _, part in ipairs(group) do
 			if part.type == "agent" or part.type == "skill" or part.type == "file" then
-				local source = type(part.source) == "table" and (part.source.text or part.source)
-				if type(source) == "table" and type(source.value) == "string" and source.value ~= "" then
-					local first, final = source.start, source["end"]
-					local valid = type(first) == "number" and type(final) == "number" and first >= 0 and final > first and final <= #text
-						and first % 1 == 0 and final % 1 == 0 and text:sub(first + 1, final) == source.value
-					if not valid and part.type == "file" then
-						local a, b = text:find(source.value, 1, true)
-						if a and not text:find(source.value, b + 1, true) then first, final, valid = a - 1, b, true end
-					end
-					if valid then result[#result + 1] = { first = first, last = final, source = source }
-					elseif resolve and part.type == "file" then
-						-- Do not let the protocol attach a marker introduced by expanded source text.
-						part.source = nil
-					end
+				local reference, sourced = part_reference(text, part)
+				if reference then result[#result + 1] = reference
+				elseif sourced and resolve and part.type == "file" then
+					-- Do not let the protocol attach a marker introduced by expanded source text.
+					part.source = nil
 				end
 			end
 		end

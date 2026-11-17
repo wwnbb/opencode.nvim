@@ -86,8 +86,10 @@ local function connect(integration, method, opts)
 				on_submit = function(key)
 					if not pending.is_current(token) then return end
 					actions.connect_integration_key(integration.id, key, answer, opts, function(err, result)
+						local connected = result
+							and vim.iter(result.connections or {}):any(function(c) return c.type == "credential" end)
 						if err then notify("Could not confirm connection to " .. integration.name, true)
-						elseif not result or not vim.iter(result.connections or {}):any(function(c) return c.type == "credential" end) then notify("No connection was returned by the server", true)
+						elseif not connected then notify("No connection was returned by the server", true)
 						else notify("Connected to " .. integration.name) end
 					end)
 				end })
@@ -195,7 +197,9 @@ function M.connections()
 end
 
 function M.register(palette)
-	palette.register({ id = "provider.connect", title = "Connect Provider", description = "Connect through an integration", category = "model", slash = { name = "connect" }, run = function() M.connect() end })
-	palette.register({ id = "provider.disconnect", title = "Manage Connections", description = "Activate, rename or disconnect an account", category = "model", run = M.connections })
+	palette.register({ id = "provider.connect", title = "Connect Provider", description = "Connect through an integration",
+		category = "model", slash = { name = "connect" }, run = function() M.connect() end })
+	palette.register({ id = "provider.disconnect", title = "Manage Connections",
+		description = "Activate, rename or disconnect an account", category = "model", run = M.connections })
 end
 return M

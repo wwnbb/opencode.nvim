@@ -21,9 +21,17 @@ function M.show()
 				if choice ~= "Replace complete environment" or not current() then return end
 				actions.set_session_environment(session_id, variables, function(err)
 					if not current() then return end
-					local unsupported = err and (err.status == 404 or err.status == 405 or err.status == 501)
-					vim.notify(err and (unsupported and "This server does not support session environment" or err.status == 503 and "Session environment is temporarily unavailable on this server" or "Session environment change was not confirmed")
-						or "Session environment replaced", err and vim.log.levels.WARN or vim.log.levels.INFO)
+					if not err then
+						vim.notify("Session environment replaced", vim.log.levels.INFO)
+						return
+					end
+					local message = "Session environment change was not confirmed"
+					if err.status == 404 or err.status == 405 or err.status == 501 then
+						message = "This server does not support session environment"
+					elseif err.status == 503 then
+						message = "Session environment is temporarily unavailable on this server"
+					end
+					vim.notify(message, vim.log.levels.WARN)
 				end)
 			end })
 	end

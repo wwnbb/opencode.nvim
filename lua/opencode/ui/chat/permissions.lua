@@ -182,7 +182,13 @@ function M.handle_permission_message(perm_id)
 	local generation = view.generation
 
 	local function finish(text)
-		if not cs.valid(view, generation) or not pending.is_current(token) or permission_state.get_permission(perm_id) ~= pstate or pstate.status ~= "pending" or pstate.submitting then return end
+		if not cs.valid(view, generation)
+			or not pending.is_current(token)
+			or permission_state.get_permission(perm_id) ~= pstate
+			or pstate.status ~= "pending"
+			or pstate.submitting then
+			return
+		end
 		permission_state.set_message(perm_id, text or "")
 		M.rerender_permission(perm_id)
 		chat.focus()

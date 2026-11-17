@@ -78,7 +78,10 @@ function M.setup(events)
 			if err or type(capability) ~= "table" or capability.protocolVersion ~= 2 or capability.review ~= true then
 				if not capability_notices[directory] then
 					capability_notices[directory] = true
-					vim.notify("OpenCode: bundled server plugin unavailable or outdated. Run scripts/install-tools.sh for this server's config, then reconnect. File review requires the bundled plugin; history remains readable.", vim.log.levels.WARN)
+					local message = "OpenCode: bundled server plugin unavailable or outdated. "
+						.. "Run scripts/install-tools.sh for this server's config, then reconnect. "
+						.. "File review requires the bundled plugin; history remains readable."
+					vim.notify(message, vim.log.levels.WARN)
 				end
 				return
 			end

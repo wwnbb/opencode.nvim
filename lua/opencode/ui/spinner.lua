@@ -5,7 +5,6 @@ local M = {}
 local SPINNER_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 local FRAME_INTERVAL_MS = 120
 
--- Get current frame text
 ---@param now? number Monotonic milliseconds; injectable for deterministic tests.
 ---@return string Current animation frame
 function M.get_frame(now)

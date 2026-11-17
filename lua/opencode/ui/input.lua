@@ -410,7 +410,11 @@ end
 local function session_changed(session_id)
 	if not state.visible or state.session_id == session_id then return end
 	history_search.cancel(state)
-	if (state.view and state.view.session_bound) or state.explicit_session or not state.persist_pending or state.session_bound then M.close(state.persist_pending); return end
+	local bound = (state.view and state.view.session_bound) or state.explicit_session or state.session_bound
+	if bound or not state.persist_pending then
+		M.close(state.persist_pending)
+		return
+	end
 	save_pending()
 	pending_cursor = nil
 	state.session_id = session_id

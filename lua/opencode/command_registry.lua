@@ -66,6 +66,18 @@ function M.all()
 	return result
 end
 
+local function slash_matches(slash, name)
+	if slash.name == name then
+		return true
+	end
+	for _, alias in ipairs(slash.aliases or {}) do
+		if alias == name then
+			return true
+		end
+	end
+	return false
+end
+
 function M.get_slash(name)
 	if type(name) ~= "string" then
 		return nil
@@ -73,19 +85,8 @@ function M.get_slash(name)
 	local newest = nil
 	for _, record in pairs(commands) do
 		local slash = record.slash
-		if slash then
-			local matches = slash.name == name
-			if not matches then
-				for _, alias in ipairs(slash.aliases or {}) do
-					if alias == name then
-						matches = true
-						break
-					end
-				end
-			end
-			if matches and (newest == nil or record._serial > newest._serial) then
-				newest = record
-			end
+		if slash and slash_matches(slash, name) and (newest == nil or record._serial > newest._serial) then
+			newest = record
 		end
 	end
 	return newest
