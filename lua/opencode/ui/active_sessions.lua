@@ -8,6 +8,10 @@ local focus = require("opencode.session.focus")
 ---@return string
 local function stats_label(session)
 	local pieces = { session:status_label() }
+	local delegated = session:delegated_count()
+	if delegated > 0 then
+		table.insert(pieces, string.format("%d subagent%s running", delegated, delegated == 1 and "" or "s"))
+	end
 	local pending = session.pending or {}
 	if session:pending_total() > 0 then
 		table.insert(

@@ -280,7 +280,7 @@ local function prepare_session_tabs(tabs_cfg, sessions, active_session, current_
 		item.text = item.icon .. item.label
 		prepared.labels[index] = item
 		prepared.widths[index + 1] = prepared.widths[index] + width(item.text)
-		if session:is_busy() then running = running + 1 end
+		if session:is_running() then running = running + 1 end
 		if session:is_waiting() then waiting = waiting + 1 end
 	end
 	prepared.order = table.concat(order, "\0")
@@ -416,7 +416,10 @@ local function build_session_tabs_line(tabs_cfg, sessions, max_tabs, prepared)
 		append_text(display_label, label_hl)
 		register_mouse_target(id, start_col, display_col)
 		has_tabs = true
-		table.insert(parts, string.format("%%%d@v:lua.__opencode_chat_winbar_click@%%#%s#%s%%#%s#%s%%T", id, display_icon_hl, escape_winbar_text(display_icon), label_hl, escape_winbar_text(display_label)))
+		table.insert(parts, string.format(
+			"%%%d@v:lua.__opencode_chat_winbar_click@%%#%s#%s%%#%s#%s%%T",
+			id, display_icon_hl, escape_winbar_text(display_icon), label_hl, escape_winbar_text(display_label)
+		))
 	end
 
 	if right then
@@ -431,7 +434,10 @@ local function build_session_tabs_line(tabs_cfg, sessions, max_tabs, prepared)
 		append_text(" ", "OpenCodeWinbar")
 		append_text((icons.waiting or "◈") .. tostring(waiting), "OpenCodeWinbarWaiting")
 		has_tabs = true
-		table.insert(parts, string.format("%%#OpenCodeWinbar#%s%%#OpenCodeWinbarRunning#%s%d %%#OpenCodeWinbarWaiting#%s%d", "", escape_winbar_text(icons.running or "●"), running, escape_winbar_text(icons.waiting or "◈"), waiting))
+		table.insert(parts, string.format(
+			"%%#OpenCodeWinbar#%s%%#OpenCodeWinbarRunning#%s%d %%#OpenCodeWinbarWaiting#%s%d",
+			"", escape_winbar_text(icons.running or "●"), running, escape_winbar_text(icons.waiting or "◈"), waiting
+		))
 	end
 
 	local aside_label = prepared.aside
@@ -703,7 +709,9 @@ local function update_float_session_tabs_window(tabs_cfg, current_session)
 end
 
 function M.update_winbar()
-	actions.observe_session(selectors.get_current_runtime_root_id({ session_id = cs.session(view).id }), state.visible and state.tabpage == vim.api.nvim_get_current_tabpage() and cs.is_chat_buffer_displayed(view))
+	local root_id = selectors.get_current_runtime_root_id({ session_id = cs.session(view).id })
+	local observing = state.visible and state.tabpage == vim.api.nvim_get_current_tabpage() and cs.is_chat_buffer_displayed(view)
+	actions.observe_session(root_id, observing)
 	local cfg = state.config or get_config()
 	local tabs_cfg = cfg.session_tabs or {}
 	if cfg.layout == "tab" then

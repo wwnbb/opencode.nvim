@@ -7,7 +7,7 @@ end
 
 local statuses = {
 	{ "Waiting", "is_waiting", "waiting", "◈" },
-	{ "Running", "is_busy", "running", "●" },
+	{ "Running", "is_running", "running", "●" },
 	{ "Error", "is_error", "error", "✕" },
 	{ "Unread", "is_unread", "unread", "◆" },
 	{ "Idle", "is_idle", "idle", "○" },
@@ -40,7 +40,10 @@ end
 function M.max_tabs(config, count)
 	config = type(config) == "table" and config or {}
 	local max_tabs = config.max_tabs
-	if config.auto_fit == true or (type(max_tabs) == "string" and max_tabs:lower() == "auto") then return count end
+	local auto = config.auto_fit == true or (type(max_tabs) == "string" and max_tabs:lower() == "auto")
+	if auto then
+		return count
+	end
 	return math.min(count, math.max(1, math.floor(tonumber(max_tabs) or 3)))
 end
 

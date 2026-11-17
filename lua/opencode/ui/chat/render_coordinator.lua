@@ -54,6 +54,22 @@ function M.merge_requests(existing, data)
 	return merged
 end
 
+---A subagent's status decides whether every session above it still works
+---(selectors.session_activity), so the request also reaches their views, not
+---only the direct parent's. The event payload itself stays unchanged.
+---@param data table|nil
+---@return table|nil
+function M.with_ancestor_scope(data)
+	local session_id = type(data) == "table" and (data.session_id or data.sessionID or data.sessionId) or nil
+	if type(session_id) ~= "string" or session_id == "" then return data end
+	local scoped = vim.tbl_extend("force", {}, data)
+	scoped._render_sessions = vim.deepcopy(data._render_sessions or {})
+	for _, id in ipairs(require("opencode.selectors").session_lineage(session_id)) do
+		scoped._render_sessions[id] = true
+	end
+	return scoped
+end
+
 ---Evaluate at execution time: selection may have changed since the request.
 function M.request_relevant(data, target)
 	if type(data) ~= "table" or data._render_global then return true end
@@ -219,7 +235,7 @@ function M.setup(events)
 	end)
 
 	events.on("session_status_change", function(data)
-		M.request(data)
+		M.request(M.with_ancestor_scope(data))
 	end)
 
 	events.on("session_pending_change", function(data)

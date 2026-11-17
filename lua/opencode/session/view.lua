@@ -27,9 +27,22 @@ function METHODS:title()
 	return title_for(private(self).record or {})
 end
 
+-- Its own execution: what interrupt and steering act on.
 ---@return boolean
 function METHODS:is_busy()
 	return status_helper.is_busy(private(self).status)
+end
+
+-- Subagent sessions still working below it, after its own turn may have ended.
+---@return number
+function METHODS:delegated_count()
+	return #(private(self).delegated or {})
+end
+
+-- What tabs present as Running: its own execution or a working subagent.
+---@return boolean
+function METHODS:is_running()
+	return self:is_busy() or self:delegated_count() > 0
 end
 
 ---@return boolean
@@ -114,7 +127,7 @@ local view_mt = {
 		if method then
 			return method
 		end
-		if key == "record" or key == "status" or key == "pending" or key == "cached_messages" then
+		if key == "record" or key == "status" or key == "delegated" or key == "pending" or key == "cached_messages" then
 			return vim.deepcopy(data[key])
 		end
 		if scalar_fields[key] then
@@ -142,6 +155,7 @@ local function from_record(record, ctx, owned)
 	PRIVATE[view] = {
 		record = normalized,
 		status = status_helper.normalize_session_status(status),
+		delegated = type(ctx.delegated) == "table" and vim.deepcopy(ctx.delegated) or {},
 		pending = pending_helper.normalize_counts(pending),
 		cached_messages = type(cached_messages) == "table" and vim.deepcopy(cached_messages) or { count = 0, loaded = false },
 		is_current = ctx.is_current == true or normalized.is_current == true,

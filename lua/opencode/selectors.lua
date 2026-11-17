@@ -57,7 +57,7 @@ local function current_root_id(state_mod, current)
 	return navigation.runtime_session_id(current and current.id, { state = state_mod })
 end
 
-local function build_session_view(state_mod, current, session_id, root_id)
+local function build_session_view(state_mod, current, session_id, root_id, activity_index)
 	if not session_id or session_id == "" then return nil end
 	local record = state_mod.get_session_record(session_id)
 	if not record then
@@ -71,6 +71,7 @@ local function build_session_view(state_mod, current, session_id, root_id)
 	end
 	return SessionView.from_owned_record(record, {
 		status = state_mod.get_session_status(session_id),
+		delegated = M.session_activity(session_id, activity_index).delegated,
 		pending = state_mod.get_session_pending_counts(session_id),
 		cached_messages = state_mod.get_session_message_cache(session_id),
 		is_current = current.id == session_id,
@@ -102,10 +103,11 @@ function M.get_active_session_views(opts)
 	local state_mod = require("opencode.state")
 	local current = M.current_session(opts)
 	local root_id = current_root_id(state_mod, current)
+	local activity_index = M.delegated_activity_index()
 	local result, seen = {}, {}
 	for _, id in ipairs(state_mod.get_runtime_session_order()) do
 		if not seen[id] then
-			local view = build_session_view(state_mod, current, id, root_id)
+			local view = build_session_view(state_mod, current, id, root_id, activity_index)
 			if view then result[#result + 1], seen[id] = view, true end
 		end
 	end
@@ -484,21 +486,70 @@ local function sessions_awaiting_user()
 	return ids
 end
 
+---A session followed by its ancestors up to the root. The task owner wins over
+---native ancestry, as in sync.collect_session_tree(); a cycle ends the walk.
+---@param session_id string|nil
+---@return string[]
+function M.session_lineage(session_id)
+	local lineage = {}
+	if type(session_id) ~= "string" or session_id == "" then return lineage end
+	local sync, state_mod = require("opencode.sync"), require("opencode.state")
+	local id, visited = session_id, {} ---@type string|nil, table<string, true>
+	while type(id) == "string" and id ~= "" and not visited[id] do
+		visited[id] = true
+		lineage[#lineage + 1] = id
+		id = sync.get_task_parent_session(id) or state_mod.get_session_parent_id(id)
+	end
+	return lineage
+end
+
 ---Whether a session, or a subagent session below it, waits for the user.
 ---@param session_id string|nil
 ---@return boolean
 function M.session_awaits_user(session_id)
 	if type(session_id) ~= "string" or session_id == "" then return false end
-	local sync, state_mod = require("opencode.sync"), require("opencode.state")
 	for _, awaiting_id in ipairs(sessions_awaiting_user()) do
-		local id, visited = awaiting_id, {} ---@type string|nil, table<string, true>
-		while type(id) == "string" and id ~= "" and not visited[id] do
+		for _, id in ipairs(M.session_lineage(awaiting_id)) do
 			if id == session_id then return true end
-			visited[id] = true
-			id = sync.get_task_parent_session(id) or state_mod.get_session_parent_id(id)
 		end
 	end
 	return false
+end
+
+---Busy subagent sessions grouped by every ancestor they report to, from one
+---pass over the known statuses. Pass the result to session_activity() when
+---asking about several sessions at once.
+---@return table<string, string[]>
+function M.delegated_activity_index()
+	local status_helper, state_mod = require("opencode.session.status"), require("opencode.state")
+	local index = {}
+	for _, id in ipairs(state_mod.get_session_status_ids()) do
+		if status_helper.is_busy(state_mod.get_session_status(id)) then
+			local lineage = M.session_lineage(id)
+			for position = 2, #lineage do
+				local list = index[lineage[position]] or {}
+				list[#list + 1] = id
+				index[lineage[position]] = list
+			end
+		end
+	end
+	return index
+end
+
+---What a session is doing. `busy` is its own execution, the only state that
+---interrupt, steering and the busy watchdog act on. `delegated` lists subagent
+---sessions still working below it after its own turn may have ended (a
+---background task). `running` is what tabs and the chat footer present.
+---@param session_id string|nil
+---@param index? table<string, string[]> From delegated_activity_index()
+---@return { busy: boolean, delegated: string[], running: boolean }
+function M.session_activity(session_id, index)
+	if type(session_id) ~= "string" or session_id == "" then
+		return { busy = false, delegated = {}, running = false }
+	end
+	local busy = require("opencode.session.status").is_busy(require("opencode.state").get_session_status(session_id))
+	local delegated = vim.deepcopy((index or M.delegated_activity_index())[session_id] or {})
+	return { busy = busy, delegated = delegated, running = busy or #delegated > 0 }
 end
 
 return M

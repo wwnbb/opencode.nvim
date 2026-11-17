@@ -94,19 +94,43 @@ function M.metadata_message(messages, fallback_message)
 	return fallback_message
 end
 
----@param opts table { status: table|string|nil, messages: table[]|nil, waiting_for_interaction?: boolean, fallback_message: table }
----@return table|nil presentation { message: table, animated: boolean }
+---The settled assistant message that closes the history, if the history ends in one.
+---@param messages table[]
+---@return table|nil
+local function settled_last_assistant(messages)
+	local last = messages[#messages]
+	if type(last) == "table" and last.role == "assistant" and not M.has_pending_response_gap(messages) then
+		return last
+	end
+	return nil
+end
+
+---@param opts table { status: table|string|nil, messages: table[]|nil, waiting_for_interaction?: boolean, fallback_message: table, delegated?: { working: boolean }|nil }
+---@return table|nil presentation { message: table, source_message: table, animated: boolean, delegated?: boolean }
 function M.derive(opts)
 	opts = opts or {}
 	local messages = opts.messages or {}
-	if not M.is_processing(opts.status) or not M.has_pending_response_gap(messages) then
-		return nil
+	if M.is_processing(opts.status) then
+		if not M.has_pending_response_gap(messages) then return nil end
+		local source_message = M.metadata_message(messages, opts.fallback_message)
+		return {
+			message = metadata_projection(source_message),
+			source_message = source_message,
+			animated = opts.waiting_for_interaction ~= true,
+		}
 	end
-	local source_message = M.metadata_message(messages, opts.fallback_message)
+	-- The session's own turn ended, but subagents it launched in the background
+	-- still work. Its last footer stays complete (duration, usage) and animates
+	-- until they finish, so the chat never looks idle while work continues.
+	local delegated = type(opts.delegated) == "table" and opts.delegated or nil
+	if not delegated then return nil end
+	local last = settled_last_assistant(messages)
+	local source_message = last or M.metadata_message(messages, opts.fallback_message)
 	return {
-		message = metadata_projection(source_message),
+		message = last or metadata_projection(source_message),
 		source_message = source_message,
-		animated = opts.waiting_for_interaction ~= true,
+		animated = opts.waiting_for_interaction ~= true and delegated.working == true,
+		delegated = true,
 	}
 end
 

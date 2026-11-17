@@ -222,13 +222,15 @@ local function schedule_busy_watchdog()
 	busy_watchdog_scheduled = true
 	vim.defer_fn(function()
 		busy_watchdog_scheduled = false
+		-- A tab whose own turn ended still works while a background subagent
+		-- below it is busy; refresh_status() covers that whole tree.
 		local any_busy = false
-		for _, session_id in ipairs(state.get_session_status_ids()) do
-			if state.is_runtime_session(session_id) then
-				local current = state.get_session_status(session_id)
-				if is_busy_status_for_idle(current) then
-					any_busy = true
-				end
+		local selectors = require("opencode.selectors")
+		local activity_index = selectors.delegated_activity_index()
+		for _, session_id in ipairs(state.get_runtime_session_order()) do
+			if selectors.session_activity(session_id, activity_index).running then
+				any_busy = true
+				break
 			end
 		end
 		if any_busy then

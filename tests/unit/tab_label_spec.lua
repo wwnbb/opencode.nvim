@@ -20,7 +20,7 @@ describe("tab label presentation", function()
 		local function session(status)
 			return {
 				is_waiting = function() return status == "Waiting" end,
-				is_busy = function() return status == "Running" end,
+				is_running = function() return status == "Running" end,
 				is_error = function() return status == "Error" end,
 				is_unread = function() return status == "Unread" end,
 			}

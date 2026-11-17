@@ -40,4 +40,24 @@ describe("opencode processing footer", function()
 		assert.is_not_nil(presentation)
 		assert.is_false(presentation.animated)
 	end)
+	it("keeps the last footer complete and animated while background subagents work", function()
+		local last = { id = "last", role = "assistant", agent = "coder", modelID = "m", providerID = "p",
+			time = { created = 1, completed = 2 }, finish = "stop", tokens = { input = 1 } }
+		local messages = { { id = "u", role = "user", time = { created = 0 } }, last }
+		assert.is_nil(derive("idle", messages))
+		local presentation = derive("idle", messages, { delegated = { working = true } })
+		assert.equals(last, presentation.message)
+		assert.equals(last, presentation.source_message)
+		assert.is_true(presentation.animated)
+		assert.is_true(presentation.delegated)
+		-- Subagents that only wait for the user keep the footer, without a spinner.
+		assert.is_false(derive("idle", messages, { delegated = { working = false } }).animated)
+		assert.is_false(derive("idle", messages, { delegated = { working = true }, waiting_for_interaction = true }).animated)
+		-- An unsettled history falls back to the metadata projection.
+		presentation = derive("idle", { { id = "u", role = "user" } }, { delegated = { working = true } })
+		assert.equals(fallback, presentation.source_message)
+		assert.equals("fallback", presentation.message.agent)
+		-- The session's own execution still decides when it is processing.
+		assert.is_nil(derive("busy", messages, { delegated = { working = true } }))
+	end)
 end)

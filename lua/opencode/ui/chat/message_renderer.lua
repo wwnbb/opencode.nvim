@@ -264,6 +264,17 @@ local function get_current_session_status(ctx)
 	return view.session_bound and "idle" or app_state.get_status()
 end
 
+-- Subagents still working below the shown session. `working` is false when each
+-- of them only waits for the user, so the footer stays but does not animate.
+local function get_delegated_activity(ctx)
+	local delegated = selectors.session_activity(ctx.current_session.id).delegated
+	if #delegated == 0 then return nil end
+	for _, id in ipairs(delegated) do
+		if not selectors.session_awaits_user(id) then return { working = true } end
+	end
+	return { working = false }
+end
+
 local function find_last_assistant(messages)
 	for i = #messages, 1, -1 do
 		if messages[i].role == "assistant" then
@@ -850,6 +861,7 @@ function M.render(ctx, index)
 		messages = all_messages,
 		waiting_for_interaction = index:has_pending_interaction(),
 		fallback_message = build_fallback_metadata_message(ctx),
+		delegated = get_delegated_activity(ctx),
 	})
 	local message_stats = render_messages(
 		ctx,
