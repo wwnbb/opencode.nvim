@@ -138,6 +138,26 @@ describe("native project and worktree UI workflows", function()
 		key(menus[2], "r")
 		assert.equals("refresh", calls[4].method)
 	end)
+	it("marks favorite projects, lists them first and toggles them in place", function()
+		local favorites = { "p" }
+		stubs[#stubs + 1] = require("luassert.stub")(actions, "project_favorites", function() return favorites end)
+		stubs[#stubs + 1] = require("luassert.stub")(actions, "toggle_project_favorite", function(id)
+			calls[#calls + 1] = { method = "favorite", id = id }
+			return true
+		end)
+		actions.list_projects = function(cb) cb(nil, { { id = "a", name = "Alpha", canonical = "/remote/alpha" }, project }) end
+		workspace.projects(function() end)
+		local alpha, remote = menus[1].items[1], menus[1].items[2]
+		assert.equals("★ Remote project", remote.label)
+		assert.equals(1, remote.priority)
+		assert.equals("Alpha", alpha.label)
+		assert.equals(0, alpha.priority)
+		assert.is_nil(menus[1].sort)
+		key(menus[1], "f", alpha)
+		assert.same({ method = "favorite", id = "a" }, calls[1])
+		assert.equals("★ Alpha", alpha.label)
+		assert.equals(1, alpha.priority)
+	end)
 	it("protects project roots and requires a separate choice after a dirty-worktree refusal", function()
 		workspace.worktrees(project)
 		key(menus[1], "d", menus[1].items[1])

@@ -110,8 +110,7 @@ require("opencode").setup({
     cancel = false,
     toggle_mode = "<C-s>",
   } },
-  menu = { keymaps = { next = "<C-j>", previous = "<C-k>" } },
-  model_menu = { keymaps = { favorite = "<C-f>" } },
+  menu = { keymaps = { next = "<C-j>", previous = "<C-k>", favorite = "<C-f>" } },
   native_diff = { keymaps = { next_file = "]f", prev_file = "[f" } },
 })
 ```
@@ -126,8 +125,11 @@ that remain active.
 
 `menu.keymaps` controls shared selection, navigation, closing and multi-select.
 Palette and specialized selectors inherit these settings; their own `.keymaps`
-can override them. Changing `close`, `next`, `previous` or `toggle` also replaces
-the corresponding default mode-specific aliases. The `*_normal` and `*_insert`
+can override them. `menu.keymaps.favorite` sets the favorite key for every
+selector with favorites (models and projects); `model_menu.keymaps.favorite` or
+`project_menu.keymaps.favorite` overrides it for one selector. Changing `close`,
+`next`, `previous` or `toggle` also replaces the corresponding default
+mode-specific aliases. The `*_normal` and `*_insert`
 actions allow separate aliases when needed. `popup.keymaps` controls shared
 popup closing and text input; help, execute details, debug bundle and MCP info
 inherit its applicable actions.
@@ -148,7 +150,7 @@ it directly while searching.
 | `execute_details`, `help`, `session_tabs` | Tool inspector, help and session-tab mouse/visual controls |
 | `btw_answer`, `form` | Side question view and setup forms |
 | `logs`, `debug_bundle` | Logs and support snapshot |
-| `active_sessions`, `session_menu`, `model_menu` | Session and model selectors |
+| `active_sessions`, `session_menu`, `model_menu`, `project_menu` | Session, model and project selectors |
 | `mcp_menu`, `mcp_info`, `queue_menu`, `family_menu` | MCP, pending prompts and subagent selectors |
 | `process_menu`, `plugin_menu`, `workspace_menu` | Processes, server plugins and locations |
 | `pairing_menu`, `diagnostics`, `integration`, `status` | Pairing, diagnostics, authentication and server status |

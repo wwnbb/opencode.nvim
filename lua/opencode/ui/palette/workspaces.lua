@@ -18,6 +18,30 @@ local function report(action, err)
 	end
 end
 
+---Menu options shared by the project pickers: favorites come first (the
+---default sort puts priority rows on top) and are toggled in place.
+---@param projects table[]
+---@return table
+function M.project_menu(projects)
+	local favorites = {}
+	for _, id in ipairs(actions.project_favorites()) do favorites[id] = true end
+	local function describe(item)
+		item.label = (item.is_favorite and "★ " or "") .. (item.project.name or item.project.canonical)
+		item.priority = item.is_favorite and 1 or 0
+	end
+	local items = {}
+	for _, project in ipairs(projects) do
+		local item = { value = project.id, description = project.canonical, project = project, is_favorite = favorites[project.id] == true }
+		describe(item)
+		items[#items + 1] = item
+	end
+	return { items = items, width = 76, searchable = true, keymap_scope = "project_menu",
+		keys = { { action = "favorite", label = "favorite", handler = function(_, item)
+			item.is_favorite = actions.toggle_project_favorite(item.value)
+			describe(item)
+		end } } }
+end
+
 function M.projects(callback, context)
 	context = capture(context)
 	local current = guard(context)
@@ -26,12 +50,8 @@ function M.projects(callback, context)
 		if not current() then return end
 		if err then report("list projects", err); return end
 		if #projects == 0 then vim.notify("No projects found", vim.log.levels.INFO); return end
-		local items = {}
-		for _, project in ipairs(projects) do
-			items[#items + 1] = { label = project.name or project.canonical, value = project.id, description = project.canonical, project = project }
-		end
-		show_menu(context, initial_input, { context = context, title = " Projects ", items = items, width = 76, searchable = true,
-			on_select = function(item) if current() then callback(item.project) end end })
+		show_menu(context, initial_input, vim.tbl_extend("force", M.project_menu(projects), { context = context, title = " Projects ",
+			on_select = function(item) if current() then callback(item.project) end end }))
 	end)
 end
 

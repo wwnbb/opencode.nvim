@@ -98,11 +98,8 @@ local function projects(context)
 	actions.list_projects(function(err, values)
 		if not current() then return end
 		if err then report("list projects", err); return end
-		local items = {}
-		for _, project in ipairs(values) do
-			items[#items + 1] = { label = project.name or project.canonical, value = project.id, project = project, description = project.canonical }
-		end
-		show_menu(context, initial_input, { context = context, items = items, title = " Session Projects ", width = 76, searchable = true,
+		local project_menu = require("opencode.ui.palette.workspaces").project_menu(values)
+		show_menu(context, initial_input, vim.tbl_extend("force", project_menu, { context = context, title = " Session Projects ",
 			on_select = function(item)
 				if not current() then return end
 				local location_input = focus.capture_input(context.view)
@@ -125,7 +122,7 @@ local function projects(context)
 					show_menu(context, location_input, { context = context, items = locations, title = " Session Locations ", width = 76, searchable = true,
 						on_select = function(location) if current() then M.browse(location.query, context) end end })
 				end)
-			end })
+			end }))
 	end)
 end
 

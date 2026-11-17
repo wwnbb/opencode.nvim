@@ -603,6 +603,14 @@ function M.model_favorites()
 	return local_state().model.favorite()
 end
 
+function M.toggle_project_favorite(id)
+	return local_state().project.toggle_favorite(id)
+end
+
+function M.project_favorites()
+	return local_state().project.favorite()
+end
+
 function M.model_recent()
 	return local_state().model.recent()
 end

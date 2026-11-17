@@ -21,6 +21,8 @@ local state = {
 	recent = {},
 	-- Favorite models
 	favorite = {},
+	-- Favorite server projects (project IDs, most recently added first)
+	favorite_projects = {},
 	-- Per-model variant selection: { ["providerID/modelID"] = variantName }
 	variant = {},
 	message_agents = {}, -- { [sessionID] = { [messageID] = agentID } }
@@ -73,7 +75,7 @@ end
 local function load_state()
 	persistence = require("opencode.preferences").open(state_file)
 	local data = persistence.data
-	for _, key in ipairs({ "recent", "favorite", "variant", "model" }) do
+	for _, key in ipairs({ "recent", "favorite", "favorite_projects", "variant", "model" }) do
 		if type(data[key]) == "table" then state[key] = data[key] end
 	end
 	if type(data.agent) == "string" then state.agent = data.agent end
@@ -86,7 +88,7 @@ local function save_state()
 	if not state.ready then
 		return
 	end
-	if not persistence.save({ recent = state.recent, favorite = state.favorite, variant = state.variant,
+	if not persistence.save({ recent = state.recent, favorite = state.favorite, favorite_projects = state.favorite_projects, variant = state.variant,
 		model = state.model, agent = state.agent, message_agents = state.message_agents }) then
 		logger.warn("Could not save model preferences; original file preserved")
 	end
@@ -645,6 +647,38 @@ function M.model.toggle_favorite(model)
 	end
 	save_state()
 	emit("favorite", nil, state.favorite)
+end
+
+-- Project module: favorites shown first in project pickers
+M.project = {}
+
+---Get favorite project IDs
+---@return string[]
+function M.project.favorite()
+	return state.favorite_projects
+end
+
+---Toggle favorite status for a project
+---@param id string
+---@return boolean favorite Whether the project is a favorite now
+function M.project.toggle_favorite(id)
+	if type(id) ~= "string" or id == "" then
+		return false
+	end
+	local exists = false
+	for i, item in ipairs(state.favorite_projects) do
+		if item == id then
+			table.remove(state.favorite_projects, i)
+			exists = true
+			break
+		end
+	end
+	if not exists then
+		table.insert(state.favorite_projects, 1, id)
+	end
+	save_state()
+	emit("favorite_projects", nil, state.favorite_projects)
+	return not exists
 end
 
 -- Variant module (like TUI's variant in local.tsx)

@@ -25,7 +25,7 @@ local M = {
 	completion = { trigger = "<C-l>", prompt = "<C-S-l>", accept = "<Tab>" },
 	explanation = { trigger = "K", close = { "q", "<Esc>" }, copy = "c", ask = "i" },
 	menu = { select = "<CR>", close = { "<Esc>", "<C-c>" }, close_normal = "q", close_insert = "<C-c>",
-		search = { "/", "i" }, normal_mode = "<Esc>",
+		search = { "/", "i" }, normal_mode = "<Esc>", favorite = "f",
 		next = "<Down>", previous = "<Up>", next_normal = "j", previous_normal = "k",
 		next_insert = { "<C-n>", "<C-j>" }, previous_insert = { "<C-p>", "<C-k>" },
 		toggle = "<Space>", toggle_insert = { "<Tab>", "<C-Space>" } },
@@ -50,7 +50,8 @@ local M = {
 	debug_bundle = { copy = "y" },
 	active_sessions = { close_session = "x" },
 	session_menu = { rename = "r", delete = "d", project = "p", all = "a", current_directory = "c" },
-	model_menu = { favorite = "f" },
+	model_menu = {},
+	project_menu = {},
 	mcp_info = { close = { "q", "<Esc>", "<C-c>" } },
 	mcp_menu = { info = "i", toggle_server = "t", authenticate = "a", refresh = "r" },
 	queue_menu = { delete = "<C-d>", undo = "<C-u>" },
@@ -71,7 +72,7 @@ for i = 1, 9 do
 	M.form["option_" .. i] = tostring(i)
 end
 M.parents = { mcp_info = "popup", palette = "menu", help = "popup", execute_details = "popup", debug_bundle = "popup" }
-for _, scope in ipairs({ "active_sessions", "session_menu", "model_menu", "mcp_menu", "queue_menu", "family_menu",
+for _, scope in ipairs({ "active_sessions", "session_menu", "model_menu", "project_menu", "mcp_menu", "queue_menu", "family_menu",
 	"process_menu", "plugin_menu", "workspace_menu", "pairing_menu", "diagnostics" }) do
 	M.parents[scope] = "menu"
 end

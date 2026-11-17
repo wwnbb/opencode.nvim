@@ -49,6 +49,28 @@ describe("configurable menu and popup controls", function()
 		assert.equals("Second", selected)
 	end)
 
+	it("applies the shared favorite key to every selector with favorites", function()
+		state.set_config(config.merge({ menu = { keymaps = { favorite = "F" } } }))
+		local keymaps = require("opencode.util.keymap")
+		assert.equals("F", keymaps.get("model_menu").favorite)
+		assert.equals("F", keymaps.get("project_menu").favorite)
+	end)
+
+	it("lets one selector override the shared favorite key", function()
+		state.set_config(config.merge({ menu = { keymaps = { favorite = "F" } },
+			project_menu = { keymaps = { favorite = "P" } } }))
+		local keymaps = require("opencode.util.keymap")
+		assert.equals("P", keymaps.get("project_menu").favorite)
+		assert.equals("F", keymaps.get("model_menu").favorite)
+	end)
+
+	it("defaults the favorite key to f for models and projects", function()
+		state.set_config(config.merge({}))
+		local keymaps = require("opencode.util.keymap")
+		assert.equals("f", keymaps.get("model_menu").favorite)
+		assert.equals("f", keymaps.get("project_menu").favorite)
+	end)
+
 	it("disables numeric and toggle bindings and keeps external menu key definitions", function()
 		state.set_config(config.merge({ menu = { keymaps = { option_1 = false, toggle = false } } }))
 		local custom = 0
