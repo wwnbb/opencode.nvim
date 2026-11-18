@@ -560,6 +560,7 @@ function M.show(opts)
 		history_prev = history_prev,
 		history_next = history_next,
 		history_search = M.search_history,
+		save_prompt = function() require("opencode.ui.palette.saved_prompts").save() end,
 		autocomplete_visible = function()
 			return state.history_search ~= nil or autocomplete.is_visible(state)
 		end,

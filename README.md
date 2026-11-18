@@ -373,8 +373,17 @@ An explicit range must be within the source buffer. Placeholders do not expand
 in slash commands, shell input, question answers, or review fields.
 
 Use the palette's Stash Current Prompt / Restore Latest Stashed Prompt actions,
-or `/stash` to browse several saved prompts. Stashes keep attachments and survive
-restarts. `/queued` lists queued prompts to steer, delete or restore into a
+or `/stash` to browse several stashed prompts. Stashes keep attachments and survive
+restarts. Restoring a stash removes it.
+
+To keep prompts for reuse, press **Ctrl+S** in the composer (or run **Save Current
+Prompt** in the palette). The draft stays in the input and a copy goes to a global
+library. `/prompts` (**Saved Prompts** in the palette) lists the library: Enter
+inserts the selected prompt into the current draft and keeps it in the library,
+`<C-d>` deletes it. Configure the key with `input.keymaps.save_prompt` and the file
+with `input.saved_prompts_file`.
+
+`/queued` lists queued prompts to steer, delete or restore into a
 draft after confirmed cancellation. Empty steer submission promotes the first
 queued prompt.
 Paste supports several quoted file paths on a line, including PDF and SVG. Large

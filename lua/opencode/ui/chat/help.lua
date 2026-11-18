@@ -76,6 +76,7 @@ local function sections(config)
 				{ input_key("cancel"), "Cancel" },
 				{ input_key("history_prev") .. " / " .. input_key("history_next"), "Navigate history" },
 				{ input_key("history_search"), "Search prompt history in input" },
+				{ input_key("save_prompt"), "Save prompt to library" },
 			},
 		},
 		{

@@ -28,7 +28,9 @@ lua/opencode/selectors.lua           → Read-only derived state queries
 lua/opencode/local.lua               → Agent/model/variant selection (persistent)
 lua/opencode/settings.lua            → Local preferences; one file owner holds global and directory scopes
 lua/opencode/preferences.lua         → Versioned preference file; preserves files without a supported version
-lua/opencode/stash.lua               → Persist unsent prompts independently of history and server state
+lua/opencode/prompt_store.lua        → Persistent prompt lists (push/list/get/take) shared by stash and saved prompts
+lua/opencode/stash.lua               → Per-directory prompt stash; restoring takes the entry
+lua/opencode/saved_prompts.lua       → Global saved prompts library; inserting keeps the entry
 lua/opencode/lifecycle.lua           → Server spawn, health checks, reconnect
 lua/opencode/managed.lua             → Native daemon discovery (registration file + authenticated health check)
 lua/opencode/server_env.lua          → Pure server environment and command resolution (shell env, PATH, listening URL)
@@ -153,7 +155,7 @@ lua/opencode/ui/chat/file_edit_results.lua → Unified final-result renderer for
 lua/opencode/ui/input.lua            → Multi-line input facade with history
 lua/opencode/ui/input/*.lua          → Input submodules (attachments, autocmds, autocomplete, history, history_search, info_bar, keymaps, layout, markers, mentions, popups, slash_commands, syntax)
 lua/opencode/ui/palette.lua          → Command palette (fuzzy search)
-lua/opencode/ui/palette/*.lua        → Palette command submodules (actions, agent, context, editor_context, environment, family, history, integration, mcp, model, pairing, plugins, processes, prompt, queue, server, session, settings, stash, system, workspaces)
+lua/opencode/ui/palette/*.lua        → Palette command submodules (actions, agent, context, editor_context, environment, family, history, integration, mcp, model, pairing, plugins, processes, prompt, queue, saved_prompts, server, session, settings, stash, system, workspaces)
 lua/opencode/ui/float.lua            → Float utilities (centered popups, input popups)
 lua/opencode/ui/float_context.lua    → Floating window placement and focus helpers
 lua/opencode/ui/popup.lua            → Shared owner for palette-command and dialog floats

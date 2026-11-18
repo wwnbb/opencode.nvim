@@ -410,6 +410,10 @@ end
 function M.stash_prompt(draft) return require("opencode.stash").push(draft) end
 function M.list_stashed_prompts() return require("opencode.stash").list() end
 function M.take_stashed_prompt(id) return require("opencode.stash").take(id) end
+function M.save_prompt(draft) return require("opencode.saved_prompts").push(draft) end
+function M.list_saved_prompts() return require("opencode.saved_prompts").list() end
+function M.get_saved_prompt(id) return require("opencode.saved_prompts").get(id) end
+function M.delete_saved_prompt(id) return require("opencode.saved_prompts").take(id) end
 
 function M.mark_editor_context(id, part, status) return require("opencode.editor_context").mark(id, part, status) end
 function M.refresh_editor_context(id) return require("opencode.editor_context").refresh(id) end

@@ -104,6 +104,7 @@ function M.register(palette)
 					hint("input", "history_prev", "Previous history"),
 					hint("input", "history_next", "Next history"),
 					hint("input", "history_search", "Search prompt history"),
+					hint("input", "save_prompt", "Save prompt to library"),
 				}
 				vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
 			end

@@ -88,6 +88,7 @@ function M.setup(bufnr, cfg, handlers)
 	end, { expr = true, replace_keycodes = false, aliases = { "autocomplete_next" } })
 
 	map({ "i", "n" }, "history_search", function() schedule(handlers.history_search) end)
+	map({ "i", "n" }, "save_prompt", function() schedule(handlers.save_prompt) end)
 
 	map("i", "autocomplete_prev", function(key)
 		if autocomplete_visible() then

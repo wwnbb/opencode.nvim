@@ -135,6 +135,7 @@ M.defaults = {
 		max_history = 100,
 		history_search_provider = "grep", -- "grep" or "ripgrep" (rg)
 		stash_file = vim.fn.stdpath("data") .. "/opencode_stash.json",
+		saved_prompts_file = vim.fn.stdpath("data") .. "/opencode_saved_prompts.json",
 	},
 
 	-- Best-effort syntax highlighting for code-like chat surfaces

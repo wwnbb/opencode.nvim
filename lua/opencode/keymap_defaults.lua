@@ -20,7 +20,7 @@ local M = {
 	-- As in the TUI, the main send key steers and a second key queues.
 	input = { send = "<C-g>", send_queue = "<C-S-g>", send_steer = false, send_alt = false, cancel = { "<Esc>", "q", "<C-c>" },
 		history_prev = "<Up>", history_next = "<Down>", variant_cycle = "<C-t>", agent_cycle = "<C-a>", model_cycle = "<C-e>",
-		history_search = "<C-r>",
+		history_search = "<C-r>", save_prompt = "<C-s>",
 		autocomplete_prev = { "<C-p>", "<S-Tab>" }, autocomplete_next = "<C-n>", autocomplete_confirm = "<Tab>",
 		command_enter = "<CR>", toggle_mode = "<C-\\>", fold_toggle = "za", fold_open = "zo", fold_close = "zc", fold_open_all = "zR", fold_close_all = "zM" },
 	completion = { trigger = "<C-l>", prompt = "<C-S-l>", accept = "<Tab>" },
@@ -56,6 +56,7 @@ local M = {
 	mcp_info = { close = { "q", "<Esc>", "<C-c>" } },
 	mcp_menu = { info = "i", toggle_server = "t", authenticate = "a", refresh = "r" },
 	queue_menu = { delete = "<C-d>", undo = "<C-u>" },
+	saved_prompts_menu = { delete = "<C-d>" },
 	family_menu = { filter = "a", refresh = "r", interrupt = "x" },
 	process_menu = { refresh = "r", kill = "x" },
 	plugin_menu = { check = "c", check_all = "C", update = "u" },
@@ -73,7 +74,7 @@ for i = 1, 9 do
 	M.form["option_" .. i] = tostring(i)
 end
 M.parents = { mcp_info = "popup", palette = "menu", help = "popup", execute_details = "popup", debug_bundle = "popup" }
-for _, scope in ipairs({ "active_sessions", "session_menu", "model_menu", "project_menu", "mcp_menu", "queue_menu", "family_menu",
+for _, scope in ipairs({ "active_sessions", "session_menu", "model_menu", "project_menu", "mcp_menu", "queue_menu", "saved_prompts_menu", "family_menu",
 	"process_menu", "plugin_menu", "workspace_menu", "pairing_menu", "diagnostics" }) do
 	M.parents[scope] = "menu"
 end

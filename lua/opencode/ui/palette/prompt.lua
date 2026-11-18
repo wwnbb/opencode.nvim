@@ -5,6 +5,7 @@ local palette_context = require("opencode.ui.palette.context")
 function M.register(palette)
 	require("opencode.ui.palette.history").register(palette)
 	require("opencode.ui.palette.stash").register(palette)
+	require("opencode.ui.palette.saved_prompts").register(palette)
 	require("opencode.ui.palette.queue").register(palette)
 	require("opencode.ui.palette.editor_context").register(palette)
 	palette.register({ id = "prompt.cancel_pending", title = "Cancel Pending Input", category = "prompt",
